@@ -54,7 +54,8 @@ var (
 	explicitActivityLogRE    = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:recorded|logged|weighed)\b`)
 	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:ate|had|drank|consumed|completed|ran|woke up|stayed up|trained|resting)\b`)
 	userActivityLogRE        = regexp.MustCompile(`(?i)^(?:the\s+)?user\b.*\b(?:recorded|logged|ate|had|drank|consumed|completed|ran|slept)\b`)
-	narrativeActivityCueRE   = regexp.MustCompile(`(?i)\bwith\b|(?:和|跟|与).{1,40}(?:一起|见面|吃|喝)`)
+	namedCompanionRE         = regexp.MustCompile(`\bwith\s+[A-Z][\p{L}\p{M}'-]*\b`)
+	socialNarrativeCueRE     = regexp.MustCompile(`(?i)\bwith\s+(?:(?:my|the|a|an)\s+)?(?:friend|friends|family|partner|wife|husband|mother|father|mom|dad|colleague|coworker|team)\b|(?:和|跟|与).{1,40}(?:一起|见面|吃|喝)`)
 	operationalLogRE         = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|temporary monitoring|planning-only turn|reported tracking event error|requires confirmation today|received service error|selected model is at capacity|(?:assistant|system) (?:eta is|eta tomorrow|is due tomorrow)|(?:import|upload) task (?:started|completed|failed|queued|running)|debug(?:ging)? (?:log|trace|session|command|output|run|task)|smoke test (?:passed|failed|completed)|functioning correctly (?:now|today))\b`)
 	oneTimeIntentRE          = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:(?:restart|restore)\s+(?:a\s+)?(?:task|conversation|session|workflow|working condition)|(?:remove|pin)\s+(?:a\s+)?(?:memory|fact|insight)|send\s+(?:a\s+)?handoff|(?:record|log)\s+(?:a\s+)?(?:meal|weight|workout|sleep|activity)|(?:create|set up)\s+(?:temporary\s+)?(?:monitoring|alert|reminder))\b`)
 	transientStatusRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is|am|are)\s+(?:currently\s+)?(?:working out|training|resting|hungry|using voice input)\b|^(?:now|right now|currently)\b.*\b(?:working out|training|resting|hungry|using voice input)\b`)
@@ -270,7 +271,7 @@ func serverGuardDropReason(text string) string {
 	switch {
 	case oneTimeIntentRE.MatchString(text), chineseEphemeralIntentRE.MatchString(text):
 		return factTypeEphemeralIntent
-	case ephemeralIntentRE.MatchString(text) && shortTimeCueRE.MatchString(text):
+	case ephemeralIntentRE.MatchString(text) && shortTimeCueRE.MatchString(text) && !hasSocialNarrativeCue(text):
 		return factTypeEphemeralIntent
 	case shortTimeCueRE.MatchString(text) && transientStatusRE.MatchString(text), chineseTransientStatusRE.MatchString(text):
 		return factTypeTransientStatus
@@ -284,7 +285,7 @@ func serverGuardDropReason(text string) string {
 }
 
 func isActivityLogText(text string) bool {
-	if narrativeActivityCueRE.MatchString(text) {
+	if hasSocialNarrativeCue(text) {
 		return false
 	}
 	if explicitActivityLogRE.MatchString(text) {
@@ -292,6 +293,10 @@ func isActivityLogText(text string) bool {
 	}
 	return activityLogRE.MatchString(text) &&
 		(subjectlessActivityLogRE.MatchString(text) || userActivityLogRE.MatchString(text))
+}
+
+func hasSocialNarrativeCue(text string) bool {
+	return namedCompanionRE.MatchString(text) || socialNarrativeCueRE.MatchString(text)
 }
 
 type preparedExtractionInput struct {

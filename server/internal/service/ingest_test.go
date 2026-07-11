@@ -1048,6 +1048,21 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: factTypeEphemeralIntent,
 		},
 		{
+			name: "supplement intent with non-social companion phrase",
+			text: "The user is considering consuming protein powder tonight with water",
+			want: factTypeEphemeralIntent,
+		},
+		{
+			name: "durable future social plan",
+			text: "User plans to have dinner with Alice tomorrow",
+			want: "",
+		},
+		{
+			name: "durable future family plan",
+			text: "User will eat lunch with family tomorrow",
+			want: "",
+		},
+		{
 			name: "debug log",
 			text: "The debug log reported a transient import task error",
 			want: factTypeOperationalLog,
