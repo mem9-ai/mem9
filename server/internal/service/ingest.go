@@ -51,10 +51,11 @@ var (
 	ephemeralIntentRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:(?:eat|eating|consume|consuming|work out|working out|exercise|exercising)\b|(?:have|having)\s+(?:breakfast|lunch|dinner|a meal|a snack|protein powder|creatine)\b)`)
 	shortTimeCueRE           = regexp.MustCompile(`(?i)\b(?:now|currently|today|tonight|tomorrow|yesterday|right now|this morning|this afternoon|this evening|last night|day before yesterday)\b`)
 	currentTimeCueRE         = regexp.MustCompile(`(?i)\b(?:now|currently|today|right now|this morning|this afternoon|this evening)\b`)
-	activityLogRE            = regexp.MustCompile(`(?i)\b(?:recorded|logged|weighed|weight is|protein powder|creatine|workout log|fitness session|breakfast|lunch|dinner|snack|sleep|slept|hunger|hungry|cosmetic procedure|botulinum|filler)\b`)
+	activityLogRE            = regexp.MustCompile(`(?i)\b(?:weight|protein powder|creatine|workout|fitness session|breakfast|lunch|dinner|meal|snack|sleep|slept|hunger|hungry|activity|cosmetic procedure|botulinum|filler)\b`)
+	quantifiedHealthLogRE    = regexp.MustCompile(`(?i)\b\d+(?:\.\d+)?\s*(?:kg|lbs?|pounds?|bpm|kcal|calories?)\b`)
 	explicitActivityLogRE    = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:recorded|logged|weighed)\b`)
-	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:ate|had|drank|consumed|completed|ran|woke up|stayed up|trained|resting)\b`)
-	userActivityLogRE        = regexp.MustCompile(`(?i)^(?:the\s+)?user\b.*\b(?:recorded|logged|ate|had|drank|consumed|completed|ran|slept)\b`)
+	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:ate|had|drank|consumed|woke up|stayed up|resting)\b`)
+	userActivityLogRE        = regexp.MustCompile(`(?i)^(?:the\s+)?user\b.*\b(?:ate|had|drank|consumed)\b`)
 	namedCompanionRE         = regexp.MustCompile(`\bwith\s+[A-Z][\p{L}\p{M}'-]*\b`)
 	activityNarrativeCueRE   = regexp.MustCompile(`(?i)\bwith\b|(?:和|跟|与).{1,40}(?:一起|见面|吃|喝)`)
 	socialNarrativeCueRE     = regexp.MustCompile(`(?i)\bwith\s+(?:(?:my|his|her|their|our|your|the|a|an)\s+)?(?:friend|friends|family|partner|wife|husband|mother|father|mom|dad|colleague|coworker|team)\b|(?:和|跟|与).{1,40}(?:一起|见面|吃|喝)`)
@@ -287,7 +288,8 @@ func serverGuardDropReason(text string) string {
 }
 
 func isActivityLogText(text string) bool {
-	if explicitActivityLogRE.MatchString(text) {
+	if explicitActivityLogRE.MatchString(text) &&
+		(activityLogRE.MatchString(text) || quantifiedHealthLogRE.MatchString(text)) {
 		return true
 	}
 	if activityNarrativeCueRE.MatchString(text) {

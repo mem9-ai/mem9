@@ -1168,6 +1168,31 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: factTypeActivityLog,
 		},
 		{
+			name: "explicit quantified weight log",
+			text: "User weighed 79.7kg",
+			want: factTypeActivityLog,
+		},
+		{
+			name: "durable recorded album",
+			text: "User recorded their first album in 2020",
+			want: "",
+		},
+		{
+			name: "durable logged production incident",
+			text: "User logged the production incident for the postmortem",
+			want: "",
+		},
+		{
+			name: "durable completed sleep study",
+			text: "Completed a sleep study in 2024",
+			want: "",
+		},
+		{
+			name: "durable travel sleep event",
+			text: "User slept in Tokyo yesterday",
+			want: "",
+		},
+		{
 			name: "durable historical health event",
 			text: "Lost 20kg after cancer treatment in 2015",
 			want: "",
