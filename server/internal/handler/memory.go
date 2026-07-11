@@ -177,7 +177,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			s.recordIngestMetering(auth, svc)
 			s.enqueueMemoryAddedIDWebhooks(syncCtx, auth, svc, writeChainSource, chainAuth, result)
 			go s.afterSuccessfulWrite(auth, svc, written)
-			respond(w, http.StatusOK, map[string]string{"status": "ok"})
+			respond(w, http.StatusOK, statusResponseWithRuntimeNotice("ok", s.runtimeResponseNotice(r.Context(), auth)))
 		} else {
 			var lease *runtimeusage.OperationLease
 			if s.runtimeUsageEnabled() {
@@ -229,7 +229,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				s.enqueueMemoryAddedIDWebhooks(context.Background(), auth, svc, writeChainSource, chainAuth, result)
 				s.afterSuccessfulIngest(auth, svc, written)
 			}(lease)
-			respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
+			respond(w, http.StatusAccepted, statusResponseWithRuntimeNotice("accepted", s.runtimeResponseNotice(r.Context(), auth)))
 		}
 		return
 	}
@@ -315,7 +315,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 		s.enqueueMemoryAddedWebhook(r.Context(), auth, writeChainSource, chainAuth, mem)
 		go s.afterSuccessfulWrite(auth, svc, int64(written))
-		respond(w, http.StatusCreated, mem)
+		respond(w, http.StatusCreated, memoryResponseWithRuntimeNotice(mem, s.runtimeResponseNotice(r.Context(), auth)))
 		return
 	}
 
@@ -383,7 +383,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			}
 			s.enqueueMemoryAddedIDWebhooks(r.Context(), auth, svc, writeChainSource, chainAuth, result)
 			go s.afterSuccessfulWrite(auth, svc, written)
-			respond(w, http.StatusOK, map[string]string{"status": "ok"})
+			respond(w, http.StatusOK, statusResponseWithRuntimeNotice("ok", s.runtimeResponseNotice(r.Context(), auth)))
 			return
 		}
 		// s.persistContentSession(r.Context(), auth, svc, req.SessionID, agentID, content, metadata)
@@ -422,7 +422,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		}
 		s.enqueueMemoryAddedWebhook(r.Context(), auth, writeChainSource, chainAuth, mem)
 		go s.afterSuccessfulWrite(auth, svc, int64(written))
-		respond(w, http.StatusOK, map[string]string{"status": "ok"})
+		respond(w, http.StatusOK, statusResponseWithRuntimeNotice("ok", s.runtimeResponseNotice(r.Context(), auth)))
 	} else {
 		var lease *runtimeusage.OperationLease
 		if s.runtimeUsageEnabled() {
@@ -511,7 +511,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			s.afterSuccessfulWrite(auth, svc, int64(written))
 		}(auth, chainAuth, lease, auth.AgentName, agentID, appID, req.SessionID, content, tags, metadata, routingTargets)
 
-		respond(w, http.StatusAccepted, map[string]string{"status": "accepted"})
+		respond(w, http.StatusAccepted, statusResponseWithRuntimeNotice("accepted", s.runtimeResponseNotice(r.Context(), auth)))
 	}
 }
 
@@ -732,10 +732,12 @@ func mergeMetadata(base, incoming json.RawMessage) json.RawMessage {
 }
 
 type listResponse struct {
-	Memories []domain.Memory `json:"memories"`
-	Total    int             `json:"total"`
-	Limit    int             `json:"limit"`
-	Offset   int             `json:"offset"`
+	Memories     []domain.Memory            `json:"memories"`
+	Total        int                        `json:"total"`
+	Limit        int                        `json:"limit"`
+	Offset       int                        `json:"offset"`
+	Message      string                     `json:"message,omitempty"`
+	RuntimeState *runtimeusage.RuntimeState `json:"runtimeState,omitempty"`
 }
 
 type memoryRecallMetric struct {
@@ -966,11 +968,17 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		s.recordRecallMetering(auth)
 	}
 
+	notice := runtimeResponseNotice{}
+	if recallSearch {
+		notice = s.runtimeResponseNotice(r.Context(), auth)
+	}
 	respond(w, http.StatusOK, listResponse{
-		Memories: memories,
-		Total:    total,
-		Limit:    limit,
-		Offset:   offset,
+		Memories:     memories,
+		Total:        total,
+		Limit:        limit,
+		Offset:       offset,
+		Message:      notice.Message,
+		RuntimeState: runtimeNoticeState(notice),
 	})
 }
 

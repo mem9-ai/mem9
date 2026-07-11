@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { resolveMem9Paths } from "../src/shared/platform-paths.js";
+import { MEM9_PLUGIN_USER_AGENT } from "../src/shared/plugin-user-agent.js";
 import {
   loadSetupState,
   provisionApiKey,
@@ -324,6 +325,10 @@ test("provisionApiKey requests a new API key from mem9", async () => {
       assert.equal(
         (init?.headers as Record<string, string>)["Content-Type"],
         "application/json",
+      );
+      assert.equal(
+        (init?.headers as Record<string, string>)["User-Agent"],
+        MEM9_PLUGIN_USER_AGENT,
       );
 
       return new Response(JSON.stringify({ id: "mk_generated" }), {

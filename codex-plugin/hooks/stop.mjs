@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { loadRuntimeStateFromDisk } from "../lib/config.mjs";
 import { appendDebugError, appendDebugLog } from "./shared/debug.mjs";
 import { buildMem9Url, mem9FetchJson, mem9Headers } from "../lib/http.mjs";
+import { parseRuntimeQuotaDenied } from "../lib/quota-error.mjs";
 import { parseTranscriptText, selectStopWindow } from "./shared/transcript.mjs";
 
 export const STOP_MAX_MESSAGES = 20;
@@ -87,11 +88,25 @@ export async function runStop(input) {
     messages,
   };
 
-  await input.post(
-    buildIngestUrl(input.runtime.baseUrl),
-    body,
-    { timeoutMs: input.runtime.defaultTimeoutMs },
-  );
+  try {
+    await input.post(
+      buildIngestUrl(input.runtime.baseUrl),
+      body,
+      { timeoutMs: input.runtime.defaultTimeoutMs },
+    );
+  } catch (error) {
+    const quotaDenied = parseRuntimeQuotaDenied(error);
+    if (!quotaDenied) {
+      throw error;
+    }
+
+    debug("ingest_quota_denied", {
+      code: quotaDenied.code,
+      actionType: quotaDenied.recommendedAction?.type,
+      hasActionUrl: Boolean(quotaDenied.recommendedAction?.url),
+    });
+    return undefined;
+  }
   debug("ingest_sent", {
     selectedMessageCount: messages.length,
     selectedBytes,

@@ -12,7 +12,9 @@
  */
 
 import { isPendingProvisionError, type MemoryBackend } from "./backend.js";
-import type { Memory, IngestMessage } from "./types.js";
+import { formatRuntimeQuotaNotice } from "./quota-error.js";
+import { formatRuntimeStateNotice } from "./runtime-state.js";
+import type { Memory, IngestMessage, SearchResult } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -26,6 +28,7 @@ const MAX_CONTENT_LEN = 500; // truncate individual memory content in prompt
 // Ingest defaults — configurable via maxIngestBytes in plugin config
 const DEFAULT_MAX_INGEST_BYTES = 200_000; // ~200KB safe for most LLM context windows
 const MAX_INGEST_MESSAGES = 20; // absolute cap even if small messages
+const BACKGROUND_QUOTA_PAUSED_LOG = "[mem9] memory saving paused by runtime quota";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -146,21 +149,50 @@ function formatMemoriesBlock(memories: Memory[]): string {
   ].join("\n");
 }
 
+function normalizeNoticeMessage(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function formatStatusWarningBlock(message: string): string {
+  const notice = normalizeNoticeMessage(message);
+  if (!notice) return "";
+
+  return [
+    "<mem9-status-warning>",
+    `Mem9 notice for the user: ${escapeForPrompt(notice)}`,
+    "Mention this mem9 notice to the user once.",
+    "</mem9-status-warning>",
+  ].join("\n");
+}
+
+function responseNotice(result: SearchResult): string {
+  return normalizeNoticeMessage(result.message)
+    || normalizeNoticeMessage(formatRuntimeStateNotice(result.runtimeState));
+}
+
 // ---------------------------------------------------------------------------
 // Context stripping (prevent re-ingesting injected memories)
 // ---------------------------------------------------------------------------
 
 function stripInjectedContext(content: string): string {
   let s = content;
-  for (;;) {
-    const start = s.indexOf("<relevant-memories>");
-    if (start === -1) break;
-    const end = s.indexOf("</relevant-memories>");
-    if (end === -1) {
-      s = s.slice(0, start);
-      break;
+  const tagPairs = [
+    ["<relevant-memories>", "</relevant-memories>"],
+    ["<mem9-status-warning>", "</mem9-status-warning>"],
+    ["<memory-context>", "</memory-context>"],
+  ] as const;
+
+  for (const [startTag, endTag] of tagPairs) {
+    for (;;) {
+      const start = s.indexOf(startTag);
+      if (start === -1) break;
+      const end = s.indexOf(endTag, start);
+      if (end === -1) {
+        s = s.slice(0, start);
+        break;
+      }
+      s = s.slice(0, start) + s.slice(end + endTag.length);
     }
-    s = s.slice(0, start) + s.slice(end + "</relevant-memories>".length);
   }
   return s.trim();
 }
@@ -213,6 +245,17 @@ export function registerHooks(
 ): void {
   const maxIngestBytes = options?.maxIngestBytes ?? DEFAULT_MAX_INGEST_BYTES;
   let loggedMissingConversationAccess = false;
+  let runtimeStateNoticeShown = false;
+  const seenNoticeMessages = new Set<string>();
+
+  function consumeNoticeMessage(message: string): string {
+    const notice = normalizeNoticeMessage(message);
+    if (!notice || seenNoticeMessages.has(notice)) {
+      return "";
+    }
+    seenNoticeMessages.add(notice);
+    return notice;
+  }
 
   // --------------------------------------------------------------------------
   // before_prompt_build — inject relevant memories into every LLM call
@@ -245,22 +288,49 @@ export function registerHooks(
 
         const result = await backend.search({ q: recallQuery, limit: MAX_INJECT });
         const memories = result.data ?? [];
+        const resultNotice = responseNotice(result);
+        let runtimeStateNotice = consumeNoticeMessage(resultNotice);
+        if (!resultNotice && !runtimeStateNoticeShown) {
+          runtimeStateNoticeShown = true;
+          try {
+            runtimeStateNotice = consumeNoticeMessage(
+              formatRuntimeStateNotice(await backend.runtimeState()),
+            );
+          } catch {
+            runtimeStateNotice = "";
+          }
+        }
         if (options?.debug) {
           logger.info(
             `[mem9][debug] before_prompt_build recall search limit=${MAX_INJECT} results=${memories.length}`,
           );
         }
 
-        if (memories.length === 0) return;
+        if (memories.length === 0) {
+          return runtimeStateNotice
+            ? { prependContext: formatStatusWarningBlock(runtimeStateNotice) }
+            : undefined;
+        }
 
         logger.info(`[mem9] Injecting ${memories.length} memories into prompt context`);
+        const memoriesBlock = formatMemoriesBlock(memories);
+        const statusBlock = formatStatusWarningBlock(runtimeStateNotice);
 
         return {
-          prependContext: formatMemoriesBlock(memories),
+          prependContext: statusBlock
+            ? `${statusBlock}\n\n${memoriesBlock}`
+            : memoriesBlock,
         };
       } catch (err) {
         if (isPendingProvisionError(err)) {
           return;
+        }
+        const quotaNotice = formatRuntimeQuotaNotice(err, "recall paused");
+        if (quotaNotice) {
+          logger.info(quotaNotice);
+          return {
+            prependContext: quotaNotice,
+          };
         }
         // Graceful degradation — never block the LLM call
         logger.error(`[mem9] before_prompt_build failed: ${String(err)}`);
@@ -313,6 +383,11 @@ export function registerHooks(
       logger.info("[mem9] Session context saved before reset");
     } catch (err) {
       if (isPendingProvisionError(err)) {
+        return;
+      }
+      const quotaNotice = formatRuntimeQuotaNotice(err, "before_reset save paused");
+      if (quotaNotice) {
+        logger.info(BACKGROUND_QUOTA_PAUSED_LOG);
         return;
       }
       // Best-effort — never block /reset
@@ -423,6 +498,11 @@ export function registerHooks(
       }
     } catch (err) {
       if (isPendingProvisionError(err)) {
+        return;
+      }
+      const quotaNotice = formatRuntimeQuotaNotice(err, "agent_end ingest paused");
+      if (quotaNotice) {
+        logger.info(BACKGROUND_QUOTA_PAUSED_LOG);
         return;
       }
       // Best-effort — never fail the agent end phase

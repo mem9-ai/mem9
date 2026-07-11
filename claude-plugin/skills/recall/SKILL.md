@@ -27,6 +27,10 @@ api_key="${read_api_key_and_base_url%%	*}"
 base_url="${read_api_key_and_base_url#*	}"
 test -n "$api_key"
 test -n "$base_url"
+plugin_version="unknown"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ]; then
+  plugin_version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(data.version || "unknown");' "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json")"
+fi
 
 query='REPLACE_WITH_SEARCH_QUERY'
 encoded_query="$(printf '%s' "$query" | node -e 'const fs=require("node:fs"); const raw=fs.readFileSync(0,"utf8").trim(); process.stdout.write(encodeURIComponent(raw));')"
@@ -35,6 +39,7 @@ curl -sf --max-time 8 \
   -H "Content-Type: application/json" \
   -H "X-API-Key: ${api_key}" \
   -H "X-Mnemo-Agent-Id: claude-code" \
+  -H "User-Agent: mem9-plugin/claude-code/${plugin_version}" \
   "${base_url%/}/v1alpha2/mem9s/memories?q=${encoded_query}&limit=10"
 ```
 

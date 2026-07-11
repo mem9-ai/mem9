@@ -2,6 +2,8 @@
 
 const START_TAG = "<relevant-memories>";
 const END_TAG = "</relevant-memories>";
+const STATUS_WARNING_START_TAG = "<mem9-status-warning>";
+const STATUS_WARNING_END_TAG = "</mem9-status-warning>";
 
 /**
  * @typedef {{
@@ -24,20 +26,58 @@ function escapeForPrompt(text) {
 
 /**
  * @param {string | null | undefined} text
+ * @param {string} startTag
+ * @param {string} endTag
+ * @returns {string}
+ */
+function stripTaggedBlock(text, startTag, endTag) {
+  let next = String(text ?? "");
+
+  while (next.includes(startTag)) {
+    const start = next.indexOf(startTag);
+    const end = next.indexOf(endTag, start);
+    next = end === -1
+      ? next.slice(0, start)
+      : next.slice(0, start) + next.slice(end + endTag.length);
+  }
+
+  return next;
+}
+
+/**
+ * @param {string | null | undefined} text
  * @returns {string}
  */
 export function stripInjectedMemories(text) {
-  let next = String(text ?? "");
+  let next = stripTaggedBlock(text, START_TAG, END_TAG);
+  next = stripTaggedBlock(next, STATUS_WARNING_START_TAG, STATUS_WARNING_END_TAG);
+  return next.trim();
+}
 
-  while (next.includes(START_TAG)) {
-    const start = next.indexOf(START_TAG);
-    const end = next.indexOf(END_TAG, start);
-    next = end === -1
-      ? next.slice(0, start)
-      : next.slice(0, start) + next.slice(end + END_TAG.length);
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function normalizeNoticeMessage(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * @param {string} message
+ * @returns {string}
+ */
+export function formatStatusWarningBlock(message) {
+  const notice = normalizeNoticeMessage(message);
+  if (!notice) {
+    return "";
   }
 
-  return next.trim();
+  return [
+    STATUS_WARNING_START_TAG,
+    `Mem9 notice for the user: ${escapeForPrompt(notice)}`,
+    "Mention this mem9 notice to the user once.",
+    STATUS_WARNING_END_TAG,
+  ].join("\n");
 }
 
 /**

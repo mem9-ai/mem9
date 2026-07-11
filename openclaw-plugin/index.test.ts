@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import mnemoPlugin from "./index.js";
+import { formatRuntimeQuotaNotice, Mem9HttpError } from "./quota-error.js";
 
 interface RegisteredTool {
   name: string;
@@ -13,6 +14,20 @@ interface SearchCapability {
 }
 
 type HookHandler = (...args: unknown[]) => unknown;
+
+function runtimeQuotaPayload(error: string, runtimeQuota: Record<string, unknown> | null = {}): Record<string, unknown> {
+  const details: Record<string, unknown> = {
+    errorCategory: "runtime_quota_denied",
+  };
+  if (runtimeQuota !== null) {
+    details.runtimeQuota = runtimeQuota;
+  }
+
+  return {
+    error,
+    details,
+  };
+}
 
 interface StubApi {
   pluginConfig?: unknown;
@@ -178,17 +193,74 @@ test("memory capability stays idle until explicit provision runs", async () => {
   }
 });
 
+test("memory tools return structured runtime quota denial payloads", async () => {
+  const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("tool-quota");
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      ...runtimeQuotaPayload("Spending limit is exhausted.", {
+        recommendedAction: {
+          providerActionCode: "increaseSpendingLimit",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
+        },
+      }),
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const api = createStubApi({
+      apiUrl,
+      apiKey: "space-tool-quota",
+    });
+    mnemoPlugin.register(api);
+
+    const searchTool = api.getTools().find((item) => item.name === "memory_search");
+    assert.ok(searchTool);
+
+    const output = await searchTool.execute("call-1", { q: "hello" });
+    assert.equal(typeof output, "string");
+    const parsed = JSON.parse(output as string);
+    assert.equal(parsed.ok, false);
+    assert.equal(parsed.code, "runtime_quota_denied");
+    assert.equal(parsed.action_url, "https://console.mem9.ai/console/billing/plan");
+    assert.deepEqual(parsed.quota.recommendedAction, {
+      providerActionCode: "increaseSpendingLimit",
+      type: "openUrl",
+      url: "https://console.mem9.ai/console/billing/plan",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("before_prompt_build forwards the prompt as q during recall search", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("before-prompt-q");
-  let requestedURL = "";
+  let runtimeStateRequestURL = "";
+  let memoryRequestURL = "";
   let requestCount = 0;
 
   globalThis.fetch = async (input, init) => {
-    requestedURL = String(input);
+    const requestURL = String(input);
     requestCount += 1;
     assert.equal(init?.method, "GET");
 
+    if (requestURL.endsWith("/v1alpha2/mem9s/runtime-state")) {
+      runtimeStateRequestURL = requestURL;
+      return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    memoryRequestURL = requestURL;
     return new Response(
       JSON.stringify({
         memories: [
@@ -223,8 +295,9 @@ test("before_prompt_build forwards the prompt as q during recall search", async 
     const prompt = "remember alpha";
     const hookResult = await beforePromptBuild({ prompt }) as { prependContext?: string } | undefined;
 
-    assert.equal(requestCount, 1);
-    const url = new URL(requestedURL);
+    assert.equal(requestCount, 2);
+    assert.equal(runtimeStateRequestURL, `${apiUrl}/v1alpha2/mem9s/runtime-state`);
+    const url = new URL(memoryRequestURL);
     assert.equal(url.origin + url.pathname, `${apiUrl}/v1alpha2/mem9s/memories`);
     assert.equal(url.searchParams.get("q"), prompt);
     assert.equal(url.searchParams.get("limit"), "10");
@@ -234,17 +307,349 @@ test("before_prompt_build forwards the prompt as q during recall search", async 
   }
 });
 
+test("before_prompt_build injects success response message without memories once", async () => {
+  const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("before-prompt-message");
+  let runtimeStateRequests = 0;
+
+  globalThis.fetch = async (input, init) => {
+    const requestURL = String(input);
+    assert.equal(init?.method, "GET");
+
+    if (requestURL.endsWith("/v1alpha2/mem9s/runtime-state")) {
+      runtimeStateRequests += 1;
+      return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(
+      JSON.stringify({
+        memories: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+        message: "mem9 recall has used 80% of included quota.",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  };
+
+  try {
+    const api = createStubApi({
+      apiUrl,
+      apiKey: "space-before-prompt-message",
+    });
+    mnemoPlugin.register(api);
+
+    const beforePromptBuild = api.getHook("before_prompt_build");
+    const firstResult = await beforePromptBuild({ prompt: "remember alpha" }) as { prependContext?: string } | undefined;
+    const secondResult = await beforePromptBuild({ prompt: "remember beta" }) as { prependContext?: string } | undefined;
+
+    assert.match(firstResult?.prependContext ?? "", /<mem9-status-warning>/);
+    assert.match(firstResult?.prependContext ?? "", /mem9 recall has used 80% of included quota\./);
+    assert.match(firstResult?.prependContext ?? "", /Mention this mem9 notice to the user once\./);
+    assert.equal(secondResult, undefined);
+    assert.equal(runtimeStateRequests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("before_prompt_build returns runtime quota denial action context", async () => {
+  const originalFetch = globalThis.fetch;
+  const apiUrl = uniqueApiUrl("before-prompt-quota");
+  const infoLogs: string[] = [];
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      ...runtimeQuotaPayload("Included quota is exhausted.", {
+        meter: "memory_recall_requests",
+        recommendedAction: {
+          providerActionCode: "claimApiKey",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/claim?key=mem9_test",
+        },
+      }),
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const api = createStubApi(
+      {
+        apiUrl,
+        apiKey: "space-before-prompt-quota",
+      },
+      { infoLogs },
+    );
+    mnemoPlugin.register(api);
+
+    const beforePromptBuild = api.getHook("before_prompt_build");
+    const hookResult = await beforePromptBuild({ prompt: "remember alpha" }) as { prependContext?: string } | undefined;
+
+    assert.match(hookResult?.prependContext ?? "", /Mem9 recall is temporarily unavailable/);
+    assert.match(hookResult?.prependContext ?? "", /included usage quota for this API key has been used up/);
+    assert.match(hookResult?.prependContext ?? "", /sign in or create a mem9 account and claim this API key/);
+    assert.match(hookResult?.prependContext ?? "", /upgrade their plan or set up billing/);
+    assert.match(hookResult?.prependContext ?? "", /Include the link exactly as written/);
+    assert.match(hookResult?.prependContext ?? "", /console\/claim\?key=mem9_test/);
+    assert.equal(
+      hookResult?.prependContext?.match(/https:\/\/console\.mem9\.ai\/console\/claim\?key=mem9_test/g)?.length,
+      1,
+    );
+    assert.doesNotMatch(hookResult?.prependContext ?? "", /\.\. Claim/);
+    assert.equal(infoLogs.some((line) => line.includes("Mem9 recall is temporarily unavailable")), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("formatRuntimeQuotaNotice renders spending limit guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "On-demand spending limit would be exceeded.",
+      402,
+      "",
+      runtimeQuotaPayload("On-demand spending limit would be exceeded.", {
+        meter: "memory_recall_requests",
+        recommendedAction: {
+          providerActionCode: "increaseSpendingLimit",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
+        },
+      }),
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /configured spending limit would be exceeded/);
+  assert.match(notice, /increase the mem9 spending limit or adjust billing settings/);
+  assert.match(notice, /Include the link exactly as written/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
+});
+
+test("formatRuntimeQuotaNotice handles missing runtime quota metadata", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Runtime access is blocked.",
+      402,
+      "",
+      runtimeQuotaPayload("Runtime access is blocked.", null),
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /runtime quota check blocked this request/);
+  assert.match(notice, /open the mem9 console/);
+});
+
+test("formatRuntimeQuotaNotice handles unknown provider action codes", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Custom quota action required.",
+      402,
+      "",
+      runtimeQuotaPayload("Custom quota action required.", {
+        recommendedAction: {
+          providerActionCode: "contactSupport",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/support",
+        },
+      }),
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /open this mem9 link to resolve the account or billing state/);
+  assert.match(notice, /console\/support/);
+});
+
+test("formatRuntimeQuotaNotice ignores generic api rate limits", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "rate limit exceeded",
+      429,
+      "",
+      {
+        error: "rate limit exceeded",
+      },
+    ),
+    "recall paused",
+  );
+
+  assert.equal(notice, "");
+});
+
+test("formatRuntimeQuotaNotice renders post-quota rate limit guidance without action URL", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Post-quota rate limit exceeded.",
+      429,
+      "",
+      runtimeQuotaPayload("Post-quota rate limit exceeded.", {
+        meter: "memory_recall_requests",
+        quotaGateResult: {
+          outcome: "rateLimited",
+          mode: "postQuota",
+          reason: "postQuotaRateLimitExceeded",
+          postQuotaRateLimit: {
+            requestsPerMinute: 4,
+            windowDurationSeconds: 60,
+            scope: "apiKeyMeter",
+            retryAfterSeconds: 23,
+          },
+        },
+      }),
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /temporary request limit/);
+  assert.match(notice, /quota\/rate-limit check blocked this request/);
+  assert.match(notice, /retry later or open the mem9 console/);
+  assert.doesNotMatch(notice, /console\/billing\/plan/);
+  assert.doesNotMatch(notice, /wait 23 seconds before trying again/);
+  assert.equal((notice.match(/https:\/\//g) ?? []).length, 0);
+});
+
+test("formatRuntimeQuotaNotice renders post-quota billing action when provided", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Post-quota rate limit exceeded.",
+      429,
+      "",
+      runtimeQuotaPayload("Post-quota rate limit exceeded.", {
+        meter: "memory_write_requests",
+        recommendedAction: {
+          providerActionCode: "upgradePlan",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
+        },
+        quotaGateResult: {
+          outcome: "rateLimited",
+          mode: "postQuota",
+          reason: "postQuotaRateLimitExceeded",
+          postQuotaRateLimit: {
+            requestsPerMinute: 2,
+            windowDurationSeconds: 60,
+            scope: "apiKeyMeter",
+            retryAfterSeconds: 1,
+          },
+        },
+      }),
+    ),
+    "memory save paused",
+  );
+
+  assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
+  assert.match(notice, /upgrade their mem9 plan and get more included usage/);
+  assert.match(notice, /console\/billing\/plan/);
+  assert.doesNotMatch(notice, /wait 1 second before trying again/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
+});
+
+test("formatRuntimeQuotaNotice renders post-quota claim action when provided", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Post-quota rate limit exceeded.",
+      429,
+      "",
+      runtimeQuotaPayload("Post-quota rate limit exceeded.", {
+        meter: "memory_recall_requests",
+        recommendedAction: {
+          providerActionCode: "claimApiKey",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/claim?key=mem9_test",
+        },
+        quotaGateResult: {
+          outcome: "rateLimited",
+          mode: "postQuota",
+          reason: "postQuotaRateLimitExceeded",
+          postQuotaRateLimit: {
+            requestsPerMinute: 4,
+            windowDurationSeconds: 60,
+            scope: "apiKeyMeter",
+            retryAfterSeconds: 23,
+          },
+        },
+      }),
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /temporary request limit/);
+  assert.match(notice, /sign in or create a mem9 account and claim this API key/);
+  assert.match(notice, /After claiming the key, they can upgrade their plan or set up billing/);
+  assert.match(notice, /console\/claim\?key=mem9_test/);
+  assert.doesNotMatch(notice, /console\/billing\/plan/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/claim\?key=mem9_test/g)?.length,
+    1,
+  );
+});
+
+test("formatRuntimeQuotaNotice renders write meter guidance", () => {
+  const notice = formatRuntimeQuotaNotice(
+    new Mem9HttpError(
+      "Included quota is exhausted.",
+      402,
+      "",
+      runtimeQuotaPayload("Included quota is exhausted.", {
+        meter: "memory_write_requests",
+        recommendedAction: {
+          providerActionCode: "upgradePlan",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
+        },
+      }),
+    ),
+    "recall paused",
+  );
+
+  assert.match(notice, /Mem9 memory saving is temporarily unavailable/);
+  assert.match(notice, /mem9 cannot save new memories right now/);
+  assert.match(notice, /upgrade their mem9 plan and get more included usage/);
+  assert.doesNotMatch(notice, /cannot recall memories/);
+  assert.equal(
+    notice.match(/https:\/\/console\.mem9\.ai\/console\/billing\/plan/g)?.length,
+    1,
+  );
+});
+
 test("before_prompt_build strips OpenClaw metadata wrappers before recall search", async () => {
   const originalFetch = globalThis.fetch;
   const apiUrl = uniqueApiUrl("before-prompt-sanitized-q");
-  let requestedURL = "";
+  let memoryRequestURL = "";
   let requestCount = 0;
 
   globalThis.fetch = async (input, init) => {
-    requestedURL = String(input);
+    const requestURL = String(input);
     requestCount += 1;
     assert.equal(init?.method, "GET");
 
+    if (requestURL.endsWith("/v1alpha2/mem9s/runtime-state")) {
+      return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
+    memoryRequestURL = requestURL;
     return new Response(
       JSON.stringify({
         memories: [
@@ -305,8 +710,8 @@ test("before_prompt_build strips OpenClaw metadata wrappers before recall search
 
     const hookResult = await beforePromptBuild({ prompt }) as { prependContext?: string } | undefined;
 
-    assert.equal(requestCount, 1);
-    const url = new URL(requestedURL);
+    assert.equal(requestCount, 2);
+    const url = new URL(memoryRequestURL);
     assert.equal(url.searchParams.get("q"), "经过了今天的努力，我把mem9的LoCoMo Benchmark从63%提升到了70%+");
     assert.equal(typeof hookResult?.prependContext, "string");
   } finally {
@@ -498,6 +903,118 @@ test("agent_end logs conversation-access diagnostic once when messages are unava
     infoLogs.filter((line) => line.includes("allowConversationAccess=true")).length,
     1,
   );
+});
+
+test("background save quota handling logs a terse status", async () => {
+  const originalFetch = globalThis.fetch;
+  const infoLogs: string[] = [];
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      ...runtimeQuotaPayload("Included quota is exhausted.", {
+        meter: "memory_write_requests",
+        recommendedAction: {
+          providerActionCode: "upgradePlan",
+          type: "openUrl",
+          url: "https://console.mem9.ai/console/billing/plan",
+        },
+      }),
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const api = createStubApi(
+      {
+        apiUrl: uniqueApiUrl("background-quota"),
+        apiKey: "space-background-quota",
+      },
+      { infoLogs },
+    );
+    mnemoPlugin.register(api);
+
+    await api.getHook("before_reset")({
+      messages: [
+        {
+          role: "user",
+          content: "remember this detailed preference before reset",
+        },
+      ],
+    });
+    await api.getHook("agent_end")({
+      success: true,
+      messages: [
+        {
+          role: "user",
+          content: "remember this detailed preference at agent end",
+        },
+        {
+          role: "assistant",
+          content: "saved for later",
+        },
+      ],
+    });
+
+    assert.equal(
+      infoLogs.filter((line) => line === "[mem9] memory saving paused by runtime quota").length,
+      2,
+    );
+    assert.equal(infoLogs.some((line) => line.includes("In your reply")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent_end strips injected status warning before ingest", async () => {
+  const originalFetch = globalThis.fetch;
+  const ingestBodies: Record<string, unknown>[] = [];
+
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input).includes("/v1alpha2/mem9s/memories"), true);
+    assert.equal(init?.method, "POST");
+    ingestBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+    return new Response(JSON.stringify({ status: "accepted" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const api = createStubApi({
+      apiUrl: uniqueApiUrl("agent-end-strip-status-warning"),
+      apiKey: "space-agent-end-strip",
+    });
+    mnemoPlugin.register(api);
+
+    await api.getHook("agent_end")({
+      success: true,
+      sessionId: "session-strip",
+      messages: [
+        {
+          role: "user",
+          content: [
+            "keep this preference",
+            "<mem9-status-warning>",
+            "Mem9 notice for the user: hidden",
+            "</mem9-status-warning>",
+            "<memory-context>",
+            "legacy hidden",
+            "</memory-context>",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    const messages = ingestBodies[0]?.messages as Array<{ content: string }> | undefined;
+    assert.ok(messages);
+    assert.equal(messages?.[0]?.content.includes("keep this preference"), true);
+    assert.equal(messages?.[0]?.content.includes("Mem9 notice for the user"), false);
+    assert.equal(messages?.[0]?.content.includes("legacy hidden"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("first before_prompt_build hook provisions once and unlocks memory access", async () => {

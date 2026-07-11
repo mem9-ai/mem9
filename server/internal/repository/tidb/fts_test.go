@@ -16,6 +16,194 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
+func TestMemoryVectorSearchSelectsSearchColumnsWithoutEmbedding(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	rows := &scriptedRows{
+		columns: append(memorySearchColumns(), "distance"),
+		values: [][]driver.Value{
+			append(memorySearchRow("m-vector-1", "vector match", "agent-1", "session-1", "active", []byte(`[]`), now), float64(0.2)),
+		},
+	}
+	db := newScriptedTestDB(t, []*queryExpectation{{
+		mustContain: []string{
+			"SELECT " + searchColumns + ", VEC_COSINE_DISTANCE(embedding, ?) AS distance",
+			"FROM memories",
+			"WHERE state = 'active' AND agent_id = ? AND embedding IS NOT NULL",
+			"ORDER BY VEC_COSINE_DISTANCE(embedding, ?)",
+			"LIMIT ?",
+		},
+		mustNotContain: []string{allColumns},
+		wantArgs:       []any{"[0.25,0.5]", "agent-1", "[0.25,0.5]", 3},
+		rows:           rows,
+	}})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	results, err := repo.VectorSearch(context.Background(), []float32{0.25, 0.5}, domain.MemoryFilter{AgentID: "agent-1"}, 3)
+	if err != nil {
+		t.Fatalf("VectorSearch: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "m-vector-1" {
+		t.Fatalf("unexpected VectorSearch results: %+v", results)
+	}
+	if len(results[0].Embedding) != 0 {
+		t.Fatalf("VectorSearch hydrated embedding length = %d, want 0", len(results[0].Embedding))
+	}
+	if results[0].Score == nil || *results[0].Score < 0.799 || *results[0].Score > 0.801 {
+		t.Fatalf("VectorSearch score = %v, want about 0.8", results[0].Score)
+	}
+}
+
+func TestMemoryAutoVectorSearchSelectsSearchColumnsWithoutEmbedding(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	rows := &scriptedRows{
+		columns: append(memorySearchColumns(), "distance"),
+		values: [][]driver.Value{
+			append(memorySearchRow("m-auto-1", "auto vector match", "agent-1", "session-1", "active", []byte(`[]`), now), float64(0.15)),
+		},
+	}
+	db := newScriptedTestDB(t, []*queryExpectation{{
+		mustContain: []string{
+			"SELECT " + searchColumns + ", VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS distance",
+			"FROM memories",
+			"WHERE state = 'active' AND agent_id = ? AND embedding IS NOT NULL",
+			"ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)",
+			"LIMIT ?",
+		},
+		mustNotContain: []string{allColumns},
+		wantArgs:       []any{"recall query", "agent-1", "recall query", 2},
+		rows:           rows,
+	}})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "test-auto-model", true, "cluster-1")
+	results, err := repo.AutoVectorSearch(context.Background(), "recall query", domain.MemoryFilter{AgentID: "agent-1"}, 2)
+	if err != nil {
+		t.Fatalf("AutoVectorSearch: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "m-auto-1" {
+		t.Fatalf("unexpected AutoVectorSearch results: %+v", results)
+	}
+	if len(results[0].Embedding) != 0 {
+		t.Fatalf("AutoVectorSearch hydrated embedding length = %d, want 0", len(results[0].Embedding))
+	}
+	if results[0].Score == nil || *results[0].Score < 0.849 || *results[0].Score > 0.851 {
+		t.Fatalf("AutoVectorSearch score = %v, want about 0.85", results[0].Score)
+	}
+}
+
+func TestMemoryListSelectsSearchColumnsWithoutEmbedding(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain:    []string{"SELECT COUNT(*) FROM memories WHERE state = 'active'"},
+			mustNotContain: []string{"embedding"},
+			rows: &scriptedRows{
+				columns: []string{"COUNT(*)"},
+				values:  [][]driver.Value{{int64(1)}},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT " + searchColumns + " FROM memories",
+				"WHERE state = 'active'",
+				"ORDER BY updated_at DESC, id DESC",
+				"LIMIT ? OFFSET ?",
+			},
+			mustNotContain: []string{allColumns},
+			wantArgs:       []any{2, 0},
+			rows: &scriptedRows{
+				columns: memorySearchColumns(),
+				values: [][]driver.Value{
+					memorySearchRow("m-list-1", "list match", "agent-1", "session-1", "active", []byte(`[]`), now),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	results, total, err := repo.List(context.Background(), domain.MemoryFilter{Limit: 2})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 1 || len(results) != 1 || results[0].ID != "m-list-1" {
+		t.Fatalf("unexpected List results: total=%d results=%+v", total, results)
+	}
+	if len(results[0].Embedding) != 0 {
+		t.Fatalf("List hydrated embedding length = %d, want 0", len(results[0].Embedding))
+	}
+}
+
+func TestMemoryListBootstrapSelectsSearchColumnsWithoutEmbedding(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{{
+		mustContain: []string{
+			"SELECT " + searchColumns + " FROM memories",
+			"WHERE state = 'active'",
+			"ORDER BY updated_at DESC",
+			"LIMIT ?",
+		},
+		mustNotContain: []string{allColumns},
+		wantArgs:       []any{3},
+		rows: &scriptedRows{
+			columns: memorySearchColumns(),
+			values: [][]driver.Value{
+				memorySearchRow("m-bootstrap-1", "bootstrap match", "agent-1", "session-1", "active", []byte(`[]`), now),
+			},
+		},
+	}})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	results, err := repo.ListBootstrap(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("ListBootstrap: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "m-bootstrap-1" {
+		t.Fatalf("unexpected ListBootstrap results: %+v", results)
+	}
+	if len(results[0].Embedding) != 0 {
+		t.Fatalf("ListBootstrap hydrated embedding length = %d, want 0", len(results[0].Embedding))
+	}
+}
+
+func TestMemoryGetEmbeddingsByIDSelectsOnlyEmbedding(t *testing.T) {
+	db := newScriptedTestDB(t, []*queryExpectation{{
+		mustContain: []string{
+			"SELECT id, embedding FROM memories",
+			"WHERE id IN (?,?)",
+			"state = 'active'",
+			"embedding IS NOT NULL",
+		},
+		mustNotContain: []string{"content", "metadata", "memory_type"},
+		wantArgs:       []any{"m-1", "m-2"},
+		rows: &scriptedRows{
+			columns: []string{"id", "embedding"},
+			values: [][]driver.Value{
+				{"m-1", []byte("[0.1,0.2]")},
+				{"m-2", []byte("[0.3,0.4]")},
+			},
+		},
+	}})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	embeddings, err := repo.GetEmbeddingsByID(context.Background(), []string{"m-1", "m-2"})
+	if err != nil {
+		t.Fatalf("GetEmbeddingsByID: %v", err)
+	}
+	if len(embeddings) != 2 {
+		t.Fatalf("len(embeddings) = %d, want 2", len(embeddings))
+	}
+	if got := embeddings["m-1"]; len(got) != 2 || got[0] != 0.1 || got[1] != 0.2 {
+		t.Fatalf("embedding m-1 = %v, want [0.1 0.2]", got)
+	}
+	if got := embeddings["m-2"]; len(got) != 2 || got[0] != 0.3 || got[1] != 0.4 {
+		t.Fatalf("embedding m-2 = %v, want [0.3 0.4]", got)
+	}
+}
+
 func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	initialCandidateLimit := 2
@@ -43,16 +231,16 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT " + allColumns + " FROM memories",
+				"SELECT " + searchColumns + " FROM memories",
 				"WHERE id IN (",
 				"AND state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?)",
 			},
 			mustNotContain: []string{"fts_match_word("},
 			wantArgs:       firstPageArgs,
 			rows: &scriptedRows{
-				columns: memoryColumns(),
+				columns: memorySearchColumns(),
 				values: [][]driver.Value{
-					memoryRow("m-page-0-0001", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
+					memorySearchRow("m-page-0-0001", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
 				},
 			},
 		},
@@ -77,17 +265,17 @@ func TestMemoryFTSSearch_PagesPureFTSBeforePostFilter(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT " + allColumns + " FROM memories",
+				"SELECT " + searchColumns + " FROM memories",
 				"WHERE id IN (",
 				"AND state = ? AND agent_id = ? AND JSON_CONTAINS(tags, ?)",
 			},
 			mustNotContain: []string{"fts_match_word("},
 			wantArgs:       secondPageArgs,
 			rows: &scriptedRows{
-				columns: memoryColumns(),
+				columns: memorySearchColumns(),
 				values: [][]driver.Value{
-					memoryRow("m-page-0-0001", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
-					memoryRow("m-page-1-0000", "match two", "agent-1", "session-2", "active", []byte(`["tag-a"]`), now),
+					memorySearchRow("m-page-0-0001", "match one", "agent-1", "session-1", "active", []byte(`["tag-a"]`), now),
+					memorySearchRow("m-page-1-0000", "match two", "agent-1", "session-2", "active", []byte(`["tag-a"]`), now),
 				},
 			},
 		},
@@ -250,17 +438,17 @@ func TestMemoryFTSSearch_StopsAfterRequestedLimitPageWhenFull(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"SELECT " + allColumns + " FROM memories",
+				"SELECT " + searchColumns + " FROM memories",
 				"WHERE id IN (",
 				"AND state = ? AND agent_id = ?",
 			},
 			mustNotContain: []string{"fts_match_word("},
 			wantArgs:       candidateArgs,
 			rows: &scriptedRows{
-				columns: memoryColumns(),
+				columns: memorySearchColumns(),
 				values: [][]driver.Value{
-					memoryRow("m-full-0000", "match one", "agent-1", "session-1", "active", []byte(`[]`), now),
-					memoryRow("m-full-0001", "match two", "agent-1", "session-2", "active", []byte(`[]`), now),
+					memorySearchRow("m-full-0000", "match one", "agent-1", "session-1", "active", []byte(`[]`), now),
+					memorySearchRow("m-full-0001", "match two", "agent-1", "session-2", "active", []byte(`[]`), now),
 				},
 			},
 		},
@@ -357,14 +545,14 @@ func TestMemoryFTSSearch_StopsAtCandidatePageLimit(t *testing.T) {
 		},
 	}, &queryExpectation{
 		mustContain: []string{
-			"SELECT " + allColumns + " FROM memories",
+			"SELECT " + searchColumns + " FROM memories",
 			"WHERE id IN (",
 			"AND state = ?",
 		},
 		mustNotContain: []string{"fts_match_word("},
 		wantArgs:       append(initialCandidateArgs, "active"),
 		rows: &scriptedRows{
-			columns: memoryColumns(),
+			columns: memorySearchColumns(),
 		},
 	})
 	for page := 0; page < maxFTSFallbackPages; page++ {
@@ -390,14 +578,14 @@ func TestMemoryFTSSearch_StopsAtCandidatePageLimit(t *testing.T) {
 			},
 		}, &queryExpectation{
 			mustContain: []string{
-				"SELECT " + allColumns + " FROM memories",
+				"SELECT " + searchColumns + " FROM memories",
 				"WHERE id IN (",
 				"AND state = ?",
 			},
 			mustNotContain: []string{"fts_match_word("},
 			wantArgs:       postFilterArgs,
 			rows: &scriptedRows{
-				columns: memoryColumns(),
+				columns: memorySearchColumns(),
 			},
 		})
 	}
@@ -689,21 +877,20 @@ func ftsCandidateArgs(prefix string, count int) []any {
 	return args
 }
 
-func memoryColumns() []string {
+func memorySearchColumns() []string {
 	return []string{
-		"id", "content", "source", "tags", "metadata", "embedding", "memory_type", "agent_id",
+		"id", "content", "source", "tags", "metadata", "memory_type", "agent_id",
 		"session_id", "app_id", "state", "version", "updated_by", "created_at", "updated_at", "superseded_by",
 	}
 }
 
-func memoryRow(id, content, agentID, sessionID, state string, tags []byte, ts time.Time) []driver.Value {
+func memorySearchRow(id, content, agentID, sessionID, state string, tags []byte, ts time.Time) []driver.Value {
 	return []driver.Value{
 		id,
 		content,
 		"chat",
 		tags,
 		[]byte(`{"k":"v"}`),
-		nil,
 		string(domain.TypeInsight),
 		agentID,
 		sessionID,

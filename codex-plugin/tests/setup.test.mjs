@@ -25,6 +25,7 @@ import {
   renderHooksTemplate,
   runSetup,
 } from "../skills/setup/scripts/setup.mjs";
+import { MEM9_PLUGIN_USER_AGENT } from "../lib/http.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
 function writeJson(filePath, value) {
@@ -795,7 +796,7 @@ test("profile create provisions an API key without printing it", async () => {
     mkdirSync(codexHome, { recursive: true });
     mkdirSync(mem9Home, { recursive: true });
 
-    /** @type {Array<{url: string, method: string}>} */
+    /** @type {Array<{url: string, method: string, userAgent: string}>} */
     const fetchCalls = [];
 
     const result = await runSetup(
@@ -819,6 +820,7 @@ test("profile create provisions an API key without printing it", async () => {
           fetchCalls.push({
             url: String(url),
             method: String(init?.method ?? "GET"),
+            userAgent: String(init?.headers?.["User-Agent"] ?? ""),
           });
 
           return {
@@ -845,6 +847,7 @@ test("profile create provisions an API key without printing it", async () => {
       {
         url: "https://api.mem9.ai/v1alpha1/mem9s",
         method: "POST",
+        userAgent: MEM9_PLUGIN_USER_AGENT,
       },
     ]);
     assert.equal(

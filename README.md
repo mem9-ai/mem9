@@ -267,6 +267,8 @@ The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations ar
 | `MNEMO_TIDBCLOUD_POOL_ID` | No | `2` | TiDB Cloud Pool ID used for cluster takeover |
 | `MNEMO_TIDBCLOUD_API_KEY` | No | — | TiDB Cloud Pool API key. Used only when `MNEMO_TIDB_ZERO_ENABLED=false`, `MNEMO_DB_BACKEND=tidb`, and pool takeover is desired |
 | `MNEMO_TIDBCLOUD_API_SECRET` | No | — | TiDB Cloud Pool API secret for digest auth. Same conditions as `MNEMO_TIDBCLOUD_API_KEY` |
+| `MNEMO_TIDBCLOUD_PREFER_PRIVATELINK` | No | `false` | Prefer the TiDB Cloud private endpoint during Pool provisioning when its AWS PrivateLink service name is configured below |
+| `MNEMO_TIDBCLOUD_PRIVATELINK_SERVICE_NAMES` | No | — | Comma-separated AWS PrivateLink service names that this mem9-server can reach. Provisioning falls back to the public endpoint when the returned service name is absent |
 | `MNEMO_TENANT_POOL_MAX_IDLE` | No | `5` | Max idle tenant database connections kept in the in-process tenant pool |
 | `MNEMO_TENANT_POOL_MAX_OPEN` | No | `10` | Max open connections per tenant database handle |
 | `MNEMO_TENANT_POOL_CONNECT_TIMEOUT` | No | `3s` | Timeout for tenant pool cold-connect ping/open attempts |
@@ -309,6 +311,7 @@ The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MNEMO_RUNTIME_USAGE_ENABLED` | No | `false` | Enable runtime usage quota gating and console metering for memory recall/write operations |
+| `MNEMO_RUNTIME_USAGE_PROVIDER_ID` | No | — | Runtime usage provider discriminator returned in runtime-state responses. Mem9 official hosted deployments set `mem9-official`; self-hosted deployments usually leave this empty or use their own provider id. Upstream object-shaped `providerData` is returned independently and interpreted by consumers that recognize the provider id |
 | `MNEMO_RUNTIME_USAGE_BASE_URL` | Yes when enabled | — | Runtime usage service base URL. Must be `http` or `https`; query and fragment are rejected |
 | `MNEMO_RUNTIME_USAGE_INTERNAL_SECRET` | Yes when enabled | — | Bearer token for internal runtime usage service calls |
 | `MNEMO_RUNTIME_USAGE_TIMEOUT` | No | `3s` | Timeout for quota reservation and finalization requests |
@@ -317,6 +320,10 @@ The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for
 | `MNEMO_RUNTIME_USAGE_OPERATION_TTL` | No | `30m` | Parsed into server config, but currently not used to expire runtime usage outbox rows; changing it does not alter outbox lifetimes |
 | `MNEMO_RUNTIME_USAGE_FAIL_OPEN` | No | `false` | Allow operations when quota reservation fails with a retryable runtime usage service error. Quota denials and operation conflicts still fail closed |
 | `MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED` | No | same as `MNEMO_RUNTIME_USAGE_ENABLED` | Persist pending reservation and metering steps for retry. If explicitly set to `false` while runtime usage is enabled, `MNEMO_RUNTIME_USAGE_FAIL_OPEN` must be `true` |
+| `MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT` | No | `1s` | Timeout for best-effort runtime-state lookups used only by success response notices |
+| `MNEMO_RUNTIME_USAGE_NOTICE_CACHE_ENABLED` | No | `true` | Enable API-key-scoped caching for success response runtime-state notices |
+| `MNEMO_RUNTIME_USAGE_NOTICE_CACHE_TTL` | No | `30s` | Fresh TTL for success response runtime-state notice cache entries |
+| `MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL` | No | `2m` | Maximum stale-cache age used for success notices when the state provider is unavailable |
 
 #### Security And Debugging
 

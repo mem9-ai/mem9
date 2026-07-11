@@ -29,6 +29,10 @@ if mem9_load_auth 2>/dev/null; then
   mem9_debug "SessionStart" "auth_ready" \
     "source" "${SESSION_SOURCE}" \
     "auth_source" "${MEM9_AUTH_SOURCE:-unknown}"
+  runtime_state_notice="$(mem9_runtime_state_notice "SessionStart")"
+  if [[ -n "${runtime_state_notice}" ]]; then
+    mem9_emit_context "SessionStart" "${runtime_state_notice}"
+  fi
   exit 0
 else
   load_auth_status=$?
@@ -63,8 +67,16 @@ if ! mem9_write_auth "${api_key}"; then
   exit 0
 fi
 
+MEM9_API_KEY="${api_key}"
+MEM9_AUTH_SOURCE="auto_provisioned"
+export MEM9_API_KEY MEM9_AUTH_SOURCE
 mem9_write_session_env "${api_key}" || true
 mem9_debug "SessionStart" "initialized" \
   "source" "${SESSION_SOURCE}" \
   "auth_source" "auto_provisioned"
-mem9_emit_context "SessionStart" "[mem9] Initialized automatically."
+runtime_state_notice="$(mem9_runtime_state_notice "SessionStart")"
+if [[ -n "${runtime_state_notice}" ]]; then
+  mem9_emit_context "SessionStart" "[mem9] Initialized automatically. ${runtime_state_notice}"
+else
+  mem9_emit_context "SessionStart" "[mem9] Initialized automatically."
+fi

@@ -1,0 +1,106 @@
+---
+import { DEFAULT_LOCALE, siteCopy } from "../content/site";
+
+const pageTools = siteCopy[DEFAULT_LOCALE].pageTools;
+---
+
+<div class="page-markdown-action" data-page-markdown-action data-markdown-exclude>
+  <button
+    type="button"
+    class="page-markdown-copy"
+    data-page-markdown-copy
+    aria-label={pageTools.copyMarkdown}
+    title={pageTools.copyMarkdown}
+    data-i18n-attr="aria-label:pageTools.copyMarkdown;title:pageTools.copyMarkdown">
+    <svg class="page-markdown-icon page-markdown-icon-copy" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M7.5 5.5h7a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 6 15V7a1.5 1.5 0 0 1 1.5-1.5Z"
+      ></path>
+      <path d="M13.5 5.5V5A1.5 1.5 0 0 0 12 3.5H5A1.5 1.5 0 0 0 3.5 5v8A1.5 1.5 0 0 0 5 14.5h1"></path>
+    </svg>
+    <svg class="page-markdown-icon page-markdown-icon-check" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m4.5 10.5 3.25 3.25 7.75-8"></path>
+    </svg>
+    <span data-page-markdown-label data-i18n="pageTools.copyMarkdown" aria-live="polite">
+      {pageTools.copyMarkdown}
+    </span>
+  </button>
+</div>
+
+<style>
+  .page-markdown-action {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    margin-top: 1rem;
+  }
+
+  .page-markdown-action[hidden] {
+    display: none;
+  }
+
+  .page-markdown-copy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.35rem;
+    padding: 0.5rem 0.72rem;
+    border: 1px solid var(--border);
+    border-radius: 0.55rem;
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 650;
+    cursor: pointer;
+    transition:
+      border-color 0.16s ease,
+      color 0.16s ease,
+      background-color 0.16s ease;
+  }
+
+  .page-markdown-copy:hover,
+  .page-markdown-copy:focus-visible {
+    border-color: var(--border-strong);
+    background: var(--button-active-bg);
+    color: var(--text);
+  }
+
+  .page-markdown-copy[aria-busy="true"] {
+    cursor: progress;
+    opacity: 0.7;
+  }
+
+  .page-markdown-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.5;
+  }
+
+  .page-markdown-icon-check {
+    display: none;
+  }
+
+  .page-markdown-copy.is-copied .page-markdown-icon-copy {
+    display: none;
+  }
+
+  .page-markdown-copy.is-copied .page-markdown-icon-check {
+    display: block;
+  }
+
+  .page-markdown-copy.is-error {
+    border-color: color-mix(in srgb, #d33 55%, var(--border));
+    color: #b42318;
+  }
+
+  :global(html[data-theme="dark"]) .page-markdown-copy.is-error {
+    border-color: color-mix(in srgb, #ff8a80 60%, var(--border));
+    color: #ff8a80;
+  }
+</style>

@@ -320,8 +320,8 @@ func TestList(t *testing.T) {
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
-		if total != 2 {
-			t.Fatalf("total mismatch: got %d want 2", total)
+		if total != 3 {
+			t.Fatalf("total mismatch: got %d want 3", total)
 		}
 		for _, m := range result {
 			if m.MemoryType != domain.TypeInsight {
@@ -501,7 +501,10 @@ func TestKeywordSearch(t *testing.T) {
 		"Python is used for data analysis scripts",
 	}
 	for _, c := range contents {
-		m := newTestMemory(func(m *domain.Memory) { m.Content = c })
+		m := newTestMemory(func(m *domain.Memory) {
+			m.Content = c
+			m.MemoryType = domain.TypeInsight
+		})
 		if err := repo.Create(ctx, m); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
@@ -558,8 +561,11 @@ func TestListBootstrap(t *testing.T) {
 		if err := repo.Create(ctx, m); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
+		updatedAt := time.Date(2026, 1, 1, 0, 0, i, 0, time.UTC)
+		if _, err := testDB.ExecContext(ctx, "UPDATE memories SET updated_at = ? WHERE id = ?", updatedAt, m.ID); err != nil {
+			t.Fatalf("set deterministic updated_at: %v", err)
+		}
 		ids = append(ids, m.ID)
-		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Bootstrap with limit=3 — should get the 3 most recent.

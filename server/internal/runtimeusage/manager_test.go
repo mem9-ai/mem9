@@ -2,21 +2,51 @@ package runtimeusage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/metering"
 )
 
 type fakeQuotaClient struct {
+	mu               sync.Mutex
 	reserveOps       []Operation
 	finalized        []string
 	finalizeSubjects []Subject
+	state            RuntimeState
+	stateSubjects    []Subject
 	err              error
+	stateErr         error
+	stateDelay       time.Duration
 	reserveErr       error
 	finalizeErr      error
 }
 
+func (c *fakeQuotaClient) RuntimeState(_ context.Context, subject Subject) (RuntimeState, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.stateSubjects = append(c.stateSubjects, subject)
+	if c.stateErr != nil {
+		return RuntimeState{}, c.stateErr
+	}
+	if c.err != nil {
+		return RuntimeState{}, c.err
+	}
+	if c.stateDelay > 0 {
+		time.Sleep(c.stateDelay)
+	}
+	return c.state, nil
+}
+
 func (c *fakeQuotaClient) Reserve(_ context.Context, _ Subject, operationID string, op Operation) (*Reservation, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.reserveErr != nil {
 		return nil, c.reserveErr
 	}
@@ -28,6 +58,8 @@ func (c *fakeQuotaClient) Reserve(_ context.Context, _ Subject, operationID stri
 }
 
 func (c *fakeQuotaClient) FinalizeReservation(_ context.Context, subject Subject, operationID string, status string, reason string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.finalizeErr != nil {
 		return c.finalizeErr
 	}
@@ -85,6 +117,563 @@ func (s *fakeOutboxStore) MarkOperationRetryableFailure(_ context.Context, _ str
 func (s *fakeOutboxStore) MarkUnknownAfterCrash(context.Context, string, string) error {
 	s.unknown++
 	return nil
+}
+
+func TestNoopManagerRuntimeStateReturnsDisabledFallback(t *testing.T) {
+	quota := &fakeQuotaClient{}
+	manager := NewManager(Config{Enabled: false}, quota, nil, nil)
+
+	state, err := manager.RuntimeState(context.Background(), Subject{APIKeySubject: "mem9_test"})
+	if err != nil {
+		t.Fatalf("RuntimeState: %v", err)
+	}
+	assertFallbackMeter(t, state, MeterMemoryRecallRequests, RuntimeBudgetTypeNotMetered, RuntimeBudgetStateUnlimited)
+	assertFallbackMeter(t, state, MeterMemoryWriteRequests, RuntimeBudgetTypeNotMetered, RuntimeBudgetStateUnlimited)
+
+	lease, err := manager.BeforeRecall(context.Background(), Subject{APIKeySubject: "mem9_test"})
+	if err != nil {
+		t.Fatalf("BeforeRecall: %v", err)
+	}
+	if lease != nil {
+		t.Fatalf("BeforeRecall lease = %+v, want nil", lease)
+	}
+	if len(quota.stateSubjects) != 0 || len(quota.reserveOps) != 0 || len(quota.finalized) != 0 {
+		t.Fatalf("disabled manager called provider: %+v", quota)
+	}
+}
+
+func TestManagerRuntimeStateUsesProvider(t *testing.T) {
+	quota := &fakeQuotaClient{state: RuntimeState{
+		Mem9APIKey:   RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusUnknown},
+		ProviderData: json.RawMessage(`{"bindingState":"claimed"}`),
+		Meters: []RuntimeStateMeter{{
+			Meter: MeterMemoryRecallRequests,
+			Budgets: []RuntimeStatusBudget{{
+				Type:  RuntimeBudgetTypeNotMetered,
+				State: RuntimeBudgetStateUnlimited,
+				Measure: RuntimeStatusMeasure{
+					Kind:     RuntimeMeasureKindCount,
+					Quantity: "request",
+					Scale:    1,
+				},
+				Period:   RuntimeStatusPeriod{Type: RuntimePeriodTypeNone},
+				Capacity: RuntimeStatusCapacity{Type: RuntimeCapacityTypeUnlimited},
+			}},
+		}},
+	}}
+	manager := NewManager(Config{Enabled: true, ProviderID: "mem9-official"}, quota, nil, nil)
+	subject := Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "mem9_test", APIKeyStatus: RuntimeAPIKeyStatusActive}
+
+	state, err := manager.RuntimeState(context.Background(), subject)
+	if err != nil {
+		t.Fatalf("RuntimeState: %v", err)
+	}
+	if len(quota.stateSubjects) != 1 || quota.stateSubjects[0] != subject {
+		t.Fatalf("state subjects = %+v, want [%+v]", quota.stateSubjects, subject)
+	}
+	if state.Mem9APIKey.Status != RuntimeAPIKeyStatusActive {
+		t.Fatalf("status = %q, want local active status", state.Mem9APIKey.Status)
+	}
+	if state.ProviderID != "mem9-official" {
+		t.Fatalf("ProviderID = %q, want mem9-official", state.ProviderID)
+	}
+	assertFallbackMeter(t, state, MeterMemoryRecallRequests, RuntimeBudgetTypeNotMetered, RuntimeBudgetStateUnlimited)
+}
+
+func TestManagerRuntimeStateKeepsProviderDataWithoutConfiguredProvider(t *testing.T) {
+	quota := &fakeQuotaClient{state: RuntimeState{
+		Mem9APIKey:   RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusUnknown},
+		ProviderID:   "mem9-official",
+		ProviderData: json.RawMessage(`{"bindingState":"claimed"}`),
+		RecommendedAction: &RuntimeRecommendedAction{
+			Type:               "openUrl",
+			ProviderActionCode: "upgradePlan",
+			Severity:           "warning",
+			URL:                "https://example.com/provider/billing/plan",
+		},
+		Meters: []RuntimeStateMeter{{
+			Meter: MeterMemoryRecallRequests,
+			Budgets: []RuntimeStatusBudget{{
+				Type:     RuntimeBudgetTypeNotMetered,
+				State:    RuntimeBudgetStateUnlimited,
+				Measure:  RuntimeStatusMeasure{Kind: RuntimeMeasureKindCount, Quantity: "request", Scale: 1},
+				Period:   RuntimeStatusPeriod{Type: RuntimePeriodTypeNone},
+				Capacity: RuntimeStatusCapacity{Type: RuntimeCapacityTypeUnlimited},
+			}},
+		}},
+	}}
+	manager := NewManager(Config{Enabled: true}, quota, nil, nil)
+
+	state, err := manager.RuntimeState(context.Background(), Subject{APIKeySubject: "mem9_test"})
+	if err != nil {
+		t.Fatalf("RuntimeState: %v", err)
+	}
+	if state.ProviderID != "" {
+		t.Fatalf("ProviderID = %q, want empty when provider is not configured", state.ProviderID)
+	}
+	if string(state.ProviderData) != `{"bindingState":"claimed"}` {
+		t.Fatalf("ProviderData = %s, want upstream provider data when provider is not configured", state.ProviderData)
+	}
+	if state.RecommendedAction == nil || state.RecommendedAction.ProviderActionCode != "upgradePlan" {
+		t.Fatalf("RecommendedAction = %+v, want preserved when provider is not configured", state.RecommendedAction)
+	}
+}
+
+func TestManagerRuntimeStateFallsBackWhenProviderUnavailable(t *testing.T) {
+	quota := &fakeQuotaClient{stateErr: &UnavailableError{Err: errString("timeout")}}
+	manager := NewManager(Config{Enabled: true}, quota, nil, nil)
+
+	state, err := manager.RuntimeState(context.Background(), Subject{TenantID: "tenant-a", APIKeySubject: "mem9_test", APIKeyStatus: RuntimeAPIKeyStatusInactive})
+	if err != nil {
+		t.Fatalf("RuntimeState: %v", err)
+	}
+	if state.Mem9APIKey.Status != RuntimeAPIKeyStatusInactive {
+		t.Fatalf("status = %q, want inactive", state.Mem9APIKey.Status)
+	}
+	assertFallbackMeter(t, state, MeterMemoryRecallRequests, RuntimeBudgetTypeProviderManaged, RuntimeBudgetStateProviderManaged)
+	assertFallbackMeter(t, state, MeterMemoryWriteRequests, RuntimeBudgetTypeProviderManaged, RuntimeBudgetStateProviderManaged)
+}
+
+func TestNoticeStateCacheKeyUsesKeyedDigest(t *testing.T) {
+	cache := &noticeStateCache{key: []byte("fixed-test-hmac-key")}
+	got := cache.cacheKey("raw-api-key")
+	again := cache.cacheKey("raw-api-key")
+	other := cache.cacheKey("other-api-key")
+	plain := sha256.Sum256([]byte("raw-api-key"))
+
+	if got != again {
+		t.Fatalf("cacheKey not deterministic: %q != %q", got, again)
+	}
+	if got == other {
+		t.Fatalf("cacheKey should differ for different subjects")
+	}
+	if len(got) != sha256.Size*2 {
+		t.Fatalf("cacheKey length = %d, want %d", len(got), sha256.Size*2)
+	}
+	if strings.Contains(got, "raw-api-key") {
+		t.Fatalf("cacheKey contains raw subject: %q", got)
+	}
+	if got == hex.EncodeToString(plain[:]) {
+		t.Fatalf("cacheKey equals plain sha256(subject); want keyed digest")
+	}
+}
+
+func TestManagerRuntimeStateForNoticeCachesByDigestKey(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil).(*manager)
+
+	subject := Subject{APIKeySubject: "raw-api-key"}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err != nil {
+		t.Fatalf("RuntimeStateForNotice first: %v", err)
+	}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err != nil {
+		t.Fatalf("RuntimeStateForNotice second: %v", err)
+	}
+	if len(quota.stateSubjects) != 1 {
+		t.Fatalf("runtime state calls = %d, want 1", len(quota.stateSubjects))
+	}
+	for key := range manager.noticeState.entries {
+		if strings.Contains(key, "raw-api-key") {
+			t.Fatalf("cache key contains raw subject: %q", key)
+		}
+	}
+}
+
+func TestManagerRuntimeStateForNoticeSeparatesSubjects(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil)
+
+	if _, err := manager.RuntimeStateForNotice(context.Background(), Subject{APIKeySubject: "key-a"}); err != nil {
+		t.Fatalf("key-a: %v", err)
+	}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), Subject{APIKeySubject: "key-b"}); err != nil {
+		t.Fatalf("key-b: %v", err)
+	}
+	if len(quota.stateSubjects) != 2 {
+		t.Fatalf("runtime state calls = %d, want 2", len(quota.stateSubjects))
+	}
+}
+
+func TestManagerRuntimeStateForNoticeSkipsCacheWithoutSubject(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil).(*manager)
+
+	if _, err := manager.RuntimeStateForNotice(context.Background(), Subject{}); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), Subject{}); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if len(quota.stateSubjects) != 2 {
+		t.Fatalf("runtime state calls = %d, want 2", len(quota.stateSubjects))
+	}
+	if len(manager.noticeState.entries) != 0 {
+		t.Fatalf("entries = %+v, want no cache entries", manager.noticeState.entries)
+	}
+}
+
+func TestManagerRuntimeStateForNoticeSingleflightCoalescesMisses(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82), stateDelay: 10 * time.Millisecond}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 20)
+	for range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := manager.RuntimeStateForNotice(context.Background(), Subject{APIKeySubject: "key-a"})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("RuntimeStateForNotice error: %v", err)
+		}
+	}
+	if len(quota.stateSubjects) != 1 {
+		t.Fatalf("runtime state calls = %d, want 1", len(quota.stateSubjects))
+	}
+}
+
+func TestManagerRuntimeStateForNoticeUsesStaleOnProviderError(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil).(*manager)
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	manager.noticeState.now = func() time.Time { return now }
+
+	subject := Subject{APIKeySubject: "key-a"}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err != nil {
+		t.Fatalf("prime: %v", err)
+	}
+	quota.stateErr = errors.New("provider down")
+	now = now.Add(45 * time.Second)
+	state, err := manager.RuntimeStateForNotice(context.Background(), subject)
+	if err != nil {
+		t.Fatalf("stale: %v", err)
+	}
+	if got := *state.Meters[0].Budgets[0].Usage.Percent; got != 82 {
+		t.Fatalf("percent = %v, want 82", got)
+	}
+}
+
+func TestManagerRuntimeStateForNoticeExpiresStaleEntries(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil).(*manager)
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	manager.noticeState.now = func() time.Time { return now }
+
+	subject := Subject{APIKeySubject: "key-a"}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err != nil {
+		t.Fatalf("prime: %v", err)
+	}
+	quota.stateErr = errors.New("provider down")
+	now = now.Add(3 * time.Minute)
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err == nil {
+		t.Fatal("RuntimeStateForNotice error = nil, want provider error after stale TTL")
+	}
+	if len(manager.noticeState.entries) != 0 {
+		t.Fatalf("entries = %+v, want expired entry pruned", manager.noticeState.entries)
+	}
+}
+
+func TestManagerRuntimeStateForNoticeRevalidatesExpiredFreshEntry(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil).(*manager)
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	manager.noticeState.now = func() time.Time { return now }
+
+	subject := Subject{APIKeySubject: "key-a"}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err != nil {
+		t.Fatalf("prime: %v", err)
+	}
+	quota.state = runtimeNoticeStateWithPercent(91)
+	now = now.Add(45 * time.Second)
+	state, err := manager.RuntimeStateForNotice(context.Background(), subject)
+	if err != nil {
+		t.Fatalf("revalidate: %v", err)
+	}
+	if got := *state.Meters[0].Budgets[0].Usage.Percent; got != 91 {
+		t.Fatalf("percent = %v, want 91", got)
+	}
+	if len(quota.stateSubjects) != 2 {
+		t.Fatalf("runtime state calls = %d, want 2", len(quota.stateSubjects))
+	}
+	state, err = manager.RuntimeStateForNotice(context.Background(), subject)
+	if err != nil {
+		t.Fatalf("cached revalidated state: %v", err)
+	}
+	if got := *state.Meters[0].Budgets[0].Usage.Percent; got != 91 {
+		t.Fatalf("cached percent = %v, want 91", got)
+	}
+	if len(quota.stateSubjects) != 2 {
+		t.Fatalf("runtime state calls after cache hit = %d, want 2", len(quota.stateSubjects))
+	}
+}
+
+func TestManagerRuntimeStateForNoticeRejectsInvalidProviderData(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	quota.state.ProviderData = json.RawMessage(`["unexpected"]`)
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil).(*manager)
+
+	subject := Subject{APIKeySubject: "key-a"}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err == nil {
+		t.Fatal("RuntimeStateForNotice error = nil, want provider data error")
+	}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err == nil {
+		t.Fatal("RuntimeStateForNotice second error = nil, want provider data error")
+	}
+	if len(quota.stateSubjects) != 2 {
+		t.Fatalf("runtime state calls = %d, want 2 because invalid state is not cached", len(quota.stateSubjects))
+	}
+	if len(manager.noticeState.entries) != 0 {
+		t.Fatalf("entries = %+v, want no cache entry", manager.noticeState.entries)
+	}
+}
+
+func TestManagerRuntimeStateForNoticeDeepClonesCachedState(t *testing.T) {
+	startAt := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+	endAt := startAt.Add(time.Hour)
+	capacity := int64(100)
+	used := int64(18)
+	remaining := int64(82)
+	percent := float64(82)
+	quota := &fakeQuotaClient{state: RuntimeState{
+		Mem9APIKey:   RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusUnknown},
+		ProviderData: json.RawMessage(`{"bindingState":"claimed"}`),
+		RecommendedAction: &RuntimeRecommendedAction{
+			Type:               "provider",
+			ProviderActionCode: "upgradePlan",
+			Severity:           "warning",
+			URL:                "https://console.example.com",
+		},
+		Meters: []RuntimeStateMeter{{
+			Meter: MeterMemoryRecallRequests,
+			QuotaGateResult: map[string]any{
+				"outcome": "allowed",
+				"mode":    "included",
+				"details": map[string]any{"bucket": "included"},
+			},
+			Budgets: []RuntimeStatusBudget{{
+				Type:     RuntimeBudgetTypeProviderManaged,
+				State:    RuntimeBudgetStateProviderManaged,
+				Measure:  RuntimeStatusMeasure{Kind: RuntimeMeasureKindCount, Quantity: "request", Scale: 1},
+				Period:   RuntimeStatusPeriod{Type: "fixed", StartAt: &startAt, EndAt: &endAt},
+				Capacity: RuntimeStatusCapacity{Type: "fixed", Value: &capacity},
+				Usage:    &RuntimeStatusUsage{Used: &used, Remaining: &remaining, Percent: &percent},
+			}},
+		}},
+	}}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil)
+
+	first, err := manager.RuntimeStateForNotice(context.Background(), Subject{APIKeySubject: "key-a"})
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	first.ProviderData[0] = '['
+	first.RecommendedAction.Type = "mutated"
+	first.Meters[0].Meter = "mutated"
+	first.Meters[0].QuotaGateResult["outcome"] = "mutated"
+	first.Meters[0].QuotaGateResult["details"].(map[string]any)["bucket"] = "mutated"
+	first.Meters[0].Budgets[0].Type = "mutated"
+	*first.Meters[0].Budgets[0].Period.StartAt = startAt.Add(24 * time.Hour)
+	*first.Meters[0].Budgets[0].Period.EndAt = endAt.Add(24 * time.Hour)
+	*first.Meters[0].Budgets[0].Capacity.Value = 999
+	*first.Meters[0].Budgets[0].Usage.Used = 999
+	*first.Meters[0].Budgets[0].Usage.Remaining = 999
+	*first.Meters[0].Budgets[0].Usage.Percent = 1
+
+	second, err := manager.RuntimeStateForNotice(context.Background(), Subject{APIKeySubject: "key-a"})
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if string(second.ProviderData) != `{"bindingState":"claimed"}` {
+		t.Fatalf("ProviderData = %s, want original", second.ProviderData)
+	}
+	if second.RecommendedAction.Type != "provider" {
+		t.Fatalf("RecommendedAction.Type = %q, want provider", second.RecommendedAction.Type)
+	}
+	if second.Meters[0].Meter != MeterMemoryRecallRequests {
+		t.Fatalf("Meter = %q, want recall meter", second.Meters[0].Meter)
+	}
+	if second.Meters[0].QuotaGateResult["outcome"] != "allowed" {
+		t.Fatalf("quota outcome = %v, want allowed", second.Meters[0].QuotaGateResult["outcome"])
+	}
+	if second.Meters[0].QuotaGateResult["details"].(map[string]any)["bucket"] != "included" {
+		t.Fatalf("quota details = %v, want included", second.Meters[0].QuotaGateResult["details"])
+	}
+	if second.Meters[0].Budgets[0].Type != RuntimeBudgetTypeProviderManaged {
+		t.Fatalf("Budget.Type = %q, want provider managed", second.Meters[0].Budgets[0].Type)
+	}
+	if !second.Meters[0].Budgets[0].Period.StartAt.Equal(startAt) || !second.Meters[0].Budgets[0].Period.EndAt.Equal(endAt) {
+		t.Fatalf("period mutated: %+v", second.Meters[0].Budgets[0].Period)
+	}
+	if got := *second.Meters[0].Budgets[0].Capacity.Value; got != 100 {
+		t.Fatalf("capacity = %d, want 100", got)
+	}
+	if got := *second.Meters[0].Budgets[0].Usage.Used; got != 18 {
+		t.Fatalf("used = %d, want 18", got)
+	}
+	if got := *second.Meters[0].Budgets[0].Usage.Remaining; got != 82 {
+		t.Fatalf("remaining = %d, want 82", got)
+	}
+	if got := *second.Meters[0].Budgets[0].Usage.Percent; got != 82 {
+		t.Fatalf("percent = %v, want 82", got)
+	}
+}
+
+func TestManagerRuntimeStateForNoticeStatusOverlayDoesNotMutateCache(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: true,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil)
+
+	active, err := manager.RuntimeStateForNotice(context.Background(), Subject{APIKeySubject: "key-a", APIKeyStatus: RuntimeAPIKeyStatusActive})
+	if err != nil {
+		t.Fatalf("active: %v", err)
+	}
+	inactive, err := manager.RuntimeStateForNotice(context.Background(), Subject{APIKeySubject: "key-a", APIKeyStatus: RuntimeAPIKeyStatusInactive})
+	if err != nil {
+		t.Fatalf("inactive: %v", err)
+	}
+	unknown, err := manager.RuntimeStateForNotice(context.Background(), Subject{APIKeySubject: "key-a"})
+	if err != nil {
+		t.Fatalf("unknown: %v", err)
+	}
+	if active.Mem9APIKey.Status != RuntimeAPIKeyStatusActive {
+		t.Fatalf("active status = %q", active.Mem9APIKey.Status)
+	}
+	if inactive.Mem9APIKey.Status != RuntimeAPIKeyStatusInactive {
+		t.Fatalf("inactive status = %q", inactive.Mem9APIKey.Status)
+	}
+	if unknown.Mem9APIKey.Status != RuntimeAPIKeyStatusUnknown {
+		t.Fatalf("cached status = %q, want provider unknown", unknown.Mem9APIKey.Status)
+	}
+	if len(quota.stateSubjects) != 1 {
+		t.Fatalf("runtime state calls = %d, want 1", len(quota.stateSubjects))
+	}
+}
+
+func TestManagerRuntimeStateForNoticeCacheDisabledFetchesEachRequest(t *testing.T) {
+	quota := &fakeQuotaClient{state: runtimeNoticeStateWithPercent(82)}
+	manager := NewManager(Config{
+		Enabled:            true,
+		ProviderID:         "mem9-official",
+		InternalSecret:     "secret-value",
+		NoticeTimeout:      time.Second,
+		NoticeCacheEnabled: false,
+		NoticeCacheTTL:     30 * time.Second,
+		NoticeStaleTTL:     2 * time.Minute,
+	}, quota, nil, nil)
+
+	subject := Subject{APIKeySubject: "key-a"}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if _, err := manager.RuntimeStateForNotice(context.Background(), subject); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if len(quota.stateSubjects) != 2 {
+		t.Fatalf("runtime state calls = %d, want 2", len(quota.stateSubjects))
+	}
+}
+
+func runtimeNoticeStateWithPercent(percent float64) RuntimeState {
+	return RuntimeState{
+		Mem9APIKey: RuntimeStateAPIKey{Status: RuntimeAPIKeyStatusUnknown},
+		Meters: []RuntimeStateMeter{{
+			Meter: MeterMemoryRecallRequests,
+			Budgets: []RuntimeStatusBudget{{
+				Type:     RuntimeBudgetTypeProviderManaged,
+				State:    RuntimeBudgetStateProviderManaged,
+				Measure:  RuntimeStatusMeasure{Kind: RuntimeMeasureKindCount, Quantity: "request", Scale: 1},
+				Period:   RuntimeStatusPeriod{Type: RuntimePeriodTypeProviderManaged},
+				Capacity: RuntimeStatusCapacity{Type: RuntimeCapacityTypeProviderManaged},
+				Usage:    &RuntimeStatusUsage{Percent: &percent},
+			}},
+		}},
+		ProviderData: json.RawMessage(`{"bindingState":"claimed"}`),
+	}
 }
 
 func TestManagerRecallCommitsBeforeMetering(t *testing.T) {
@@ -445,4 +1034,22 @@ func TestManagerReleaseUsesConsoleSpecReason(t *testing.T) {
 	if len(outbox.retryReasons) != 1 || outbox.retryReasons[0] != "recallFailed: context deadline exceeded" {
 		t.Fatalf("retry reasons = %+v, want local failure detail", outbox.retryReasons)
 	}
+}
+
+func assertFallbackMeter(t *testing.T, state RuntimeState, meter string, budgetType string, budgetState string) {
+	t.Helper()
+	for _, item := range state.Meters {
+		if item.Meter != meter {
+			continue
+		}
+		if len(item.Budgets) != 1 {
+			t.Fatalf("%s budgets = %+v, want one", meter, item.Budgets)
+		}
+		got := item.Budgets[0]
+		if got.Type != budgetType || got.State != budgetState {
+			t.Fatalf("%s budget = %+v, want type=%s state=%s", meter, got, budgetType, budgetState)
+		}
+		return
+	}
+	t.Fatalf("meter %s missing from %+v", meter, state.Meters)
 }

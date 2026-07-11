@@ -6,6 +6,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { buildMem9Url, mem9FetchJson, mem9Headers } from "../../../lib/http.mjs";
+import { runtimeQuotaDeniedSummary } from "../../../lib/quota-error.mjs";
+import { formatRuntimeStateNotice } from "../../../lib/runtime-state.mjs";
 import { loadReadyRuntimeState } from "../../../lib/skill-runtime.mjs";
 
 function normalizeString(value) {
@@ -84,6 +86,16 @@ function readStdinText() {
   return readFileSync(0, "utf8");
 }
 
+export function responseMessage(payload) {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+  if (typeof payload.message === "string" && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  return formatRuntimeStateNotice(payload.runtimeState).trim();
+}
+
 export async function runStore(argv = process.argv.slice(2), options = {}) {
   const args = Array.isArray(argv) ? parseArgs(argv) : argv;
   const content = normalizeString(args.content)
@@ -111,25 +123,55 @@ export async function runStore(argv = process.argv.slice(2), options = {}) {
     env: options.env,
   });
   const fetchJson = options.fetchJson ?? mem9FetchJson;
-  await fetchJson(
-    buildMem9Url(state.runtime.baseUrl, "v1alpha2/mem9s/memories").toString(),
-    {
-      method: "POST",
-      headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
-      body: JSON.stringify({
-        content,
-        sync: true,
-      }),
-      timeoutMs: state.runtime.defaultTimeoutMs,
-    },
-  );
+  let payload;
+  try {
+    payload = await fetchJson(
+      buildMem9Url(state.runtime.baseUrl, "v1alpha2/mem9s/memories").toString(),
+      {
+        method: "POST",
+        headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
+        body: JSON.stringify({
+          content,
+          sync: true,
+        }),
+        timeoutMs: state.runtime.defaultTimeoutMs,
+      },
+    );
+  } catch (error) {
+    const quotaSummary = runtimeQuotaDeniedSummary(error);
+    if (!quotaSummary) {
+      throw error;
+    }
 
+    const summary = {
+      ...quotaSummary,
+      profileId: state.runtime.profileId,
+      configSource: state.configSource,
+      contentChars: content.length,
+    };
+    const stdout = options.stdout ?? process.stdout;
+    stdout?.write?.(`${JSON.stringify(summary)}\n`);
+    return summary;
+  }
+
+  /** @type {{
+   *   status: string,
+   *   profileId: string,
+   *   configSource: string,
+   *   contentChars: number,
+   *   message?: string,
+   * }}
+   */
   const summary = {
     status: "ok",
     profileId: state.runtime.profileId,
     configSource: state.configSource,
     contentChars: content.length,
   };
+  const message = responseMessage(payload);
+  if (message) {
+    summary.message = message;
+  }
   const stdout = options.stdout ?? process.stdout;
   stdout?.write?.(`${JSON.stringify(summary)}\n`);
   return summary;

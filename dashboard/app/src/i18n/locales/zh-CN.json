@@ -216,14 +216,20 @@
   },
   "memory_overview": {
     "tabs": {
-      "pulse": "Memory Pulse",
+      "pulse": "记忆列表",
+      "profile": "记忆画像",
       "insight": "Memory Insight",
-      "analysis": "Memory Analysis"
+      "analysis": "Memory Analysis",
+      "reports": "报告模板",
+      "periodic": "周期观察"
     },
     "tabs_short": {
-      "pulse": "节奏",
+      "pulse": "列表",
+      "profile": "画像",
       "insight": "洞察",
-      "analysis": "分析"
+      "analysis": "分析",
+      "reports": "报告",
+      "periodic": "观察"
     },
     "desktop_only": {
       "title": "Memory Insight 需要更宽的屏幕",
@@ -423,6 +429,68 @@
       "count": "出现 {{count}} 次"
     }
   },
+  "memory_profile": {
+    "page_title": "我的记忆画像",
+    "page_subtitle": "基于 {{days}} 天陪伴与 {{count}} 条记忆，展示当前 Agent 正在采用的用户画像。",
+    "last_updated": "最后更新：2 小时前",
+    "last_updated_at": "最后更新：{{value}}",
+    "share": "分享我的档案",
+    "share_copy": "我的 mem9 记忆画像",
+    "personal": {
+      "eyebrow": "",
+      "title": "基础档案",
+      "avatar": "YJ",
+      "name": "",
+      "companion_duration": "陪伴时长",
+      "memory_count": "记忆条数",
+      "confirmed": "已确认画像",
+      "days": "{{count}} 天",
+      "memories": "{{count}} 条"
+    },
+    "current_understanding": {
+      "eyebrow": "",
+      "title": "AI 对你的当前理解",
+      "loading": "正在读取 AI 对你的当前理解...",
+      "description": "你是一个理性、好奇心强且具有成长驱动力的人，喜欢把目标拆成明确步。你当前关注 KET 备考、单词计划与健康习惯，并偏好直接、具体、少说教的建议。你做决策时倾向安全优先、循序就进、重视可持续。"
+    },
+    "confidence": {
+      "eyebrow": "可信度",
+      "title": "画像可信度",
+      "chart_label": "画像可信度饼图",
+      "trusted": "可信画像",
+      "current": "当前",
+      "label": "可信度 {{value}}%",
+      "segments": {
+        "confirmed": "用户确认",
+        "high": "高置信",
+        "medium": "中置信",
+        "pending": "待确认"
+      }
+    },
+    "feedback": {
+      "accurate": "正确",
+      "edit": "修改",
+      "inaccurate": "不正确"
+    },
+    "topics": {
+      "title": "关注主题",
+      "action": "",
+      "items": { "technology": "AI & 技术", "education": "家庭教育", "health": "健康习惯", "learning": "学习成长", "product": "产品探索" }
+    },
+    "composition": {
+      "title": "记忆组成",
+      "items": { "profile": "个人画像", "communication": "沟通偏好", "learning": "学习成长", "project": "项目", "status": "状态" }
+    },
+    "relationships": { "title": "重要关系", "user": "用户", "daughter": "女儿", "partner": "伴侣", "parents": "父母", "empty": "暂无可展示的重要关系。", "unspecified": "关系未标注", "evidence_count": "{{count}} 条证据" },
+    "items": {
+      "title": "画像项",
+      "empty": "暂无可展示的画像项。",
+      "evidence_count": "· {{count}} 条证据",
+      "priority": { "title": "当前优先事项" },
+      "style": { "title": "偏好的陪伴方式" },
+      "constraint": { "title": "重要约束" }
+    }
+  },
   "memory_insight": {
     "layer_eyebrow": "双层视图",
     "layer_helper": "保留浏览层做 drill-down，同时切换到实体关系层查看更强的结构信号。",
@@ -519,6 +587,190 @@
         "scheduled_with": "调度相关",
         "points_to": "指向"
       }
+    }
+  },
+  "periodic_observation": {
+    "eyebrow": "",
+    "title": "周期报告与长期观察",
+    "subtitle": "基于长周期记忆生成阶段性理解结果。",
+    "generate": "生成报告",
+    "download": "下载 PDF",
+    "range": "时间范围",
+    "date_from": "开始时间",
+    "date_to": "结束时间",
+    "memory_count": "记忆数量",
+    "memories": "{{count}} 条记忆",
+    "change_count": "洞察变化",
+    "changes": "{{count}} 条",
+    "stored_report_notice": "当前展示的是历史报告数据，下面的周期观察结果可能已经过时。点击“生成报告”重新生成。",
+    "profile_version": "画像版本",
+    "loading": "正在分析最近周期记忆...",
+    "ready": "",
+    "ready_description": "周期观察不自动生成，请点击“生成报告”手动开始。",
+    "failed": "周期观察加载失败",
+    "failed_description": "请稍后重试，或检查 Space 是否已连接。",
+    "empty": "暂无可展示的周期变化",
+    "empty_description": "最近 14 天的 session 记忆还不足以形成稳定洞察。",
+    "dimensions": {
+      "long_term_goal": "长期目标变化",
+      "focus_area": "关注点变化",
+      "emotion": "情绪趋势变化",
+      "preference_signal": "偏好信号变化",
+      "growth_signal": "成长观察"
+    },
+    "status": { "high": "高", "confirm": "待确认", "actionable": "可执行" },
+    "key_changes": {
+      "title": "关键变化",
+      "subtitle": "本周期相对历史发生了什么变化",
+      "all": "查看全部关键变化（4）",
+      "items": {
+        "goal": { "title": "长期目标变化", "body": "新增：稳定学习节奏 / 60 天单词计划" },
+        "focus": { "title": "关注点变化", "body": "之前：饮食控制 / 体重管理；现在：KET 备考 / 学习计划 / 健康习惯" },
+        "emotion": { "title": "情绪趋势变化", "body": "焦虑 → 平稳；触发因素：KET 备考 / 学习节奏" },
+        "structure": { "title": "记忆结构变化", "body": "健康类稳定，学习类 insight 占比上升" }
+      }
+    },
+    "other_insights": {
+      "title": "其他洞察",
+      "subtitle": "非变化但值得关注的长期理解",
+      "all": "查看全部洞察（4）",
+      "items": {
+        "repeated": { "title": "重复出现的话题", "body": "KET 备考、步数目标、学习节奏" },
+        "preference": { "title": "稳定偏好", "body": "温和提醒、中文沟通、少追问" },
+        "growth": { "title": "成长观察", "body": "自我管理从健康习惯扩展到学习计划" },
+        "pending": { "title": "待治理候选", "body": "2 条低置信度理解，1 条过时健康目标" }
+      }
+    },
+    "emotion_detail": {
+      "title": "情绪趋势变化详情",
+      "summary": "本周期情绪由平稳转为轻度压力，压力集中在 6 月 6 日至 6 月 8 日，随后有所回落。",
+      "related_count": "相关记忆 12 条",
+      "timeline": "情绪时间条（按日）",
+      "legend": { "very_unhappy": "非常不愉快", "unhappy": "不愉快", "slightly_unhappy": "有点不愉快", "neutral": "不悲不喜", "slightly_happy": "有点愉快", "happy": "愉快", "very_happy": "非常愉快" },
+      "stages": "阶段总结",
+      "stage_count": "共 {{count}} 个情绪阶段",
+      "selected_evidence": "当前阶段相关证据",
+      "stage_items": { "early": { "range": "Jun 1 – Jun 5", "body": "整体平稳，偶有积极表达" }, "pressure": { "range": "Jun 6 – Jun 8", "body": "压力上升，主要围绕 KET 备考和学习节奏" }, "recovery": { "range": "Jun 9 – Jun 10", "body": "压力回落，开始讨论计划调整" } },
+      "topics": "主要触发主题",
+      "topic_items": { "ket": { "title": "KET 备考", "body": "考试准备与复习安排" }, "rhythm": { "title": "学习节奏", "body": "时间分配 / 任务堆叠" }, "health": { "title": "健康习惯并行", "body": "运动、休息与作息" } },
+      "related_items": ["用户最近多次提到 KET 备考计划", "60 天单词计划可能成为长期目标", "健康习惯是否仍为当前最高优先级"]
+    },
+    "structure_detail": {
+      "title": "记忆结构变化",
+      "subtitle": "上一周期 vs 本周期的 memory 组成变化",
+      "stats": { "learning": { "title": "学习类 insight", "detail": "较上一周期" }, "health": { "title": "健康类 memory", "value": "持平", "detail": "较上一周期" }, "diet": { "title": "饮食类 memory", "detail": "较上一周期下降" } },
+      "topic_ratio": "各主题 memory 占比变化",
+      "topics": { "health": "健康", "learning": "学习", "diet": "饮食", "emotion": "情绪", "relationship": "关系" },
+      "type_composition": "memory 类型组成",
+      "previous": "上一周期",
+      "current": "本周期",
+      "type_note": "insight 占比上升 13%，本周期 insight 增长显著，pinned 占比小幅下降。",
+      "related": ["KET 备考", "单词计划", "步数目标"]
+    },
+    "detail": {
+      "eyebrow": "",
+      "conclusion": "洞察结论",
+      "description": "描述",
+      "evidence": "相关记忆",
+      "no_evidence": "暂无证据片段",
+      "evidence_id": "证据 {{index}}",
+      "card_count": "共 {{count}} 条洞察，按卡片纵向排列",
+      "untitled": "洞察 {{index}}",
+      "confidence": "置信度",
+      "related": "相关记忆",
+      "respond": "响应",
+      "confirm": "准确",
+      "confirmed": "已确认",
+      "inaccurate": "不准确",
+      "marked_inaccurate": "😕 不准确",
+      "edit": "修改",
+      "edit_title": "修改相关记忆",
+      "edit_body": "更新这条记忆的描述后，会在下次报告中反映出来。",
+      "cancel": "取消",
+      "save": "保存修改",
+      "focus": { "summary": "用户关注点从「饮食控制 / 体重管理」转向「KET 备考 / 学习计划 / 健康习惯并行」。" },
+      "goal": { "summary": "学习节奏与单词计划被反复提及，长期目标出现更清晰的可执行路径。" },
+      "emotion": { "summary": "与备考相关的焦虑正在趋于平稳，当前更关注持续推进与节奏管理。" },
+      "structure": { "summary": "学习和规划相关记忆占比提升，新的结构信号已足够支持行动建议。" },
+      "tags": ["已确认", "待确认", "可能过时"],
+      "related_items": ["用户最近多次提到 KET 备考计划", "60 天单词计划是否应作为长期目标", "体重管理是否仍是主要关注点"]
+    }
+  },
+  "report_manage": {
+    "eyebrow": "",
+    "title": "报告模板",
+    "subtitle": "查看内置模板、生成报告，并回看历史结果。",
+    "library_title": "内置模板",
+    "search_placeholder": "搜索模板名称",
+    "status_all": "状态：全部",
+    "status_enabled": "状态：已启用",
+    "enabled": "已启用",
+    "cadence": "周期：{{value}}",
+    "last_generated": "最后生成：{{value}}",
+    "template_count": "共 {{count}} 个模板",
+    "details_title": "模板详情",
+    "description_title": "模板说明",
+    "goal_label": "目标",
+    "period_label": "周期",
+    "input_label": "输入",
+    "output_label": "输出",
+    "evidence_label": "证据",
+    "input_value": "insight、profile projection、session evidence",
+    "output_value": "周期观察.pdf",
+    "evidence_value": "关联的 memory ID 与原文节选",
+    "handoff_title": "",
+    "handoff_body": "该模板只生成“{{template}}”相关结果，不生成左侧其他模板内容。",
+    "workflow_items": [
+      { "title": "变化结论", "body": "从旧关注点到新关注点的摘要判断" },
+      { "title": "变化解释", "body": "解释变化的根本原因" },
+      { "title": "证据链", "body": "关联 memory、session 片段和置信度" }
+    ],
+    "settings_title": "生成设置",
+    "range": "时间范围",
+    "date_from": "开始日期",
+    "date_to": "结束日期",
+    "apply_date": "应用日期范围",
+    "memory_count": "{{count}} 条记忆",
+    "generate_template": "生成最新报告",
+    "history_title": "该模板生成记录",
+    "all_history_title": "模板记录",
+    "history_now": "刚刚生成",
+    "complete": "已完成",
+    "failed": "失败",
+    "status": {
+      "queued": "排队中",
+      "running": "生成中",
+      "fail": "生成失败",
+      "success": "已完成"
+    },
+    "report_history_loading": "正在加载生成记录...",
+    "report_history_empty": "暂无生成记录",
+    "report_history_failed": "生成记录加载失败",
+    "report_type_unavailable": "该模板的生成记录接口暂未开放",
+    "history_columns": {
+      "period": "报告周期",
+      "status": "状态",
+      "memory_count": "记忆数",
+      "actions": "操作"
+    },
+    "pagination_summary": "当前显示第 {{start}}-{{end}} 条，共 {{total}} 条",
+    "previous_page": "上一页",
+    "next_page": "下一页",
+    "view_template": "查看报告",
+    "preview": "查看洞察",
+    "download": "下载 PDF",
+    "preview_hint": "接通报告服务后，报告预览将在这里打开。",
+    "download_hint": "点击后将打开 PDF 报告页面。",
+    "generate_success": "生成报告中，共分析 {{count}} 条记忆。",
+    "generate_failed": "报告生成失败",
+    "failure_reason": "失败原因",
+    "note": "第一期仅提供内置模板；报告结果支持在线查看。",
+    "templates": {
+      "weekly": { "name": "关注点变化", "cadence": "14天内", "last_generated": "2025-06-14 09:12", "goal": "识别近期关注内容与历史关注内容的变化" },
+      "trend": { "name": "长期目标变化", "cadence": "14天内", "last_generated": "2025-06-14 08:35", "goal": "梳理新增、强化或再次确认的长期目标" },
+      "emotion": { "name": "情绪趋势变化", "cadence": "14天内", "last_generated": "2025-06-14 08:20", "goal": "分析情绪阶段、波动趋势与主要触发因素" },
+      "structure": { "name": "偏好信号变化", "cadence": "14天内", "last_generated": "2025-06-12 18:07", "goal": "分析用户偏好信号的新增、强化与变化" },
+      "growth": { "name": "成长观察变化", "cadence": "14天内", "last_generated": "2025-05-31 21:10", "goal": "观察用户能力、习惯与自我认知的成长信号" }
     }
   },
   "pixel_farm": {

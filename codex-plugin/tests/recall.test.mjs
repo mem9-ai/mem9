@@ -8,8 +8,23 @@ import {
   main,
   runRecall,
 } from "../skills/recall/scripts/recall.mjs";
+import { MEM9_PLUGIN_USER_AGENT, Mem9HttpError } from "../lib/http.mjs";
 import { buildRuntimeIssueMessage } from "../lib/skill-runtime.mjs";
 import { createTempRoot } from "./test-temp.mjs";
+
+/**
+ * @param {string} error
+ * @param {Record<string, unknown>} [runtimeQuota]
+ */
+function runtimeQuotaPayload(error, runtimeQuota = {}) {
+  return {
+    error,
+    details: {
+      errorCategory: "runtime_quota_denied",
+      runtimeQuota,
+    },
+  };
+}
 
 test("buildRecallUrl encodes q and limit", () => {
   const url = buildRecallUrl("https://api.mem9.ai/", "remember rust tips", 7);
@@ -81,6 +96,7 @@ test("runRecall calls mem9 with the current runtime and prints a safe summary", 
           request.url = url;
           request.options = options;
           return {
+            message: "mem9 recall has used 80% of included quota.",
             memories: [
               {
                 id: "m1",
@@ -111,12 +127,14 @@ test("runRecall calls mem9 with the current runtime and prints a safe summary", 
         "Content-Type": "application/json",
         "X-API-Key": "key-search",
         "X-Mnemo-Agent-Id": "codex",
+        "User-Agent": MEM9_PLUGIN_USER_AGENT,
       },
       timeoutMs: 15200,
     });
     assert.equal(result.profileId, "work");
     assert.equal(result.configSource, "project");
     assert.equal(result.memoryCount, 1);
+    assert.equal(result.message, "mem9 recall has used 80% of included quota.");
     assert.deepEqual(result.memories, [
       {
         id: "m1",
@@ -155,6 +173,108 @@ test("runRecall accepts the query from stdin text", async () => {
   );
 
   assert.equal(result.query, "release checklist");
+});
+
+test("runRecall returns a structured runtime quota denial summary", async () => {
+  let stdoutText = "";
+
+  const result = await runRecall(
+    ["--query", "team preferences"],
+    {
+      state: {
+        configSource: "project",
+        runtime: {
+          profileId: "work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-search",
+          agentId: "codex",
+          searchTimeoutMs: 15000,
+        },
+      },
+      fetchJson: async () => {
+        throw new Mem9HttpError("quota denied", {
+          status: 402,
+          data: runtimeQuotaPayload("Included quota is exhausted.", {
+            recommendedAction: {
+              providerActionCode: "claimApiKey",
+              type: "openUrl",
+              url: "https://console.mem9.ai/console/claim?key=mem9_test",
+            },
+          }),
+        });
+      },
+      stdout: {
+        write(/** @type {string} */ chunk) {
+          stdoutText += chunk;
+        },
+      },
+    },
+  );
+  const quotaResult = /** @type {any} */ (result);
+
+  assert.equal(quotaResult.status, "quota_denied");
+  assert.equal(quotaResult.code, "runtime_quota_denied");
+  assert.equal(quotaResult.memoryCount, 0);
+  assert.deepEqual(quotaResult.recommendedAction, {
+    providerActionCode: "claimApiKey",
+    type: "openUrl",
+    url: "https://console.mem9.ai/console/claim?key=mem9_test",
+  });
+  assert.deepEqual(JSON.parse(stdoutText), quotaResult);
+  assert.equal(stdoutText.includes("key-search"), false);
+});
+
+test("runRecall returns a structured post-quota rate limit summary", async () => {
+  let stdoutText = "";
+
+  const result = await runRecall(
+    ["--query", "team preferences"],
+    {
+      state: {
+        configSource: "project",
+        runtime: {
+          profileId: "work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-search",
+          agentId: "codex",
+          searchTimeoutMs: 15000,
+        },
+      },
+      fetchJson: async () => {
+        throw new Mem9HttpError("rate limited", {
+          status: 429,
+          data: runtimeQuotaPayload("Post-quota rate limit exceeded.", {
+            meter: "memory_recall_requests",
+            quotaGateResult: {
+              outcome: "rateLimited",
+              mode: "postQuota",
+              reason: "postQuotaRateLimitExceeded",
+              postQuotaRateLimit: {
+                requestsPerMinute: 4,
+                windowDurationSeconds: 60,
+                scope: "apiKeyMeter",
+                retryAfterSeconds: 23,
+              },
+            },
+          }),
+        });
+      },
+      stdout: {
+        write(/** @type {string} */ chunk) {
+          stdoutText += chunk;
+        },
+      },
+    },
+  );
+  const quotaResult = /** @type {any} */ (result);
+
+  assert.equal(quotaResult.status, "quota_denied");
+  assert.equal(quotaResult.code, "runtime_quota_denied");
+  assert.equal(quotaResult.retryAfterSeconds, 23);
+  assert.equal(quotaResult.actionUrl, undefined);
+  assert.equal(quotaResult.memoryCount, 0);
+  assert.deepEqual(JSON.parse(stdoutText), quotaResult);
+  assert.equal(stdoutText.includes("key-search"), false);
 });
 
 test("runtime helper explains how to repair a missing mem9 api key", () => {

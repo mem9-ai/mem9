@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import {
   Search,
   BarChart3,
@@ -37,6 +37,7 @@ import { maskSpaceId } from "@/lib/session";
 import type { Memory } from "@/types/memory";
 import type { SpaceRouteState } from "./use-space-route-state";
 import type { SpaceDataModel } from "./use-space-data-model";
+import type { MemoryInsightTab } from "@/lib/memory-insight";
 import {
   formatAnalysisCategoryLabel,
   getActiveFilterCount,
@@ -101,6 +102,7 @@ export const SpacePageLayout = ({
   onRefreshMemories,
   onHandleFarmAction,
 }: SpacePageLayoutProps) => {
+  const [activeOverviewTab, setActiveOverviewTab] = useState<MemoryInsightTab>("profile");
   const isEmpty =
     !dataModel.isMemoryLoading &&
     dataModel.displayedMemories.length === 0 &&
@@ -169,18 +171,11 @@ export const SpacePageLayout = ({
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="grid flex-1 grid-cols-3 gap-2">
-                    <button
-                      onClick={() =>
-                        routeState.search.type
-                          ? routeState.clearTypeFilter()
-                          : undefined
-                      }
-                      data-mp-event="Dashboard/Space/TotalStatClicked"
-                      data-mp-page-name="space"
+                    <div
                       className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
                         !routeState.search.type
                           ? "border-foreground/15 bg-foreground/[0.03]"
-                          : "border-transparent hover:border-foreground/10"
+                          : "border-transparent"
                       }`}
                     >
                       <div className="text-xl font-bold tracking-tight text-foreground">
@@ -189,17 +184,14 @@ export const SpacePageLayout = ({
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {t("space.stats.total")}
                       </div>
-                    </button>
+                    </div>
 
-                    <button
-                      onClick={() => routeState.handleTypeClick("pinned")}
-                      data-mp-event="Dashboard/Space/PinnedStatClicked"
-                      data-mp-page-name="space"
+                    <div
                       data-mp-memory-type="pinned"
                       className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
                         routeState.search.type === "pinned"
                           ? "border-type-pinned/30 bg-type-pinned/5"
-                          : "border-transparent hover:border-type-pinned/20"
+                          : "border-transparent"
                       }`}
                     >
                       <div className="flex items-baseline gap-1.5">
@@ -214,17 +206,14 @@ export const SpacePageLayout = ({
                       <div className="mt-0.5 text-[10px] leading-tight text-soft-foreground">
                         {t("legend.pinned")}
                       </div>
-                    </button>
+                    </div>
 
-                    <button
-                      onClick={() => routeState.handleTypeClick("insight")}
-                      data-mp-event="Dashboard/Space/InsightStatClicked"
-                      data-mp-page-name="space"
+                    <div
                       data-mp-memory-type="insight"
                       className={`rounded-xl border px-3 py-2.5 text-left transition-all ${
                         routeState.search.type === "insight"
                           ? "border-type-insight/30 bg-type-insight/5"
-                          : "border-transparent hover:border-type-insight/20"
+                          : "border-transparent"
                       }`}
                     >
                       <div className="flex items-baseline gap-1.5">
@@ -239,7 +228,7 @@ export const SpacePageLayout = ({
                       <div className="mt-0.5 text-[10px] leading-tight text-soft-foreground">
                         {t("legend.insight")}
                       </div>
-                    </button>
+                    </div>
                   </div>
                   {features.enableTimeRange && !routeState.selected && (
                     <TimeRangeSelector
@@ -256,33 +245,25 @@ export const SpacePageLayout = ({
               spaceId={spaceId}
               stats={dataModel.stats}
               pulseMemories={dataModel.pulseMemories}
+              profileFacetData={dataModel.topicData}
               insightMemories={dataModel.analysis.sourceMemories}
               cards={dataModel.analysis.cards}
               snapshot={dataModel.analysis.state.snapshot}
               range={routeState.range}
               loading={!dataModel.stats || dataModel.analysis.sourceLoading}
               compact={routeState.selected !== null && routeState.isDesktopViewport}
-              activeType={routeState.search.type}
               activeCategory={routeState.analysisCategory}
               activeTag={routeState.tag}
-              selectedTimeline={routeState.timelineSelection}
               matchMap={dataModel.analysis.matchMap}
-              onTypeSelect={(type) =>
-                navigateAndScrollToMemoryList(() => routeState.handleTypeClick(type))
-              }
-              onTagSelect={(tag) =>
-                navigateAndScrollToMemoryList(() => routeState.handleTagChange(tag))
-              }
               onMemorySelect={routeState.openMemoryDetail}
-              onTimelineSelect={(selection) =>
-                navigateAndScrollToMemoryList(() => routeState.handleTimelineSelect(selection))
-              }
-              onTimelineClear={routeState.handleTimelineClear}
               onEntitySearch={(query) =>
                 navigateAndScrollToMemoryList(() => routeState.handleEntitySearch(query))
               }
+              onTabChange={setActiveOverviewTab}
             />
 
+            {activeOverviewTab !== "reports" && activeOverviewTab !== "profile" && activeOverviewTab !== "periodic" && (
+              <>
             <div className="relative mt-5">
               <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-soft-foreground" />
               <Input
@@ -542,6 +523,8 @@ export const SpacePageLayout = ({
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
 
           {features.enableAnalysis && routeState.isDesktopViewport && (

@@ -219,6 +219,7 @@ func (s *Server) Router(
 
 	// Key status validates X-API-Key against control-plane state only.
 	r.Get("/v1alpha2/status", s.getKeyStatus)
+	r.Get("/v1alpha2/mem9s/runtime-state", s.getRuntimeState)
 
 	r.Post("/v1alpha2/space-chains", s.createSpaceChain)
 	r.Get("/v1alpha2/space-chains/by-key", s.getSpaceChainByKey)

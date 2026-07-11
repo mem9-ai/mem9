@@ -5,6 +5,12 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { formatRuntimeStateNotice } from "./runtime-state.mjs";
+import { claimRuntimeNotice } from "./runtime-notice-state.mjs";
+
+const STATUS_WARNING_START_TAG = "<mem9-status-warning>";
+const STATUS_WARNING_END_TAG = "</mem9-status-warning>";
+
 /**
  * @typedef {{
  *   id?: string,
@@ -24,6 +30,32 @@ function escapeForPrompt(text) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function normalizeNoticeMessage(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * @param {string} message
+ * @returns {string}
+ */
+export function formatStatusWarningBlock(message) {
+  const notice = normalizeNoticeMessage(message);
+  if (!notice) {
+    return "";
+  }
+
+  return [
+    STATUS_WARNING_START_TAG,
+    `Mem9 notice for the user: ${escapeForPrompt(notice)}`,
+    "Mention this mem9 notice to the user once.",
+    STATUS_WARNING_END_TAG,
+  ].join("\n");
 }
 
 /**
@@ -93,6 +125,14 @@ function parseMemories(raw) {
   }
 
   const parsed = JSON.parse(raw);
+  return extractMemories(parsed);
+}
+
+/**
+ * @param {unknown} parsed
+ * @returns {MemoryItem[]}
+ */
+export function extractMemories(parsed) {
   if (Array.isArray(parsed)) {
     return /** @type {MemoryItem[]} */ (parsed);
   }
@@ -103,10 +143,49 @@ function parseMemories(raw) {
 }
 
 /**
+ * @param {unknown} parsed
+ * @returns {string}
+ */
+export function responseMessage(parsed) {
+  if (!parsed || typeof parsed !== "object") {
+    return "";
+  }
+
+  const typed = /** @type {{message?: unknown, runtimeState?: unknown}} */ (parsed);
+  return normalizeNoticeMessage(typed.message)
+    || normalizeNoticeMessage(formatRuntimeStateNotice(typed.runtimeState));
+}
+
+/**
+ * @param {unknown} parsed
+ * @param {{maxItems?: number, maxContentLength?: number, stateFile?: string, sessionID?: string}} [options]
+ * @returns {string}
+ */
+export function formatResponseContext(parsed, options = {}) {
+  const memoriesBlock = formatMemoriesBlock(extractMemories(parsed), options);
+  const message = responseMessage(parsed);
+  const statusBlock = message && claimRuntimeNotice({
+    stateFile: options.stateFile,
+    sessionID: options.sessionID,
+    message,
+  })
+    ? formatStatusWarningBlock(message)
+    : "";
+
+  return [statusBlock, memoriesBlock].filter(Boolean).join("\n\n");
+}
+
+/**
  * @returns {number}
  */
 function main() {
-  const block = formatMemoriesBlock(parseMemories(readFileSync(0, "utf8")));
+  const raw = readFileSync(0, "utf8");
+  const block = raw.trim()
+    ? formatResponseContext(JSON.parse(raw), {
+      stateFile: process.env.MEM9_NOTICE_STATE_FILE,
+      sessionID: process.env.MEM9_NOTICE_SESSION_ID,
+    })
+    : formatMemoriesBlock(parseMemories(raw));
   if (block) {
     process.stdout.write(block);
   }

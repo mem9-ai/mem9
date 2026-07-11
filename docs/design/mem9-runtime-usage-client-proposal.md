@@ -28,6 +28,7 @@ mem9-server uses these runtime usage service internal endpoints:
 1. `PUT /api/internal/quota/reservations/{operationId}`
 2. `PATCH /api/internal/quota/reservations/{operationId}`
 3. `PUT /api/internal/metering/events/{operationId}`
+4. `GET /api/internal/mem9-api-key/state`
 
 There is no quota adjustment endpoint in the current contract. Deletes and
 batch deletes are treated as normal write requests and emit `memoryDeleted`

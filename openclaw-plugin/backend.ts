@@ -38,4 +38,5 @@ export interface MemoryBackend {
    * POST /v1alpha{1,2}/mem9s/.../memories (messages body) → LLM extraction + reconciliation.
    */
   ingest(input: IngestInput): Promise<IngestResult>;
+  runtimeState(): Promise<unknown>;
 }

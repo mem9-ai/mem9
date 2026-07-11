@@ -12,6 +12,7 @@ import {
   type SiteResolvedTheme,
   type SiteThemePreference,
 } from '../content/site';
+import { copyText } from './clipboard';
 
 type MenuName = 'docs' | 'login' | 'language' | 'theme' | 'mobile';
 type DocsLocale = 'en' | 'zh' | 'ja' | 'ko' | 'id' | 'th';
@@ -21,6 +22,10 @@ type OnboardingCommandParts = {
   url: string | null;
   suffix: string;
 };
+type TopBannerDismissal = {
+  noticeId: string;
+  dismissedAt: number;
+};
 
 const ONBOARDING_COMMAND_URL_PATTERN = /https:\/\/\S+/u;
 const PUBLIC_SKILL_ORIGIN = 'https://mem9.ai';
@@ -29,6 +34,7 @@ const PUBLIC_SKILL_URLS = [
   'https://mem9.ai/beta/SKILL.md',
 ];
 const TRACKED_SKILL_PATHS = new Set(['/SKILL.md', '/beta/SKILL.md']);
+const TOP_BANNER_DISMISS_STORAGE_KEY = 'mem9.topBanner.dismissal';
 
 function getValue(dictionary: SiteDictionary, path: string): unknown {
   return path.split('.').reduce<unknown>((current, segment) => {
@@ -418,6 +424,10 @@ function updateTranslations(dictionary: SiteDictionary): void {
     element.dataset.copyText = textFor(dictionary, copyKey);
   });
 
+  document.querySelectorAll<HTMLElement>('[data-page-markdown-copy]').forEach((button) => {
+    button.classList.remove('is-copied', 'is-error');
+  });
+
   document.querySelectorAll<HTMLButtonElement>('[data-set-locale]').forEach((button) => {
     const isActive = button.dataset.setLocale === document.documentElement.dataset.locale;
     button.classList.toggle('is-active', isActive);
@@ -517,6 +527,38 @@ function resolveDocsLocale(locale: SiteLocale): DocsLocale {
   }
 }
 
+function findActiveDocsHashTarget(root: HTMLElement): HTMLElement | null {
+  const hash = window.location.hash.slice(1);
+  if (!hash) {
+    return null;
+  }
+
+  const activeCopy = root.querySelector<HTMLElement>('[data-docs-copy]:not([hidden])');
+  return Array.from(activeCopy?.querySelectorAll<HTMLElement>('[data-docs-anchor]') ?? [])
+    .find((anchor) => anchor.dataset.docsAnchor === hash) ?? null;
+}
+
+function scheduleDocsHashScroll(root: HTMLElement): void {
+  if (!window.location.hash) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    findActiveDocsHashTarget(root)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    window.requestAnimationFrame(() => {
+      findActiveDocsHashTarget(root)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+    });
+  });
+
+  window.setTimeout(() => {
+    findActiveDocsHashTarget(root)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+  }, 120);
+
+  window.setTimeout(() => {
+    findActiveDocsHashTarget(root)?.scrollIntoView({ block: 'start', behavior: 'auto' });
+  }, 450);
+}
+
 function updateDocsPage(locale: SiteLocale): void {
   const docsLocale = resolveDocsLocale(locale);
   const root = document.querySelector<HTMLElement>('[data-docs-root]');
@@ -556,6 +598,8 @@ function updateDocsPage(locale: SiteLocale): void {
       backToTopButton.setAttribute('aria-label', activeCopy.dataset.docsBackToTopLabel);
     }
   }
+
+  scheduleDocsHashScroll(root);
 }
 
 function updateApiPage(locale: SiteLocale): void {
@@ -653,31 +697,6 @@ function applyLocale(locale: SiteLocale): void {
   const feedback = document.querySelector<HTMLElement>('[data-copy-feedback]');
   if (feedback) {
     feedback.textContent = '';
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'absolute';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
-    textarea.select();
-
-    let copied = false;
-    try {
-      copied = document.execCommand('copy');
-    } catch {
-      copied = false;
-    }
-
-    document.body.removeChild(textarea);
-    return copied;
   }
 }
 
@@ -825,6 +844,57 @@ function initOnboardingVersionControls(): void {
   });
 
   applyOnboardingVersion('stable');
+}
+
+function initTopBannerDismissal(): void {
+  const banner = document.querySelector<HTMLElement>('[data-top-banner]');
+  if (!banner) {
+    return;
+  }
+
+  const dismissButton = banner.querySelector<HTMLButtonElement>('[data-top-banner-dismiss]');
+  const noticeId = banner.dataset.noticeId;
+  const ttlMS = Number(banner.dataset.dismissTtlMs);
+  if (!dismissButton || !noticeId || !Number.isFinite(ttlMS) || ttlMS <= 0) {
+    return;
+  }
+
+  try {
+    const stored = localStorage.getItem(TOP_BANNER_DISMISS_STORAGE_KEY);
+    const dismissal = stored ? JSON.parse(stored) as Partial<TopBannerDismissal> : null;
+    const ageMS = Date.now() - (dismissal?.dismissedAt ?? 0);
+    if (
+      dismissal?.noticeId === noticeId
+      && typeof dismissal.dismissedAt === 'number'
+      && ageMS >= 0
+      && ageMS < ttlMS
+    ) {
+      banner.hidden = true;
+      return;
+    }
+
+    if (stored) {
+      localStorage.removeItem(TOP_BANNER_DISMISS_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage failures and keep the banner visible.
+  }
+
+  dismissButton.addEventListener('click', () => {
+    try {
+      localStorage.setItem(
+        TOP_BANNER_DISMISS_STORAGE_KEY,
+        JSON.stringify({
+          noticeId,
+          dismissedAt: Date.now(),
+        } satisfies TopBannerDismissal),
+      );
+    } catch {
+      // Ignore storage failures and still dismiss the banner for this page view.
+    }
+
+    banner.hidden = true;
+  });
 }
 
 function normalizeDocsTocQuery(value: string): string[] {
@@ -1100,7 +1170,7 @@ function initApiScrollSpy(): void {
       observer.disconnect();
     }
 
-    const activeCopy = root!.querySelector<HTMLElement>('[data-api-copy]:not([hidden])');
+    const activeCopy = root!.querySelector<HTMLElement>('[data-api-copy]:not([hidden]) [data-api-catalog]:not([hidden])');
     if (!activeCopy) {
       return;
     }
@@ -1165,6 +1235,29 @@ function initApiScrollSpy(): void {
   mutation.observe(root, {
     attributes: true,
     attributeFilter: ['data-api-locale'],
+  });
+
+  root.addEventListener('api-product-change', setup);
+}
+
+function initApiProductTabs(): void {
+  const root = document.querySelector<HTMLElement>('[data-api-root]');
+  if (!root) return;
+
+  root.querySelectorAll<HTMLButtonElement>('[data-api-product-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const product = button.dataset.apiProductTab;
+      if (!product) return;
+
+      root.querySelectorAll<HTMLElement>('[data-api-catalog]').forEach((catalog) => {
+        catalog.hidden = catalog.dataset.apiCatalog !== product;
+      });
+      root.querySelectorAll<HTMLButtonElement>('[data-api-product-tab]').forEach((tab) => {
+        tab.setAttribute('aria-selected', String(tab.dataset.apiProductTab === product));
+      });
+      root.dispatchEvent(new CustomEvent('api-product-change'));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   });
 }
 
@@ -1261,7 +1354,7 @@ function initApiTocSearch(): void {
     empty.hidden = !hasQuery || visibleGroups > 0;
   }
 
-  document.querySelectorAll<HTMLElement>('[data-api-copy]').forEach((sectionCopy) => {
+  document.querySelectorAll<HTMLElement>('[data-api-catalog]').forEach((sectionCopy) => {
     const input = sectionCopy.querySelector<HTMLInputElement>('[data-api-toc-search]');
     if (!input) {
       return;
@@ -1273,7 +1366,7 @@ function initApiTocSearch(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-api-toc-group-toggle]').forEach((toggle) => {
     toggle.addEventListener('click', () => {
       const group = toggle.closest<HTMLElement>('[data-api-toc-group]');
-      const sectionCopy = toggle.closest<HTMLElement>('[data-api-copy]');
+      const sectionCopy = toggle.closest<HTMLElement>('[data-api-catalog]');
       const input = sectionCopy?.querySelector<HTMLInputElement>('[data-api-toc-search]');
       if (!group || (input && input.value.trim() !== '')) {
         return;
@@ -1284,7 +1377,7 @@ function initApiTocSearch(): void {
   });
 
   const mutation = new MutationObserver(() => {
-    const activeCopy = root.querySelector<HTMLElement>('[data-api-copy]:not([hidden])');
+    const activeCopy = root.querySelector<HTMLElement>('[data-api-copy]:not([hidden]) [data-api-catalog]:not([hidden])');
     if (activeCopy) {
       applyFilter(activeCopy);
     }
@@ -1304,6 +1397,8 @@ type ApiTestField = {
 
 type ApiTestEndpoint = {
   groupTitle: string;
+  testBaseUrl: string;
+  requestBasePath: string;
   method: string;
   path: string;
   summary: string;
@@ -1391,6 +1486,8 @@ function parseApiTestEndpoint(value: string | undefined): ApiTestEndpoint | null
 
     return {
       groupTitle: typeof parsed.groupTitle === 'string' ? parsed.groupTitle : '',
+      testBaseUrl: typeof parsed.testBaseUrl === 'string' ? parsed.testBaseUrl : '',
+      requestBasePath: typeof parsed.requestBasePath === 'string' ? parsed.requestBasePath : '',
       method: parsed.method.toUpperCase(),
       path: parsed.path,
       summary: parsed.summary,
@@ -1515,6 +1612,30 @@ function formatApiTestOutput(text: string): string {
 function apiTestInputValue(fieldName: string): unknown {
   const lowerName = fieldName.toLowerCase();
 
+  if (lowerName.endsWith('daterange.start') || lowerName.endsWith('createdat')) {
+    return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  if (lowerName.endsWith('daterange.end')) {
+    return new Date().toISOString();
+  }
+
+  if (lowerName.includes('expectedtotalmemories') || lowerName.includes('expectedtotalbatches') || lowerName.endsWith('batchsize') || lowerName.endsWith('memorycount')) {
+    return 1;
+  }
+
+  if (lowerName.endsWith('llmenabled') || lowerName.endsWith('includeitems') || lowerName.endsWith('includesummary')) {
+    return true;
+  }
+
+  if (lowerName.endsWith('taxonomyversion')) {
+    return 'v3';
+  }
+
+  if (lowerName.endsWith('.lang') || lowerName === 'lang') {
+    return 'en';
+  }
+
   if (lowerName.includes('limit')) {
     return 10;
   }
@@ -1554,9 +1675,42 @@ function apiTestInputValue(fieldName: string): unknown {
   return '';
 }
 
+function setApiTestJsonValue(body: Record<string, unknown>, fieldName: string, value: unknown): void {
+  const segments = fieldName.split('.').filter(Boolean);
+  let current = body;
+
+  segments.forEach((rawSegment, index) => {
+    const isArray = rawSegment.endsWith('[]');
+    const key = isArray ? rawSegment.slice(0, -2) : rawSegment;
+    if (key === '' || ['__proto__', 'prototype', 'constructor'].includes(key)) {
+      return;
+    }
+
+    const isLast = index === segments.length - 1;
+    if (isLast) {
+      current[key] = isArray && !Array.isArray(value) ? [value] : value;
+      return;
+    }
+
+    if (isArray) {
+      const existing = current[key];
+      if (!Array.isArray(existing) || !isRecord(existing[0])) {
+        current[key] = [{}];
+      }
+      current = (current[key] as Array<Record<string, unknown>>)[0];
+      return;
+    }
+
+    if (!isRecord(current[key])) {
+      current[key] = {};
+    }
+    current = current[key] as Record<string, unknown>;
+  });
+}
+
 function buildApiTestJsonTemplate(fields: ApiTestField[]): string {
   const body = fields.reduce<Record<string, unknown>>((current, field) => {
-    current[field.name] = apiTestInputValue(field.name);
+    setApiTestJsonValue(current, field.name, apiTestInputValue(field.name));
     return current;
   }, {});
 
@@ -1824,7 +1978,11 @@ function restoreApiTestSavedForm(elements: ApiTestModalElements, endpoint: ApiTe
     return;
   }
 
-  if (saved.baseUrl.trim() !== '') {
+  const savedBaseUrl = saved.baseUrl.trim();
+  const isOldYourMemoryProxyUrl = endpoint.requestBasePath !== ''
+    && (savedBaseUrl === '/your-memory/analysis-api'
+      || savedBaseUrl === 'https://mem9.ai/your-memory/analysis-api');
+  if (savedBaseUrl !== '' && !isOldYourMemoryProxyUrl) {
     elements.baseUrl.value = saved.baseUrl;
   }
 
@@ -1839,14 +1997,22 @@ function restoreApiTestSavedForm(elements: ApiTestModalElements, endpoint: ApiTe
 
 function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoint): URL {
   const base = elements.baseUrl.value.trim().replace(/\/+$/u, '');
-  const baseUrl = base === '' ? defaultApiTestBaseUrl() : base;
+  const baseUrl = base === '' ? defaultApiTestBaseUrl(endpoint) : base;
+  const enteredUrl = new URL(baseUrl, window.location.origin);
+  const absoluteBaseUrl = new URL(`${baseUrl}/`, window.location.origin);
   const resolvedPath = endpoint.path.replace(/\{([^}]+)\}/g, (match, name: string) => {
     const input = Array.from(document.querySelectorAll<HTMLInputElement>('[data-api-test-scope="path"]'))
       .find((candidate) => candidate.dataset.apiTestName === name);
     const value = input?.value.trim() ?? '';
     return value === '' ? match : encodeURIComponent(value);
   });
-  const url = new URL(resolvedPath, `${baseUrl}/`);
+  const normalizedResolvedPath = `/${resolvedPath.replace(/^\/+|\/+$/gu, '')}`;
+  const normalizedBasePath = absoluteBaseUrl.pathname.replace(/\/+$/u, '') || '/';
+  const baseAlreadyIncludesEndpoint = normalizedBasePath === normalizedResolvedPath
+    || normalizedBasePath.endsWith(normalizedResolvedPath);
+  const url = baseAlreadyIncludesEndpoint
+    ? enteredUrl
+    : new URL(resolvedPath.replace(/^\/+/, ''), absoluteBaseUrl);
 
   readApiTestTextInputs('query').forEach(({ name, value }) => {
     if (value !== '') {
@@ -1857,8 +2023,29 @@ function buildApiTestUrl(elements: ApiTestModalElements, endpoint: ApiTestEndpoi
   return url;
 }
 
-function defaultApiTestBaseUrl(): string {
-  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+function buildApiTestRequestUrl(displayUrl: URL, endpoint: ApiTestEndpoint): URL {
+  if (endpoint.requestBasePath === '') {
+    return displayUrl;
+  }
+
+  const siteOrigin = window.location.origin.replace(/\/+$/u, '');
+  const requestBasePath = endpoint.requestBasePath.replace(/^\/+|\/+$/gu, '');
+  const displayBaseUrl = endpoint.testBaseUrl.replace(/\/+$/u, '');
+  const displayUrlText = displayUrl.toString();
+  const requestBaseUrl = `${siteOrigin}/${requestBasePath}`;
+
+  if (displayUrlText.startsWith(displayBaseUrl)) {
+    return new URL(`${requestBaseUrl}${displayUrlText.slice(displayBaseUrl.length)}`);
+  }
+
+  return displayUrl;
+}
+
+function defaultApiTestBaseUrl(endpoint?: ApiTestEndpoint): string {
+  if (endpoint?.testBaseUrl) {
+    return endpoint.testBaseUrl;
+  }
+  return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname)
     ? 'http://localhost:8081'
     : 'https://api.mem9.ai';
 }
@@ -1879,9 +2066,7 @@ function openApiTestModal(elements: ApiTestModalElements, endpoint: ApiTestEndpo
   const multipart = isApiTestMultipart(endpoint);
   const labels = apiTestLabels();
   activeApiTestEndpoint = endpoint;
-  if (elements.baseUrl.value.trim() === '') {
-    elements.baseUrl.value = defaultApiTestBaseUrl();
-  }
+  elements.baseUrl.value = defaultApiTestBaseUrl(endpoint);
   elements.title.textContent = endpoint.summary;
   elements.method.textContent = `${endpoint.method} · ${endpoint.groupTitle}`;
   elements.path.textContent = endpoint.path;
@@ -1960,6 +2145,7 @@ async function runApiTest(elements: ApiTestModalElements): Promise<void> {
   }
 
   const url = buildApiTestUrl(elements, endpoint);
+  const requestUrl = buildApiTestRequestUrl(url, endpoint);
   const startedAt = performance.now();
   elements.run.disabled = true;
   elements.run.textContent = labels.running;
@@ -1968,7 +2154,7 @@ async function runApiTest(elements: ApiTestModalElements): Promise<void> {
   elements.output.textContent = '';
 
   try {
-    const response = await fetch(url.toString(), {
+    const response = await fetch(requestUrl.toString(), {
       method: endpoint.method,
       headers,
       body: ['GET', 'HEAD'].includes(endpoint.method) ? undefined : body,
@@ -2074,6 +2260,7 @@ export function initSiteUI(): void {
   initSystemThemeListener();
   initCopyButton();
   initOnboardingVersionControls();
+  initTopBannerDismissal();
   setOpenMenu(null);
 
   if (isDocsPage()) {
@@ -2082,9 +2269,15 @@ export function initSiteUI(): void {
     initDocsProgressBar();
     initDocsBackToTop();
     initDocsMobileToc();
+
+    const docsRoot = document.querySelector<HTMLElement>('[data-docs-root]');
+    if (docsRoot) {
+      scheduleDocsHashScroll(docsRoot);
+    }
   }
 
   if (isApiPage()) {
+    initApiProductTabs();
     initApiScrollSpy();
     initApiTocSearch();
     initApiMobileToc();

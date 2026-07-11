@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
 import {
+  appendRuntimeStateNotice,
   appendUpgradeNotice,
   buildSessionStartMessage,
   runSessionStart,
@@ -54,6 +56,53 @@ async function runNodeHook(scriptPath, input) {
 
     child.stdin.end(input.input);
   });
+}
+
+/**
+ * @param {string} tempRoot
+ * @param {string} baseUrl
+ */
+function createReadyRuntimeLayout(tempRoot, baseUrl) {
+  const cwd = path.join(tempRoot, "workspace");
+  const codexHome = path.join(tempRoot, "codex-home");
+  const mem9Home = path.join(tempRoot, "mem9-home");
+
+  mkdirSync(cwd, { recursive: true });
+  writeJson(path.join(codexHome, "mem9", "install.json"), {
+    schemaVersion: 1,
+    marketplaceName: "mem9-ai",
+    pluginName: "mem9",
+    shimVersion: 1,
+  });
+  mkdirSync(
+    path.join(codexHome, "plugins", "cache", "mem9-ai", "mem9", "local"),
+    { recursive: true },
+  );
+  writeFileSync(path.join(codexHome, "config.toml"), "\n");
+  writeJson(path.join(codexHome, "mem9", "config.json"), {
+    schemaVersion: 1,
+    profileId: "default",
+    defaultTimeoutMs: 2_000,
+    updateCheck: {
+      enabled: false,
+    },
+  });
+  writeJson(path.join(mem9Home, ".credentials.json"), {
+    schemaVersion: 1,
+    profiles: {
+      default: {
+        label: "Default",
+        baseUrl,
+        apiKey: "key-1",
+      },
+    },
+  });
+
+  return {
+    cwd,
+    codexHome,
+    mem9Home,
+  };
 }
 
 test("session start emits ready context for a project override", async () => {
@@ -115,6 +164,33 @@ test("session start appends upgrade notices after the runtime message", async ()
   assert.match(message, /global default config/);
   assert.match(message, /mem9 upgraded to v0\.2\.0/);
   assert.ok(message.indexOf("global default config") < message.indexOf("mem9 upgraded to v0.2.0"));
+});
+
+test("session start appends runtime-state notice after upgrade notices", async () => {
+  const output = await runSessionStart({
+    state: {
+      configSource: "global",
+      profileId: "default",
+      issueCode: "ready",
+    },
+    upgradeNotice: "mem9 upgraded to v0.2.0. Restart picked it up.",
+    runtimeStateNotice: "mem9 recall is at 82% of its included quota.",
+  });
+
+  const parsed = JSON.parse(output);
+  const message = parsed.hookSpecificOutput.additionalContext;
+  assert.match(message, /global default config/);
+  assert.match(message, /mem9 upgraded to v0\.2\.0/);
+  assert.match(message, /mem9 recall is at 82%/);
+  assert.ok(message.indexOf("global default config") < message.indexOf("mem9 upgraded to v0.2.0"));
+  assert.ok(message.indexOf("mem9 upgraded to v0.2.0") < message.indexOf("mem9 recall is at 82%"));
+});
+
+test("appendRuntimeStateNotice preserves an empty base message", () => {
+  assert.equal(
+    appendRuntimeStateNotice("", "mem9 recall is near the included quota."),
+    "mem9 recall is near the included quota.",
+  );
 });
 
 test("session start keeps repair guidance ahead of upgrade notices", () => {
@@ -226,6 +302,72 @@ test("session start skips upgrade state writes when runtime is not ready", async
     assert.equal(result.code, 0);
     assert.equal(existsSync(path.join(codexHome, "mem9", "state.json")), false);
   } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("session start entrypoint fetches runtime-state when ready", async () => {
+  const tempRoot = createTempRoot("session-start-runtime-state");
+  let requestUrl = "";
+  let apiKey = "";
+  let agentId = "";
+  const server = createServer((req, res) => {
+    requestUrl = req.url ?? "";
+    apiKey = String(req.headers["x-api-key"] ?? "");
+    agentId = String(req.headers["x-mnemo-agent-id"] ?? "");
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({
+      mem9ApiKey: { status: "active" },
+      meters: [
+        {
+          meter: "memory_recall_requests",
+          budgets: [
+            {
+              type: "includedQuota",
+              state: "warning",
+              usage: { used: 820, remaining: 180, percent: 82 },
+              capacity: { type: "limited", value: 1000 },
+            },
+          ],
+        },
+      ],
+    }));
+  });
+
+  try {
+    await new Promise((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve(undefined));
+    });
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const runtime = createReadyRuntimeLayout(
+      tempRoot,
+      `http://127.0.0.1:${address.port}`,
+    );
+
+    const result = await runNodeHook(SESSION_START_ENTRY, {
+      cwd: runtime.cwd,
+      env: {
+        ...process.env,
+        CODEX_HOME: runtime.codexHome,
+        MEM9_HOME: runtime.mem9Home,
+      },
+      input: JSON.stringify({ cwd: runtime.cwd }),
+    });
+
+    assert.equal(result.code, 0);
+    assert.equal(requestUrl, "/v1alpha2/mem9s/runtime-state");
+    assert.equal(apiKey, "key-1");
+    assert.equal(agentId, "codex");
+    const parsed = JSON.parse(result.stdout);
+    assert.match(
+      parsed.hookSpecificOutput.additionalContext,
+      /mem9 recall is at 82% of its included quota/,
+    );
+  } finally {
+    await new Promise((resolve) => {
+      server.close(() => resolve(undefined));
+    });
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });

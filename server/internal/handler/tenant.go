@@ -27,6 +27,11 @@ type keyStatusResponse struct {
 	Status domain.KeyStatus `json:"status"`
 }
 
+type apiKeyStatusResolution struct {
+	Status domain.KeyStatus
+	Auth   *domain.AuthInfo
+}
+
 func (s *Server) provisionMem9s(w http.ResponseWriter, r *http.Request) {
 	result, err := s.tenant.Provision(r.Context(), service.ProvisionRequest{
 		UTM: normalizeUTMParams(r.URL.Query()),
@@ -70,20 +75,23 @@ func normalizeUTMParams(values url.Values) map[string]string {
 }
 
 func (s *Server) getKeyStatus(w http.ResponseWriter, r *http.Request) {
+	resolution, ok := s.resolveAPIKeyStatus(w, r)
+	if !ok {
+		return
+	}
+	respond(w, http.StatusOK, keyStatusResponse{Status: resolution.Status})
+}
+
+func (s *Server) resolveAPIKeyStatus(w http.ResponseWriter, r *http.Request) (apiKeyStatusResolution, bool) {
 	apiKey := strings.TrimSpace(r.Header.Get(middleware.APIKeyHeader))
 	if apiKey == "" {
 		respondError(w, http.StatusUnauthorized, "missing or malformed X-API-Key")
-		return
+		return apiKeyStatusResolution{}, false
 	}
-	if s.tenant == nil {
-		respondError(w, http.StatusInternalServerError, "auth backend unavailable")
-		return
-	}
-
 	if strings.HasPrefix(apiKey, domain.ChainKeyPrefix) {
 		if s.chains == nil {
 			respondError(w, http.StatusInternalServerError, "auth backend unavailable")
-			return
+			return apiKeyStatusResolution{}, false
 		}
 		status, err := s.chains.KeyStatus(r.Context(), apiKey)
 		if err != nil {
@@ -98,13 +106,23 @@ func (s *Server) getKeyStatus(w http.ResponseWriter, r *http.Request) {
 				logger.ErrorContext(r.Context(), "chain key status lookup failed", "err", err)
 				respondError(w, http.StatusInternalServerError, "auth backend unavailable")
 			}
-			return
+			return apiKeyStatusResolution{}, false
 		}
-		respond(w, http.StatusOK, keyStatusResponse{Status: status})
-		return
+		auth := &domain.AuthInfo{
+			APIKeySubject: apiKey,
+			AgentName:     r.Header.Get(middleware.AgentIDHeader),
+			Chain: &domain.ChainAuth{
+				APIKey: apiKey,
+			},
+		}
+		return apiKeyStatusResolution{Status: status, Auth: auth}, true
 	}
 
-	status, err := s.tenant.KeyStatus(r.Context(), apiKey)
+	if s.tenant == nil {
+		respondError(w, http.StatusInternalServerError, "auth backend unavailable")
+		return apiKeyStatusResolution{}, false
+	}
+	statusResult, err := s.tenant.ResolveAPIKeyStatus(r.Context(), apiKey)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrNotFound):
@@ -117,10 +135,15 @@ func (s *Server) getKeyStatus(w http.ResponseWriter, r *http.Request) {
 			logger.ErrorContext(r.Context(), "key status lookup failed", "err", err)
 			respondError(w, http.StatusInternalServerError, "auth backend unavailable")
 		}
-		return
+		return apiKeyStatusResolution{}, false
 	}
-
-	respond(w, http.StatusOK, keyStatusResponse{Status: status})
+	auth := &domain.AuthInfo{
+		TenantID:      statusResult.TenantID,
+		ClusterID:     statusResult.ClusterID,
+		APIKeySubject: apiKey,
+		AgentName:     r.Header.Get(middleware.AgentIDHeader),
+	}
+	return apiKeyStatusResolution{Status: statusResult.Status, Auth: auth}, true
 }
 
 func (s *Server) getTenantInfo(w http.ResponseWriter, r *http.Request) {

@@ -12,10 +12,12 @@ import type {
   SearchInput,
 } from "../shared/types.ts";
 import { DEFAULT_SCOPE_CONFIG } from "../shared/defaults.ts";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import {
+  Mem9HttpError,
+  messageFromErrorBody,
+  parseJsonOrUndefined,
+} from "./quota-error.ts";
+import { MEM9_PLUGIN_USER_AGENT } from "../shared/plugin-user-agent.ts";
 
 function normalizeTimeoutMs(value: number | undefined, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -71,6 +73,7 @@ export class ServerBackend implements MemoryBackend {
       "Content-Type": "application/json",
       "X-Mnemo-Agent-Id": this.agentName,
       "X-API-Key": this.apiKey,
+      "User-Agent": MEM9_PLUGIN_USER_AGENT,
     };
     const resp = await fetch(url, {
       method,
@@ -82,13 +85,16 @@ export class ServerBackend implements MemoryBackend {
     if (resp.status === 204) return undefined as T;
 
     const text = await resp.text();
-    const data = text ? (JSON.parse(text) as unknown) : undefined;
     if (!resp.ok) {
-      const message =
-        isRecord(data) && typeof data.error === "string" ? data.error : `HTTP ${resp.status}`;
-      throw new Error(message);
+      const data = parseJsonOrUndefined(text);
+      throw new Mem9HttpError(
+        messageFromErrorBody(resp.status, text, data),
+        resp.status,
+        text,
+        data,
+      );
     }
-    return data as T;
+    return JSON.parse(text) as T;
   }
 
   async store(input: CreateMemoryInput): Promise<StoreResult> {
@@ -114,6 +120,8 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
+      message?: string;
+      runtimeState?: unknown;
     }>(
       "GET",
       `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`,
@@ -126,6 +134,8 @@ export class ServerBackend implements MemoryBackend {
       total: raw.total,
       limit: raw.limit,
       offset: raw.offset,
+      ...(typeof raw.message === "string" ? { message: raw.message } : {}),
+      ...(raw.runtimeState !== undefined ? { runtimeState: raw.runtimeState } : {}),
     };
   }
 
@@ -133,7 +143,7 @@ export class ServerBackend implements MemoryBackend {
     try {
       return await this.request<Memory>("GET", this.memoryPath(`/memories/${id}`));
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return null;
       }
       throw err;
@@ -144,7 +154,7 @@ export class ServerBackend implements MemoryBackend {
     try {
       return await this.request<Memory>("PUT", this.memoryPath(`/memories/${id}`), input);
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return null;
       }
       throw err;
@@ -156,7 +166,7 @@ export class ServerBackend implements MemoryBackend {
       await this.request("DELETE", this.memoryPath(`/memories/${id}`));
       return true;
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("not found") || err.message.includes("404"))) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
         return false;
       }
       throw err;
@@ -166,5 +176,9 @@ export class ServerBackend implements MemoryBackend {
   async listRecent(limit: number): Promise<Memory[]> {
     const result = await this.search({ limit, offset: 0 });
     return result.memories;
+  }
+
+  async runtimeState(): Promise<unknown> {
+    return this.request<unknown>("GET", this.memoryPath("/runtime-state"));
   }
 }

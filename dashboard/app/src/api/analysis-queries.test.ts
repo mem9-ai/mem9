@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ANALYSIS_AUTO_REFRESH_WINDOW_MS,
+  MAX_STALLED_POLL_ATTEMPTS,
   createPollProgressState,
   getNextPollProgressState,
   isAnalysisCacheFresh,
@@ -258,7 +259,7 @@ describe("poll stall detection", () => {
     let progress = createPollProgressState(3, snapshot);
     expect(shouldTreatPollAsStalled(progress)).toBe(false);
 
-    for (let index = 0; index < 4; index += 1) {
+    for (let index = 0; index < MAX_STALLED_POLL_ATTEMPTS; index += 1) {
       progress = getNextPollProgressState(progress, 3, snapshot);
     }
 

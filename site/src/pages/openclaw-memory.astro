@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 import Navbar from "../components/Navbar.astro";
 import Footer from "../components/Footer.astro";
+import PageMarkdownAction from "../components/PageMarkdownAction.astro";
 import { DEFAULT_LOCALE, siteCopy } from "../content/site";
 
 const copy = siteCopy[DEFAULT_LOCALE];
@@ -20,7 +21,7 @@ const meta = {
     themeOptions={copy.themeOptions}
   />
 
-  <main class="landing">
+  <main class="landing" data-markdown-root data-markdown-lang="en">
     <section class="hero">
       <div class="container hero-shell">
         <div class="hero-copy">
@@ -35,6 +36,8 @@ const meta = {
             How do I share memory across agents and reduce repeated context? mem9 is the plugin
             for that job.
           </p>
+
+          <PageMarkdownAction />
 
           <div class="cta-row">
             <a class="button primary" href="/SKILL.md" target="_blank">Open SKILL.md</a>

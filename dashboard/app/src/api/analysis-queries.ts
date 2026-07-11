@@ -35,6 +35,7 @@ import type {
   MemoryAnalysisMatch,
   SpaceAnalysisState,
   TaxonomyResponse,
+  UserProfileResponse,
 } from "@/types/analysis";
 import type { Memory } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
@@ -104,6 +105,15 @@ export function isAnalysisCacheFresh(
   }
 
   return now - updatedTime < ANALYSIS_AUTO_REFRESH_WINDOW_MS;
+}
+
+export function useUserProfile(spaceId: string, enabled = true) {
+  return useQuery<UserProfileResponse>({
+    queryKey: ["space", spaceId, "user-profile"],
+    queryFn: () => analysisApi.getUserProfile(spaceId),
+    enabled: !!spaceId && enabled && !features.useMock,
+    staleTime: 60_000,
+  });
 }
 
 function trimEvents<T>(items: T[], limit: number): T[] {

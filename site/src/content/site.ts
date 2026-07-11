@@ -62,6 +62,14 @@ export interface SiteNavCopy {
   contact: string;
 }
 
+export interface SiteTopBannerCopy {
+  bodyBeforeLink: string;
+  pricingLinkLabel: string;
+  bodyAfterLink: string;
+  ariaLabel: string;
+  dismissLabel: string;
+}
+
 export interface SiteHeroHighlight {
   title: string;
   description: string;
@@ -214,6 +222,7 @@ export interface SiteBillingPageCopy {
   kicker: string;
   title: string;
   description: string;
+  docsLinkLabel?: string;
   featureLabels: string[];
   tiers: SiteBillingTier[];
   contactMessage: string;
@@ -237,6 +246,7 @@ export interface SiteApiEndpointCopy {
   description?: string;
   notes?: string[];
   headers?: SiteApiFieldCopy[];
+  pathParams?: SiteApiFieldCopy[];
   queryParams?: SiteApiFieldCopy[];
   bodyFields?: SiteApiFieldCopy[];
   responseFields?: SiteApiFieldCopy[];
@@ -267,6 +277,9 @@ export interface SiteApiPageCopy {
     sidebarTitle: string;
     sidebarAuth: string;
     sidebarQuickstart: string;
+    apiProduct: string;
+    webConsole: string;
+    yourMemory: string;
     apiSearch: string;
     apiSearchPlaceholder: string;
     apiSearchEmpty: string;
@@ -415,9 +428,16 @@ export interface SiteCopyFeedback {
   copyFailed: string;
 }
 
+export interface SitePageToolsCopy {
+  copyMarkdown: string;
+  copiedMarkdown: string;
+  copyMarkdownFailed: string;
+}
+
 export interface SiteDictionary {
   meta: SiteMeta;
   nav: SiteNavCopy;
+  topBanner: SiteTopBannerCopy;
   hero: SiteHeroCopy;
   trust: SiteTrustCopy;
   features: SiteFeaturesCopy;
@@ -432,6 +452,7 @@ export interface SiteDictionary {
   aria: SiteAriaCopy;
   themeOptions: SiteThemeOptionsCopy;
   copyFeedback: SiteCopyFeedback;
+  pageTools: SitePageToolsCopy;
   localeNames: Record<SiteLocale, string>;
 }
 
@@ -1700,6 +1721,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: 'On this page',
       sidebarAuth: 'Authentication',
       sidebarQuickstart: 'Quick Start',
+      apiProduct: 'API product',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'Search API',
       apiSearchPlaceholder: 'Search path or name',
       apiSearchEmpty: 'No matching APIs.',
@@ -1945,6 +1969,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: '本页目录',
       sidebarAuth: '认证',
       sidebarQuickstart: '快速开始',
+      apiProduct: 'API 产品',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: '搜索 API',
       apiSearchPlaceholder: '搜索 path 或名称',
       apiSearchEmpty: '没有匹配的 API。',
@@ -2180,6 +2207,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: '本頁目錄',
       sidebarAuth: '驗證',
       sidebarQuickstart: '快速開始',
+      apiProduct: 'API 產品',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: '搜尋 API',
       apiSearchPlaceholder: '搜尋 path 或名稱',
       apiSearchEmpty: '沒有符合的 API。',
@@ -2410,6 +2440,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: 'このページの内容',
       sidebarAuth: '認証',
       sidebarQuickstart: 'クイックスタート',
+      apiProduct: 'API 製品',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'API を検索',
       apiSearchPlaceholder: 'path または名前を検索',
       apiSearchEmpty: '一致する API はありません。',
@@ -2640,6 +2673,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: '이 페이지 목차',
       sidebarAuth: '인증',
       sidebarQuickstart: '빠른 시작',
+      apiProduct: 'API 제품',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'API 검색',
       apiSearchPlaceholder: 'path 또는 이름 검색',
       apiSearchEmpty: '일치하는 API가 없습니다.',
@@ -2870,6 +2906,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: 'Di halaman ini',
       sidebarAuth: 'Autentikasi',
       sidebarQuickstart: 'Quick Start',
+      apiProduct: 'Produk API',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'Cari API',
       apiSearchPlaceholder: 'Cari path atau nama',
       apiSearchEmpty: 'Tidak ada API yang cocok.',
@@ -3100,6 +3139,9 @@ const apiPageByLocale: Record<SiteLocale, SiteApiPageCopy> = {
       sidebarTitle: 'ในหน้านี้',
       sidebarAuth: 'การยืนยันตัวตน',
       sidebarQuickstart: 'เริ่มต้นอย่างรวดเร็ว',
+      apiProduct: 'ผลิตภัณฑ์ API',
+      webConsole: 'Web Console',
+      yourMemory: 'Your Memory',
       apiSearch: 'ค้นหา API',
       apiSearchPlaceholder: 'ค้นหา path หรือชื่อ',
       apiSearchEmpty: 'ไม่พบ API ที่ตรงกัน',
@@ -6048,6 +6090,7 @@ function localizeApiEndpoint(locale: SiteLocale, endpoint: SiteApiEndpointCopy):
     description: endpoint.description ? localizeApiSharedText(locale, endpoint.description) : undefined,
     notes: endpoint.notes?.map((note) => localizeApiSharedText(locale, note)),
     headers: localizeApiFields(locale, endpoint.headers),
+    pathParams: localizeApiFields(locale, endpoint.pathParams),
     queryParams: localizeApiFields(locale, endpoint.queryParams),
     bodyFields: localizeApiFields(locale, endpoint.bodyFields),
     responseFields: localizeApiFields(locale, endpoint.responseFields),
@@ -6101,6 +6144,14 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: 'Release Notes',
       contact: 'Contact Us',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' is coming soon. Unclaimed trial API keys will be rate-limited after the free quota. Sign in and claim your API key to upgrade your plan for more usage.',
+      ariaLabel: 'Hosted API key migration notice',
+      dismissLabel: 'Dismiss banner',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -6328,6 +6379,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'Pricing',
       title: 'Simple, transparent pricing',
       description: 'Start free. Scale when you need to.',
+      docsLinkLabel: 'Read pricing details in Console Docs',
       featureLabels: [
         'End users',
         'Add requests',
@@ -6429,6 +6481,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: 'Onboarding instructions copied.',
       copyFailed: 'Copy failed. Please copy the command manually.',
     },
+    pageTools: {
+      copyMarkdown: 'Copy as Markdown',
+      copiedMarkdown: 'Markdown copied',
+      copyMarkdownFailed: 'Copy failed. Please try again.',
+    },
     localeNames,
   },
   zh: {
@@ -6461,6 +6518,14 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: '发布说明',
       contact: '联系我们',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' 即将上线。未绑定的试用期 API Key 超出免费额度后将受到 Rate Limit 限制。请登录并绑定您的 API Key，升级 Plan 以获得更多用量。',
+      ariaLabel: '托管 API Key 迁移公告',
+      dismissLabel: '关闭公告',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -6675,6 +6740,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '定价',
       title: '简单透明的定价',
       description: '免费起步，按需扩展。',
+      docsLinkLabel: '在 Console 文档中阅读定价详情',
       featureLabels: [
         '终端用户',
         '添加请求',
@@ -6775,6 +6841,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: '已复制接入说明。',
       copyFailed: '复制失败，请手动复制命令。',
     },
+    pageTools: {
+      copyMarkdown: '复制为 Markdown',
+      copiedMarkdown: 'Markdown 已复制',
+      copyMarkdownFailed: '复制失败，请重试。',
+    },
     localeNames,
   },
   'zh-Hant': {
@@ -6807,6 +6878,14 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: '發布說明',
       contact: '聯絡我們',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' 即將上線。未綁定的試用期 API Key 超出免費額度後將受到 Rate Limit 限制。請登入並綁定您的 API Key，升級 Plan 以取得更多用量。',
+      ariaLabel: '託管 API Key 遷移公告',
+      dismissLabel: '關閉公告',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -7026,6 +7105,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '定價',
       title: '簡單透明的定價',
       description: '免費起步，按需擴展。',
+      docsLinkLabel: '在 Console 文檔中閱讀定價詳情',
       featureLabels: [
         '終端使用者',
         '新增請求',
@@ -7126,6 +7206,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: '已複製接入說明。',
       copyFailed: '複製失敗，請手動複製命令。',
     },
+    pageTools: {
+      copyMarkdown: '複製為 Markdown',
+      copiedMarkdown: 'Markdown 已複製',
+      copyMarkdownFailed: '複製失敗，請重試。',
+    },
     localeNames,
   },
   ja: {
@@ -7158,6 +7243,14 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: 'リリースノート',
       contact: 'お問い合わせ',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' はまもなく開始されます。未請求の試用 API Key は、無料枠を超えると Rate Limit の対象になります。サインインして API Key を請求し、Plan をアップグレードすると利用量を増やせます。',
+      ariaLabel: 'ホスト型 API Key 移行のお知らせ',
+      dismissLabel: 'お知らせを閉じる',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -7380,6 +7473,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '料金',
       title: 'シンプルで透明な料金体系',
       description: '無料で始めて、必要に応じてスケール。',
+      docsLinkLabel: 'Console ドキュメントで料金の詳細を読む',
       featureLabels: [
         'エンドユーザー',
         '追加リクエスト',
@@ -7482,6 +7576,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: '導入手順をコピーしました。',
       copyFailed: 'コピーに失敗しました。手動でコピーしてください。',
     },
+    pageTools: {
+      copyMarkdown: 'Markdown としてコピー',
+      copiedMarkdown: 'Markdown をコピーしました',
+      copyMarkdownFailed: 'コピーに失敗しました。もう一度お試しください。',
+    },
     localeNames,
   },
   ko: {
@@ -7514,6 +7613,14 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: '릴리스 노트',
       contact: '문의하기',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        '이 곧 시작됩니다. 연결되지 않은 평가판 API Key는 무료 한도를 초과하면 Rate Limit이 적용됩니다. 로그인해 API Key를 연결하고 Plan을 업그레이드하면 더 많이 사용할 수 있습니다.',
+      ariaLabel: '호스팅 API Key 이전 안내',
+      dismissLabel: '공지 닫기',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -7733,6 +7840,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: '요금',
       title: '간단하고 투명한 요금제',
       description: '무료로 시작하고, 필요할 때 확장하세요.',
+      docsLinkLabel: 'Console 문서에서 요금 상세 보기',
       featureLabels: [
         '최종 사용자',
         '추가 요청',
@@ -7835,6 +7943,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: '온보딩 안내를 복사했습니다.',
       copyFailed: '복사에 실패했습니다. 직접 복사해 주세요.',
     },
+    pageTools: {
+      copyMarkdown: 'Markdown으로 복사',
+      copiedMarkdown: 'Markdown을 복사했습니다',
+      copyMarkdownFailed: '복사에 실패했습니다. 다시 시도해 주세요.',
+    },
     localeNames,
   },
   id: {
@@ -7867,6 +7980,14 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: 'Catatan Rilis',
       contact: 'Hubungi Kami',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' akan segera diluncurkan. Trial API Key yang belum diklaim akan terkena Rate Limit setelah melewati kuota gratis. Masuk dan klaim API Key Anda untuk upgrade Plan agar mendapat kuota lebih besar.',
+      ariaLabel: 'Pemberitahuan migrasi API Key terkelola',
+      dismissLabel: 'Tutup pengumuman',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -8089,6 +8210,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'Harga',
       title: 'Harga yang sederhana dan transparan',
       description: 'Mulai gratis. Skalakan saat dibutuhkan.',
+      docsLinkLabel: 'Baca detail harga di dokumentasi Console',
       featureLabels: [
         'Pengguna akhir',
         'Permintaan add',
@@ -8191,6 +8313,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       copied: 'Instruksi onboarding disalin.',
       copyFailed: 'Gagal menyalin. Silakan salin manual.',
     },
+    pageTools: {
+      copyMarkdown: 'Salin sebagai Markdown',
+      copiedMarkdown: 'Markdown disalin',
+      copyMarkdownFailed: 'Gagal menyalin. Silakan coba lagi.',
+    },
     localeNames,
   },
   th: {
@@ -8223,6 +8350,14 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       howItWork: 'How it work',
       releaseNotes: 'บันทึกการเผยแพร่',
       contact: 'ติดต่อเรา',
+    },
+    topBanner: {
+      bodyBeforeLink: '',
+      pricingLinkLabel: 'mem9 Billing',
+      bodyAfterLink:
+        ' กำลังจะเปิดใช้งาน Trial API Key ที่ยังไม่ได้ claim จะถูก Rate Limit เมื่อเกินโควต้าฟรี เข้าสู่ระบบและ claim API Key เพื่ออัปเกรด Plan และเพิ่มปริมาณการใช้งาน',
+      ariaLabel: 'ประกาศการย้าย API Key ที่โฮสต์อยู่',
+      dismissLabel: 'ปิดประกาศ',
     },
     hero: {
       eyebrow: 'MEM9.AI',
@@ -8445,6 +8580,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
       kicker: 'ราคา',
       title: 'ราคาที่เรียบง่ายและโปร่งใส',
       description: 'เริ่มต้นฟรี ขยายเมื่อคุณต้องการ',
+      docsLinkLabel: 'อ่านรายละเอียดราคาในเอกสาร Console',
       featureLabels: [
         'ผู้ใช้ปลายทาง',
         'Add requests',
@@ -8546,6 +8682,11 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
     copyFeedback: {
       copied: 'คัดลอกคำแนะนำการตั้งค่าแล้ว',
       copyFailed: 'คัดลอกไม่สำเร็จ กรุณาคัดลอกด้วยตนเอง',
+    },
+    pageTools: {
+      copyMarkdown: 'คัดลอกเป็น Markdown',
+      copiedMarkdown: 'คัดลอก Markdown แล้ว',
+      copyMarkdownFailed: 'คัดลอกไม่สำเร็จ โปรดลองอีกครั้ง',
     },
     localeNames,
   },

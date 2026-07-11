@@ -218,6 +218,87 @@ export interface AnalysisApiErrorPayload {
   details?: Record<string, unknown>;
 }
 
+export type UserProfileItemKind =
+  | "current_priority"
+  | "companion_style"
+  | "robot_constraint";
+
+export interface UserProfileEvidence {
+  memoryId: string;
+  memoryType?: string;
+  quote: string;
+  createdAt?: string;
+}
+
+export interface UserProfileSummarySection {
+  text: string;
+  message?: string;
+  evidence: UserProfileEvidence[];
+}
+
+export interface UserProfileRelationshipItem {
+  name: string;
+  relation?: string;
+  importance: number;
+  evidenceCount: number;
+  evidence: UserProfileEvidence[];
+}
+
+export interface UserProfileImageItem {
+  kind: UserProfileItemKind;
+  title: string;
+  summary: string;
+  importance: number;
+  evidenceCount: number;
+  evidence: UserProfileEvidence[];
+}
+
+export type UserProfileAttributeKind =
+  | "long_term_interest"
+  | "professional_skill"
+  | "current_project"
+  | "long_term_goal"
+  | "work_habit"
+  | "communication_style";
+
+export interface UserProfileAttributeHistoryItem {
+  value: string;
+  observedAt?: string;
+  evidence: UserProfileEvidence[];
+}
+
+export interface UserProfileAttributeItem {
+  kind: UserProfileAttributeKind;
+  label: string;
+  value: string;
+  updatedAt?: string;
+  evidenceCount: number;
+  evidence: UserProfileEvidence[];
+  history: UserProfileAttributeHistoryItem[];
+}
+
+export interface UserProfileAttributeChange {
+  kind: UserProfileAttributeKind;
+  label: string;
+  previous: string;
+  current: string;
+  changedAt?: string;
+  evidence: UserProfileEvidence[];
+}
+
+export interface UserProfileResponse {
+  generatedAt: string;
+  source: {
+    memoryTypes: string[];
+    memoryCount: number;
+  };
+  summary: UserProfileSummarySection;
+  attributes: UserProfileAttributeItem[];
+  changes: UserProfileAttributeChange[];
+  relationships: UserProfileRelationshipItem[];
+  items: UserProfileImageItem[];
+}
+
 export type AnalysisPhase =
   | "idle"
   | "creating"

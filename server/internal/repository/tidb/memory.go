@@ -36,6 +36,7 @@ func (r *MemoryRepo) FTSAvailable() bool { return r.ftsAvailable.Load() }
 
 const (
 	allColumns               = `id, content, source, tags, metadata, embedding, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at, superseded_by`
+	searchColumns            = `id, content, source, tags, metadata, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at, superseded_by`
 	maxFTSCandidatePageLimit = 10000
 	maxFTSFallbackPages      = 30
 	// TiDB Cloud FTS is only safe with fts_match_word as the only WHERE predicate,
@@ -80,6 +81,47 @@ func (r *MemoryRepo) GetByID(ctx context.Context, id string) (*domain.Memory, er
 		`SELECT `+allColumns+` FROM memories WHERE id = ? AND state = 'active'`, id,
 	)
 	return scanMemory(row)
+}
+
+func (r *MemoryRepo) GetEmbeddingsByID(ctx context.Context, ids []string) (map[string][]float32, error) {
+	if len(ids) == 0 {
+		return map[string][]float32{}, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := `SELECT id, embedding FROM memories
+		WHERE id IN (` + strings.Join(placeholders, ",") + `)
+			AND state = 'active'
+			AND embedding IS NOT NULL`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get memory embeddings: %w", err)
+	}
+	defer rows.Close()
+
+	embeddings := make(map[string][]float32, len(ids))
+	for rows.Next() {
+		var id string
+		var embeddingStr []byte
+		if err := rows.Scan(&id, &embeddingStr); err != nil {
+			return nil, fmt.Errorf("scan memory embedding: %w", err)
+		}
+		embedding := parseVecString(embeddingStr)
+		if len(embedding) > 0 {
+			embeddings[id] = embedding
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return embeddings, nil
 }
 
 func (r *MemoryRepo) UpdateOptimistic(ctx context.Context, m *domain.Memory, expectedVersion int) error {
@@ -275,7 +317,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 		offset = 0
 	}
 
-	dataQuery := "SELECT " + allColumns + " FROM memories WHERE " +
+	dataQuery := "SELECT " + searchColumns + " FROM memories WHERE " +
 		where + " ORDER BY " + memoryListOrderBy(f) + " LIMIT ? OFFSET ?"
 	// Copy args to avoid mutating the original slice (append may reuse underlying array).
 	dataArgs := make([]any, len(args), len(args)+2)
@@ -291,7 +333,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 
 	var memories []domain.Memory
 	for rows.Next() {
-		m, err := scanMemoryRows(rows)
+		m, err := scanSearchMemoryRows(rows)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -338,7 +380,7 @@ func (r *MemoryRepo) ListBootstrap(ctx context.Context, limit int) ([]domain.Mem
 		limit = 20
 	}
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT `+allColumns+` FROM memories WHERE state = 'active' ORDER BY updated_at DESC LIMIT ?`,
+		`SELECT `+searchColumns+` FROM memories WHERE state = 'active' ORDER BY updated_at DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -349,7 +391,7 @@ func (r *MemoryRepo) ListBootstrap(ctx context.Context, limit int) ([]domain.Mem
 
 	var memories []domain.Memory
 	for rows.Next() {
-		m, err := scanMemoryRows(rows)
+		m, err := scanSearchMemoryRows(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -424,7 +466,7 @@ func (r *MemoryRepo) VectorSearch(ctx context.Context, queryVec []float32, f dom
 
 	where := strings.Join(conds, " AND ")
 
-	query := `SELECT ` + allColumns + `, VEC_COSINE_DISTANCE(embedding, ?) AS distance
+	query := `SELECT ` + searchColumns + `, VEC_COSINE_DISTANCE(embedding, ?) AS distance
 		 FROM memories
 		 WHERE ` + where + `
 		 ORDER BY VEC_COSINE_DISTANCE(embedding, ?)
@@ -446,7 +488,7 @@ func (r *MemoryRepo) VectorSearch(ctx context.Context, queryVec []float32, f dom
 
 	var memories []domain.Memory
 	for rows.Next() {
-		m, err := scanMemoryRowsWithDistance(rows)
+		m, err := scanSearchMemoryRowsWithDistance(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -465,7 +507,7 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 
 	where := strings.Join(conds, " AND ")
 
-	query := `SELECT ` + allColumns + `, VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS distance
+	query := `SELECT ` + searchColumns + `, VEC_EMBED_COSINE_DISTANCE(embedding, ?) AS distance
 		 FROM memories
 		 WHERE ` + where + `
 		 ORDER BY VEC_EMBED_COSINE_DISTANCE(embedding, ?)
@@ -486,7 +528,7 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 
 	var memories []domain.Memory
 	for rows.Next() {
-		m, err := scanMemoryRowsWithDistance(rows)
+		m, err := scanSearchMemoryRowsWithDistance(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -508,7 +550,7 @@ func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.M
 	}
 
 	where := strings.Join(conds, " AND ")
-	sqlQuery := `SELECT ` + allColumns + ` FROM memories WHERE ` + where + ` ORDER BY updated_at DESC LIMIT ?`
+	sqlQuery := `SELECT ` + searchColumns + ` FROM memories WHERE ` + where + ` ORDER BY updated_at DESC LIMIT ?`
 	args = append(args, limit)
 
 	start := time.Now()
@@ -521,7 +563,7 @@ func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.M
 
 	var memories []domain.Memory
 	for rows.Next() {
-		m, err := scanMemoryRows(rows)
+		m, err := scanSearchMemoryRows(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -675,7 +717,7 @@ func (r *MemoryRepo) fetchFilteredFTSMemories(ctx context.Context, candidates []
 	}
 	args = append(args, filterArgs...)
 
-	sqlQuery := `SELECT ` + allColumns + ` FROM memories
+	sqlQuery := `SELECT ` + searchColumns + ` FROM memories
 		WHERE id IN (` + strings.Join(placeholders, ",") + `) AND ` + where
 
 	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
@@ -686,7 +728,7 @@ func (r *MemoryRepo) fetchFilteredFTSMemories(ctx context.Context, candidates []
 
 	memoriesByID := make(map[string]domain.Memory, len(candidates))
 	for rows.Next() {
-		m, err := scanMemoryRows(rows)
+		m, err := scanSearchMemoryRows(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -878,6 +920,63 @@ func scanMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
 	score := 1 - distance
 	m.Score = &score
 	return &m, nil
+}
+
+func scanSearchMemoryRows(rows *sql.Rows) (*domain.Memory, error) {
+	var m domain.Memory
+	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
+	var tagsJSON, metadataJSON []byte
+
+	err := rows.Scan(&m.ID, &m.Content, &source,
+		&tagsJSON, &metadataJSON, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
+		&m.CreatedAt, &m.UpdatedAt, &supersededBy)
+	if err != nil {
+		return nil, fmt.Errorf("scan memory search row: %w", err)
+	}
+	populateMemoryFields(&m, source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy, tagsJSON, metadataJSON)
+	return &m, nil
+}
+
+func scanSearchMemoryRowsWithDistance(rows *sql.Rows) (*domain.Memory, error) {
+	var m domain.Memory
+	var source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString
+	var tagsJSON, metadataJSON []byte
+	var distance float64
+
+	err := rows.Scan(&m.ID, &m.Content, &source,
+		&tagsJSON, &metadataJSON, &memoryType, &agentID, &sessionID, &appID, &state, &m.Version, &updatedBy,
+		&m.CreatedAt, &m.UpdatedAt, &supersededBy,
+		&distance)
+	if err != nil {
+		return nil, fmt.Errorf("scan memory search row with distance: %w", err)
+	}
+	populateMemoryFields(&m, source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy, tagsJSON, metadataJSON)
+	score := 1 - distance
+	m.Score = &score
+	return &m, nil
+}
+
+func populateMemoryFields(
+	m *domain.Memory,
+	source, memoryType, agentID, sessionID, appID, state, updatedBy, supersededBy sql.NullString,
+	tagsJSON, metadataJSON []byte,
+) {
+	m.Source = source.String
+	m.MemoryType = domain.MemoryType(memoryType.String)
+	if m.MemoryType == "" {
+		m.MemoryType = domain.TypePinned
+	}
+	m.AgentID = agentID.String
+	m.SessionID = sessionID.String
+	m.AppID = appID.String
+	m.State = domain.MemoryState(state.String)
+	if m.State == "" {
+		m.State = domain.StateActive
+	}
+	m.UpdatedBy = updatedBy.String
+	m.SupersededBy = supersededBy.String
+	m.Tags = unmarshalTags(tagsJSON)
+	m.Metadata = unmarshalRawJSON(metadataJSON)
 }
 
 func marshalTags(tags []string) []byte {

@@ -1,0 +1,108 @@
+name: Publish OpenClaw plugin
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish @mem9/mem9
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require main branch
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "::error::Run this workflow from main."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Read package version
+        id: package
+        working-directory: openclaw-plugin
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Resolve npm dist tag
+        id: npm-tag
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const version = process.env.PACKAGE_VERSION ?? "";
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+)(?:\.\d+)?)?$/.exec(version);
+
+          if (!match) {
+            console.error(`::error::Unsupported package version format: ${version}`);
+            process.exit(1);
+          }
+
+          const channel = match[4];
+          const tag = channel ?? "latest";
+          if (!["latest", "alpha", "beta", "rc"].includes(tag)) {
+            console.error(`::error::Unsupported prerelease channel in ${version}; use alpha, beta, or rc.`);
+            process.exit(1);
+          }
+
+          fs.appendFileSync(outputPath, `tag=${tag}\n`);
+          NODE
+
+      - name: Check npm token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::Missing NPM_TOKEN repository secret."
+            exit 1
+          fi
+
+      - name: Check package version is unpublished
+        run: |
+          set -euo pipefail
+          if npm view "@mem9/mem9@${{ steps.package.outputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::@mem9/mem9@${{ steps.package.outputs.version }} already exists on npm."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        working-directory: openclaw-plugin
+        run: npm install --no-audit --no-fund
+
+      - name: Run tests
+        working-directory: openclaw-plugin
+        run: npm test
+
+      - name: Typecheck
+        working-directory: openclaw-plugin
+        run: npm run typecheck
+
+      - name: Pack check
+        working-directory: openclaw-plugin
+        run: npm pack --dry-run
+
+      - name: Publish
+        working-directory: openclaw-plugin
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --tag "${{ steps.npm-tag.outputs.tag }}"

@@ -86,6 +86,39 @@ function normalizeMemoryListResponse(
   };
 }
 
+function normalizeTopicSummary(response: unknown): TopicSummary {
+  if (!response || typeof response !== "object") {
+    return { topics: [], total: 0 };
+  }
+
+  const source = response as {
+    topics?: unknown;
+    facets?: unknown;
+    counts?: { total?: unknown };
+  };
+  const items = Array.isArray(source.facets)
+    ? source.facets
+    : Array.isArray(source.topics)
+      ? source.topics
+      : [];
+  const topics = items.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const value = item as { key?: unknown; facet?: unknown; count?: unknown };
+    const facet = typeof value.key === "string" ? value.key : value.facet;
+    const count = typeof value.count === "number" ? value.count : 0;
+    return typeof facet === "string" && count > 0
+      ? [{ facet: facet as TopicSummary["topics"][number]["facet"], count }]
+      : [];
+  });
+
+  return {
+    topics,
+    total: typeof source.counts?.total === "number"
+      ? source.counts.total
+      : topics.reduce((sum, topic) => sum + topic.count, 0),
+  };
+}
+
 function normalizeSessionMessage(
   message: Partial<SessionMessage>,
 ): SessionMessage {
@@ -172,6 +205,7 @@ export const httpProvider: DashboardProvider = {
     if (params.q) qs.set("q", params.q);
     if (params.tags?.length) qs.set("tags", params.tags.join(","));
     if (params.memory_type) qs.set("memory_type", params.memory_type);
+    if (params.facet) qs.set("facet", params.facet);
     if (params.updated_from) qs.set("updated_from", params.updated_from);
     if (params.updated_to) qs.set("updated_to", params.updated_to);
     qs.set("limit", String(params.limit ?? 50));
@@ -383,10 +417,13 @@ export const httpProvider: DashboardProvider = {
   },
 
   async getTopicSummary(
-    _apiKey: string,
-    _params?: TimeRangeParams,
+    apiKey: string,
+    params?: TimeRangeParams,
   ): Promise<TopicSummary> {
-    // Backend /summary not yet available; return empty.
-    return { topics: [], total: 0 };
+    const qs = new URLSearchParams();
+    if (params?.updated_from) qs.set("updated_from", params.updated_from);
+    if (params?.updated_to) qs.set("updated_to", params.updated_to);
+    const response = await request<unknown>(apiKey, `/summary?${qs}`);
+    return normalizeTopicSummary(response);
   },
 };

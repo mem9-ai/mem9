@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { MemoryBackend } from "./backend.js";
 import type {
   Memory,
@@ -9,6 +11,11 @@ import type {
   IngestInput,
   IngestResult,
 } from "./types.js";
+import {
+  Mem9HttpError,
+  messageFromErrorBody,
+  parseJsonOrUndefined,
+} from "./quota-error.js";
 
 type ProvisionMem9sResponse = {
   id: string;
@@ -16,6 +23,24 @@ type ProvisionMem9sResponse = {
 
 export const DEFAULT_TIMEOUT_MS = 8_000;
 export const DEFAULT_SEARCH_TIMEOUT_MS = 15_000;
+const MEM9_PLUGIN_USER_AGENT = `mem9-plugin/openclaw/${readPackageVersion()}`;
+
+function readPackageVersion(): string {
+  for (const relativePath of ["./package.json", "../package.json"]) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(new URL(relativePath, import.meta.url), "utf8"),
+      );
+      if (typeof pkg.version === "string" && pkg.version.trim()) {
+        return pkg.version.trim();
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return "unknown";
+}
 
 export interface BackendTimeouts {
   defaultTimeoutMs?: number;
@@ -67,6 +92,9 @@ export class ServerBackend implements MemoryBackend {
     const qs = query.toString();
     const resp = await fetch(this.baseUrl + "/v1alpha1/mem9s" + (qs ? `?${qs}` : ""), {
       method: "POST",
+      headers: {
+        "User-Agent": MEM9_PLUGIN_USER_AGENT,
+      },
       signal: AbortSignal.timeout(this.timeouts.defaultTimeoutMs),
     });
 
@@ -110,6 +138,8 @@ export class ServerBackend implements MemoryBackend {
       total: number;
       limit: number;
       offset: number;
+      message?: string;
+      runtimeState?: unknown;
     }>(
       "GET",
       `${this.memoryPath("/memories")}${qs ? "?" + qs : ""}`,
@@ -121,22 +151,30 @@ export class ServerBackend implements MemoryBackend {
       total: raw.total,
       limit: raw.limit,
       offset: raw.offset,
+      ...(typeof raw.message === "string" ? { message: raw.message } : {}),
+      ...(raw.runtimeState !== undefined ? { runtimeState: raw.runtimeState } : {}),
     };
   }
 
   async get(id: string): Promise<Memory | null> {
     try {
       return await this.request<Memory>("GET", this.memoryPath(`/memories/${id}`));
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return null;
+      }
+      throw err;
     }
   }
 
   async update(id: string, input: UpdateMemoryInput): Promise<Memory | null> {
     try {
       return await this.request<Memory>("PUT", this.memoryPath(`/memories/${id}`), input);
-    } catch {
-      return null;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return null;
+      }
+      throw err;
     }
   }
 
@@ -144,13 +182,20 @@ export class ServerBackend implements MemoryBackend {
     try {
       await this.request("DELETE", this.memoryPath(`/memories/${id}`));
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if (err instanceof Mem9HttpError && err.status === 404) {
+        return false;
+      }
+      throw err;
     }
   }
 
   async ingest(input: IngestInput): Promise<IngestResult> {
     return this.request<IngestResult>("POST", this.memoryPath("/memories"), input);
+  }
+
+  async runtimeState(): Promise<unknown> {
+    return this.request<unknown>("GET", this.memoryPath("/runtime-state"));
   }
 
   private async requestRaw(
@@ -164,6 +209,7 @@ export class ServerBackend implements MemoryBackend {
       "Content-Type": "application/json",
       "X-Mnemo-Agent-Id": this.agentName,
       "X-API-Key": this.apiKey,
+      "User-Agent": MEM9_PLUGIN_USER_AGENT,
     };
     return fetch(url, {
       method,
@@ -185,10 +231,16 @@ export class ServerBackend implements MemoryBackend {
       return undefined as T;
     }
 
-    const data = await resp.json();
+    const text = await resp.text();
     if (!resp.ok) {
-      throw new Error((data as { error?: string }).error || `HTTP ${resp.status}`);
+      const data = parseJsonOrUndefined(text);
+      throw new Mem9HttpError(
+        messageFromErrorBody(resp.status, text, data),
+        resp.status,
+        text,
+        data,
+      );
     }
-    return data as T;
+    return JSON.parse(text) as T;
   }
 }

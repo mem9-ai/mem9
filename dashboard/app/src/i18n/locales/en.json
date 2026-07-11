@@ -216,14 +216,20 @@
   },
   "memory_overview": {
     "tabs": {
-      "pulse": "Memory Pulse",
+      "pulse": "Memory List",
+      "profile": "Memory Profile",
       "insight": "Memory Insight",
-      "analysis": "Memory Analysis"
+      "analysis": "Memory Analysis",
+      "reports": "Report Manage",
+      "periodic": "Periodic Observation"
     },
     "tabs_short": {
-      "pulse": "Pulse",
+      "pulse": "List",
+      "profile": "Profile",
       "insight": "Insight",
-      "analysis": "Analysis"
+      "analysis": "Analysis",
+      "reports": "Reports",
+      "periodic": "Observe"
     },
     "desktop_only": {
       "title": "Memory Insight needs a wider screen",
@@ -423,6 +429,63 @@
       "count": "{{count}} mentions"
     }
   },
+  "memory_profile": {
+    "page_title": "My Memory Profile",
+    "page_subtitle": "Based on {{days}} days together and {{count}} memories, this is the profile your Agent is using now.",
+    "last_updated": "Last updated: 2 hours ago",
+    "last_updated_at": "Last updated: {{value}}",
+    "share": "Share my profile",
+    "share_copy": "My mem9 memory profile",
+    "personal": {
+      "eyebrow": "Personal Info",
+      "title": "Basic Profile",
+      "avatar": "",
+      "name": "",
+      "companion_duration": "Companion duration",
+      "memory_count": "Memories",
+      "confirmed": "Confirmed profile",
+      "days": "{{count}} days",
+      "memories": "{{count}} memories"
+    },
+    "current_understanding": {
+      "eyebrow": "",
+      "title": "AI's Current Understanding of You",
+      "loading": "Loading AI's current understanding of you...",
+      "description": "You are rational, curious, and growth-driven, and you like breaking goals into clear steps. You are currently focused on KET preparation, vocabulary planning, and health habits, and you prefer direct, specific, low-preach advice. When making decisions, you tend to prioritize safety, proceed step by step, and value sustainability."
+    },
+    "confidence": {
+      "eyebrow": "Trust",
+      "title": "Profile Confidence",
+      "chart_label": "Profile confidence pie chart",
+      "trusted": "trusted",
+      "current": "Current",
+      "label": "Confidence {{value}}%",
+      "segments": {
+        "confirmed": "User confirmed",
+        "high": "High confidence",
+        "medium": "Medium confidence",
+        "pending": "Pending confirmation"
+      }
+    },
+    "feedback": { "accurate": "Accurate", "edit": "Edit", "inaccurate": "Not accurate" },
+    "topics": {
+      "title": "Focus topics",
+      "items": { "technology": "AI & tech", "education": "Family education", "health": "Healthy habits", "learning": "Learning", "product": "Product exploration" }
+    },
+    "composition": {
+      "title": "Memory composition",
+      "items": { "profile": "Profile", "communication": "Communication", "learning": "Learning", "project": "Project", "status": "Status" }
+    },
+    "relationships": { "title": "Important relationships", "action": "Relationship map", "user": "You", "daughter": "Daughter", "partner": "Partner", "parents": "Parents", "empty": "No important relationships to show yet.", "unspecified": "Relationship not labeled", "evidence_count": "{{count}} evidence" },
+    "items": {
+      "title": "Profile items",
+      "empty": "No profile items to show yet.",
+      "evidence_count": "· {{count}} evidence",
+      "priority": { "title": "Current priorities" },
+      "style": { "title": "Preferred companion style" },
+      "constraint": { "title": "Important constraints" }
+    }
+  },
   "memory_insight": {
     "layer_eyebrow": "Insight Layers",
     "layer_helper": "Keep the browse map for drill-down, or switch to the entity network for relationship signals.",
@@ -519,6 +582,118 @@
         "scheduled_with": "Scheduled with",
         "points_to": "Points to"
       }
+    }
+  },
+  "periodic_observation": {
+    "eyebrow": "",
+    "title": "Periodic report & long-term observation",
+    "subtitle": "A phase-level understanding generated from long-horizon memories.",
+    "generate": "Refresh",
+    "download": "Download PDF",
+    "range": "Range",
+    "date_from": "Start time",
+    "date_to": "End time",
+    "memory_count": "Memory count",
+    "memories": "{{count}} memories",
+    "change_count": "Insight changes",
+    "changes": "{{count}}",
+    "stored_report_notice": "This view is using a previously generated report, so the periodic observation below may be outdated. Click Refresh to generate it again.",
+    "profile_version": "Profile version",
+    "loading": "Analyzing recent memories...",
+    "ready": "Choose a range, then generate the report",
+    "ready_description": "Changing the date range will not start analysis. Click Generate report when ready.",
+    "failed": "Periodic observation failed to load",
+    "failed_description": "Please retry later or check whether the Space is connected.",
+    "empty": "No periodic changes yet",
+    "empty_description": "The last 14 days of session memories are not enough to form stable insights.",
+    "dimensions": {
+      "long_term_goal": "Long-term goal changes",
+      "focus_area": "Focus changes",
+      "emotion": "Emotional trend changes",
+      "preference_signal": "Preference signal changes",
+      "growth_signal": "Growth observations"
+    },
+    "status": { "high": "high", "confirm": "needs confirm", "actionable": "actionable" },
+    "key_changes": { "title": "Key changes", "subtitle": "What changed in this period compared with history", "all": "View all key changes (4)", "items": { "focus": { "title": "Focus shift", "body": "Diet and weight management → KET, study planning, and healthy habits" }, "goal": { "title": "Long-term goal shift", "body": "A steadier study rhythm and 60-day vocabulary plan emerged" }, "emotion": { "title": "Emotional trend", "body": "Anxiety → steadier; triggered by KET preparation and study rhythm" }, "structure": { "title": "Memory structure", "body": "Health is stable; learning insights have grown" } } },
+    "other_insights": { "title": "Other insights", "subtitle": "Long-term understanding worth watching beyond change", "all": "View all insights (4)", "items": { "repeated": { "title": "Repeated topics", "body": "KET preparation, step targets, study rhythm" }, "preference": { "title": "Stable preferences", "body": "Gentle reminders, Chinese, fewer follow-up questions" }, "growth": { "title": "Growth observation", "body": "Self-management is expanding from health habits into study planning" }, "pending": { "title": "Governance candidates", "body": "Two low-confidence interpretations and one stale health goal" } } },
+    "emotion_detail": { "title": "Emotional trend detail", "summary": "This period moved from steady to light pressure, concentrated from Jun 6 to Jun 8, then eased.", "related_count": "12 related memories", "timeline": "Emotional timeline (daily)", "legend": { "very_unhappy": "Very unpleasant", "unhappy": "Unpleasant", "slightly_unhappy": "Slightly unpleasant", "neutral": "Neutral", "slightly_happy": "Slightly pleasant", "happy": "Pleasant", "very_happy": "Very pleasant" }, "stages": "Stage summary", "stage_count": "{{count}} emotional stages", "selected_evidence": "Evidence for selected stage", "stage_items": { "early": { "range": "Jun 1 – Jun 5", "body": "Mostly steady with occasional positive expression" }, "pressure": { "range": "Jun 6 – Jun 8", "body": "Pressure rose around KET preparation and study rhythm" }, "recovery": { "range": "Jun 9 – Jun 10", "body": "Pressure eased and planning adjustments began" } }, "topics": "Primary triggers", "topic_items": { "ket": { "title": "KET preparation", "body": "Preparation and review planning" }, "rhythm": { "title": "Study rhythm", "body": "Time allocation and stacked tasks" }, "health": { "title": "Health habits", "body": "Exercise, rest, and routine" } }, "related_items": ["KET preparation has been mentioned repeatedly", "The 60-day vocabulary plan may be a long-term goal", "Whether health habits are still the top priority"] },
+    "structure_detail": { "title": "Memory structure change", "subtitle": "Memory composition: previous period vs this period", "stats": { "learning": { "title": "Learning insights", "detail": "vs previous period" }, "health": { "title": "Health memories", "value": "Stable", "detail": "vs previous period" }, "diet": { "title": "Diet memories", "detail": "down vs previous period" } }, "topic_ratio": "Topic memory share", "topics": { "health": "Health", "learning": "Learning", "diet": "Diet", "emotion": "Emotion", "relationship": "Relationships" }, "type_composition": "Memory type composition", "previous": "Previous period", "current": "This period", "type_note": "Insight share rose by 13%; insight growth was pronounced this period, while pinned share fell slightly.", "related": ["KET preparation", "Vocabulary plan", "Step target"] },
+    "detail": { "eyebrow": "CHANGE DETAIL", "conclusion": "Conclusion", "description": "Description", "evidence": "Related memories", "no_evidence": "No evidence excerpt yet.", "evidence_id": "Evidence {{index}}", "card_count": "{{count}} insights, listed as vertical cards", "untitled": "Insight {{index}}", "confidence": "Confidence", "related": "Related memories", "respond": "Respond", "confirm": "Accurate", "confirmed": "Confirmed", "inaccurate": "Not accurate", "marked_inaccurate": "😕 Not accurate", "edit": "Edit", "edit_title": "Edit related memory", "edit_body": "This update will be reflected in the next report.", "cancel": "Cancel", "save": "Save changes", "focus": { "summary": "The user's focus shifted from diet and weight management toward KET preparation, study planning, and healthy habits in parallel." }, "goal": { "summary": "Study rhythm and vocabulary plans are recurring signals with a clearer executable path." }, "emotion": { "summary": "Preparation-related anxiety is becoming steadier, with focus shifting to sustainable progress." }, "structure": { "summary": "Learning and planning memories are growing enough to support actionable guidance." }, "tags": ["Confirmed", "Needs confirmation", "Possibly stale"], "related_items": ["KET preparation has been mentioned repeatedly", "Whether the 60-day vocabulary plan is a long-term goal", "Whether weight management is still a primary focus"] }
+  },
+  "report_manage": {
+    "eyebrow": "Reports",
+    "title": "Report Manage",
+    "subtitle": "Browse built-in templates, generate reports, and revisit previous results.",
+    "library_title": "Built-in templates",
+    "search_placeholder": "Search templates",
+    "status_all": "Status: all",
+    "status_enabled": "Status: enabled",
+    "enabled": "Enabled",
+    "cadence": "Cadence: {{value}}",
+    "last_generated": "Last generated: {{value}}",
+    "details_title": "Template details",
+    "description_title": "About this template",
+    "goal_label": "Goal",
+    "period_label": "Cadence",
+    "input_label": "Input",
+    "output_label": "Output",
+    "evidence_label": "Evidence",
+    "input_value": "insight, profile projection, session evidence",
+    "output_value": "Periodic observation · JSON / OpenAPI · PDF",
+    "evidence_value": "Memory IDs and linked excerpts",
+    "handoff_title": "Open in periodic observation after generation",
+    "handoff_body": "This template only generates results for “{{template}}”; it does not generate other templates from the left panel.",
+    "workflow_items": [
+      { "title": "Change conclusion", "body": "Summary judgment from old focus to new focus." },
+      { "title": "Topic movement", "body": "Which topics rose, fell, or remained stable." },
+      { "title": "Evidence chain", "body": "Linked memories, session excerpts, and confidence." }
+    ],
+    "settings_title": "Generation settings",
+    "range": "Range",
+    "date_from": "Start date",
+    "date_to": "End date",
+    "apply_date": "Apply date range",
+    "memory_count": "{{count}} memories",
+    "generate_template": "Generate report",
+    "history_title": "Generation history",
+    "all_history_title": "Template records",
+    "history_now": "Just generated",
+    "complete": "Complete",
+    "failed": "Failed",
+    "status": {
+      "queued": "Queued",
+      "running": "Generating",
+      "fail": "Failed",
+      "success": "Complete"
+    },
+    "report_history_loading": "Loading generation history...",
+    "report_history_empty": "No generated reports yet.",
+    "report_history_failed": "Failed to load generation history.",
+    "report_type_unavailable": "The generation history API for this template is not available yet.",
+    "history_columns": {
+      "period": "Report period",
+      "status": "Status",
+      "memory_count": "Memories",
+      "actions": "Actions"
+    },
+    "pagination_summary": "Showing {{start}}-{{end}} of {{total}} records",
+    "previous_page": "Previous",
+    "next_page": "Next",
+    "view_template": "View report",
+    "preview": "Preview",
+    "download": "Download PDF",
+    "preview_hint": "Report preview will open here once the reporting service is connected.",
+    "download_hint": "Click to open the PDF report page.",
+    "generate_success": "{{template}} generated for the selected range. {{count}} memories analyzed.",
+    "generate_failed": "Report generation failed.",
+    "failure_reason": "Failure reason",
+    "note": "This first release uses built-in templates. Report results support online viewing.",
+    "templates": {
+      "weekly": { "name": "Focus changes", "cadence": "Biweekly", "last_generated": "2025-06-14 09:12", "goal": "Identify changes between recent and historical areas of focus." },
+      "trend": { "name": "Long-term goal changes", "cadence": "Daily", "last_generated": "2025-06-14 08:35", "goal": "Trace newly added, strengthened, or reconfirmed long-term goals." },
+      "emotion": { "name": "Emotional trend changes", "cadence": "Biweekly", "last_generated": "2025-06-14 08:20", "goal": "Analyze emotional phases, trend shifts, and primary triggers." },
+      "structure": { "name": "Preference signal changes", "cadence": "On demand", "last_generated": "2025-06-12 18:07", "goal": "Analyze newly added, reinforced, or changed user preference signals." },
+      "growth": { "name": "Growth signal changes", "cadence": "Monthly", "last_generated": "2025-05-31 21:10", "goal": "Observe growth signals in capabilities, habits, and self-understanding." }
     }
   },
   "pixel_farm": {

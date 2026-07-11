@@ -165,8 +165,10 @@ const modalCopy = siteCopy[locale].billing;
     <ContactModal billing={modalCopy} />
     <script>
       import { initSiteUI } from '../scripts/site-ui';
+      import { initPageMarkdownCopy } from '../scripts/page-markdown';
 
       initSiteUI();
+      initPageMarkdownCopy();
     </script>
   </body>
 </html>

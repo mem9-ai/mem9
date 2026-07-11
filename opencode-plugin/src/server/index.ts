@@ -64,6 +64,9 @@ const mem9Plugin: Plugin = async (input) => {
     agentID: "opencode",
     debugLogger,
     loadSessionTranscript: createSessionTranscriptLoader(input.client),
+    noticeLogger: (notice) => {
+      console.info(`Mem9 notice: ${notice}`);
+    },
   });
 };
 

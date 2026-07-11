@@ -190,16 +190,21 @@ func main() {
 	}
 	runtimeUsageClient := runtimeusage.NewHTTPClient(cfg.RuntimeUsageBaseURL, cfg.RuntimeUsageInternalSecret, cfg.RuntimeUsageTimeout)
 	runtimeUsageManager := runtimeusage.NewManager(runtimeusage.Config{
-		Enabled:         cfg.RuntimeUsageEnabled,
-		BaseURL:         cfg.RuntimeUsageBaseURL,
-		InternalSecret:  cfg.RuntimeUsageInternalSecret,
-		Timeout:         cfg.RuntimeUsageTimeout,
-		MeteringTimeout: cfg.RuntimeUsageMeteringTimeout,
-		ReservationTTL:  cfg.RuntimeUsageReservationTTL,
-		OperationTTL:    cfg.RuntimeUsageOperationTTL,
-		FailOpen:        cfg.RuntimeUsageFailOpen,
-		OutboxEnabled:   cfg.RuntimeUsageOutboxEnabled,
-		Outbox:          runtimeUsageStore,
+		Enabled:            cfg.RuntimeUsageEnabled,
+		ProviderID:         cfg.RuntimeUsageProviderID,
+		BaseURL:            cfg.RuntimeUsageBaseURL,
+		InternalSecret:     cfg.RuntimeUsageInternalSecret,
+		Timeout:            cfg.RuntimeUsageTimeout,
+		MeteringTimeout:    cfg.RuntimeUsageMeteringTimeout,
+		ReservationTTL:     cfg.RuntimeUsageReservationTTL,
+		OperationTTL:       cfg.RuntimeUsageOperationTTL,
+		FailOpen:           cfg.RuntimeUsageFailOpen,
+		OutboxEnabled:      cfg.RuntimeUsageOutboxEnabled,
+		NoticeTimeout:      cfg.RuntimeUsageNoticeTimeout,
+		NoticeCacheEnabled: cfg.RuntimeUsageNoticeCacheEnabled,
+		NoticeCacheTTL:     cfg.RuntimeUsageNoticeCacheTTL,
+		NoticeStaleTTL:     cfg.RuntimeUsageNoticeStaleTTL,
+		Outbox:             runtimeUsageStore,
 	}, runtimeUsageClient, runtimeUsageMetering, logger)
 	var runtimeUsageWorkerCancel context.CancelFunc
 	if cfg.RuntimeUsageEnabled && runtimeUsageStore != nil {
@@ -229,8 +234,22 @@ func main() {
 	// Check for TiDB Cloud credentials (only if Zero is not enabled)
 	if provisioner == nil && cfg.DBBackend == "tidb" {
 		if os.Getenv("MNEMO_TIDBCLOUD_API_KEY") != "" && os.Getenv("MNEMO_TIDBCLOUD_API_SECRET") != "" {
-			provisioner = tenant.NewTiDBCloudProvisioner(cfg.TiDBCloudAPIURL, cfg.TiDBCloudPoolID, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled)
-			logger.Info("using TiDB Cloud Pool provisioner")
+			provisioner = tenant.NewTiDBCloudProvisionerWithPrivateLink(
+				cfg.TiDBCloudAPIURL,
+				cfg.TiDBCloudPoolID,
+				cfg.EmbedAutoModel,
+				cfg.EmbedAutoDims,
+				cfg.EmbedDims,
+				cfg.FTSEnabled,
+				tenant.TiDBCloudPrivateLinkConfig{
+					Prefer:       cfg.TiDBCloudPreferPrivateLink,
+					ServiceNames: cfg.TiDBCloudPrivateLinkServiceNames,
+				},
+			)
+			logger.Info("using TiDB Cloud Pool provisioner",
+				"prefer_privatelink", cfg.TiDBCloudPreferPrivateLink,
+				"privatelink_service_names", len(cfg.TiDBCloudPrivateLinkServiceNames),
+			)
 		}
 	}
 

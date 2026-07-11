@@ -9,6 +9,8 @@ MEM9_AGENT_ID="${MEM9_AGENT_ID:-claude-code-main}"
 MEM9_WRITER_ID="${MEM9_WRITER_ID:-claude-code}"
 MEM9_CURL_BIN="${MEM9_CURL_BIN:-curl}"
 MEM9_AUTH_SOURCE="${MEM9_AUTH_SOURCE:-}"
+MEM9_HTTP_STATUS_MARKER="__MEM9_HTTP_STATUS__="
+MEM9_PLUGIN_USER_AGENT=""
 
 mem9_require_node() {
   command -v node >/dev/null 2>&1 || return 1
@@ -103,8 +105,30 @@ mem9_auth_file() {
   printf '%s/auth.json\n' "${data_dir}"
 }
 
+mem9_notice_state_file() {
+  local data_dir
+  data_dir="$(mem9_plugin_data_dir)" || return 1
+  printf '%s/runtime-notices.json\n' "${data_dir}"
+}
+
 mem9_memory_base() {
   printf '%s\n' "${MEM9_API_URL%/}/v1alpha2/mem9s"
+}
+
+mem9_plugin_user_agent() {
+  if [[ -n "${MEM9_PLUGIN_USER_AGENT}" ]]; then
+    printf '%s\n' "${MEM9_PLUGIN_USER_AGENT}"
+    return 0
+  fi
+
+  local version="unknown"
+  local manifest="${MEM9_SCRIPT_DIR}/../.claude-plugin/plugin.json"
+  if [[ -f "${manifest}" ]] && command -v node >/dev/null 2>&1; then
+    version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(data.version || "unknown");' "${manifest}" 2>/dev/null || printf 'unknown')"
+  fi
+
+  MEM9_PLUGIN_USER_AGENT="mem9-plugin/claude-code/${version}"
+  printf '%s\n' "${MEM9_PLUGIN_USER_AGENT}"
 }
 
 mem9_hook_get_string() {
@@ -193,27 +217,95 @@ mem9_write_session_env() {
 }
 
 mem9_provision_auth() {
-  "${MEM9_CURL_BIN}" -sf --max-time 8 -X POST "${MEM9_API_URL%/}/v1alpha1/mem9s"
+  "${MEM9_CURL_BIN}" -sf --max-time 8 -X POST \
+    -H "User-Agent: $(mem9_plugin_user_agent)" \
+    "${MEM9_API_URL%/}/v1alpha1/mem9s"
+}
+
+mem9_api_request() {
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+  local response
+  local http_code
+  local response_body
+  local curl_args=(
+    -sS
+    --max-time 8
+    -X "${method}"
+    -H "Content-Type: application/json"
+    -H "X-API-Key: ${MEM9_API_KEY}"
+    -H "X-Mnemo-Agent-Id: ${MEM9_WRITER_ID}"
+    -H "User-Agent: $(mem9_plugin_user_agent)"
+  )
+
+  if [[ -n "${body}" ]]; then
+    curl_args+=(-d "${body}")
+  fi
+
+  if ! response="$("${MEM9_CURL_BIN}" "${curl_args[@]}" -w $'\n%{http_code}' "$(mem9_memory_base)${path}")"; then
+    return 1
+  fi
+
+  http_code="${response##*$'\n'}"
+  response_body="${response%$'\n'"${http_code}"}"
+  case "${http_code}" in
+    2*)
+      printf '%s' "${response_body}"
+      return 0
+      ;;
+    *)
+      printf '%s\n%s%s' "${response_body}" "${MEM9_HTTP_STATUS_MARKER}" "${http_code}"
+      return 22
+      ;;
+  esac
 }
 
 mem9_api_get() {
   local path="$1"
-  "${MEM9_CURL_BIN}" -sf --max-time 8 \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: ${MEM9_API_KEY}" \
-    -H "X-Mnemo-Agent-Id: ${MEM9_WRITER_ID}" \
-    "$(mem9_memory_base)${path}"
+  mem9_api_request "GET" "${path}"
 }
 
 mem9_api_post() {
   local path="$1"
   local body="$2"
-  "${MEM9_CURL_BIN}" -sf --max-time 8 \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: ${MEM9_API_KEY}" \
-    -H "X-Mnemo-Agent-Id: ${MEM9_WRITER_ID}" \
-    -d "${body}" \
-    "$(mem9_memory_base)${path}"
+  mem9_api_request "POST" "${path}" "${body}"
+}
+
+mem9_quota_notice_from_body() {
+  local operation="$1"
+  local input
+  local body
+  local status=""
+  local marker=$'\n'"${MEM9_HTTP_STATUS_MARKER}"
+
+  input="$(cat)"
+  body="${input}"
+  if [[ "${input}" == *"${marker}"* ]]; then
+    status="${input##*${marker}}"
+    body="${input%"${marker}${status}"}"
+  fi
+
+  printf '%s' "${body}" | node "${MEM9_SCRIPT_DIR}/lib/quota-error.mjs" notice "${operation}" "${status}" 2>/dev/null || true
+}
+
+mem9_runtime_state_notice() {
+  local hook_name="${1:-SessionStart}"
+  local response
+  local notice
+
+  if ! response="$(mem9_api_get "/runtime-state" 2>/dev/null)"; then
+    mem9_debug "${hook_name}" "runtime_state_failed" \
+      "auth_source" "${MEM9_AUTH_SOURCE:-unknown}"
+    return 0
+  fi
+
+  notice="$(printf '%s' "${response}" | node "${MEM9_SCRIPT_DIR}/lib/runtime-state.mjs" 2>/dev/null || true)"
+  if [[ -n "${notice}" ]]; then
+    mem9_debug "${hook_name}" "runtime_state_notice" \
+      "auth_source" "${MEM9_AUTH_SOURCE:-unknown}"
+    printf '%s' "${notice}"
+  fi
 }
 
 mem9_ingest_transcript() {
@@ -227,6 +319,8 @@ mem9_ingest_transcript() {
   local transcript_path
   local payload
   local body
+  local response
+  local quota_notice
   local stats
   local messages_count
   local user_count
@@ -275,7 +369,7 @@ mem9_ingest_transcript() {
     "assistant_count" "${assistant_count}" \
     "content_bytes" "${total_bytes}"
 
-  if mem9_api_post "/memories" "${body}" >/dev/null 2>&1; then
+  if response="$(mem9_api_post "/memories" "${body}" 2>/dev/null)"; then
     mem9_debug "${hook_name}" "ingest_sent" \
       "mode" "${mode}" \
       "session_id" "${session_id}" \
@@ -284,6 +378,15 @@ mem9_ingest_transcript() {
       "assistant_count" "${assistant_count}" \
       "content_bytes" "${total_bytes}"
     return 0
+  fi
+
+  quota_notice="$(printf '%s' "${response:-}" | mem9_quota_notice_from_body "ingest paused")"
+  if [[ -n "${quota_notice}" ]]; then
+    mem9_debug "${hook_name}" "ingest_quota_denied" \
+      "mode" "${mode}" \
+      "session_id" "${session_id}" \
+      "messages_count" "${messages_count}"
+    return 1
   fi
 
   mem9_debug "${hook_name}" "ingest_request_failed" \

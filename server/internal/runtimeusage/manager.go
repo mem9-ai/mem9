@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,8 @@ type manager struct {
 	outbox   OutboxStore
 	logger   *slog.Logger
 	now      func() time.Time
+
+	noticeState *noticeStateCache
 }
 
 func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *slog.Logger) Manager {
@@ -28,7 +31,7 @@ func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *
 	if !cfg.Enabled {
 		return noopManager{}
 	}
-	return &manager{
+	manager := &manager{
 		cfg:      cfg,
 		client:   client,
 		metering: writer,
@@ -36,11 +39,22 @@ func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *
 		logger:   logger,
 		now:      time.Now,
 	}
+	manager.noticeState = newNoticeStateCache(cfg, manager.runtimeStateProvider)
+	return manager
 }
 
 type noopManager struct{}
 
 func (noopManager) Enabled() bool { return false }
+func (noopManager) ProviderID() string {
+	return ""
+}
+func (noopManager) RuntimeState(_ context.Context, subject Subject) (RuntimeState, error) {
+	return RuntimeUsageDisabledState(subject.APIKeyStatus), nil
+}
+func (noopManager) RuntimeStateForNotice(_ context.Context, subject Subject) (RuntimeState, error) {
+	return RuntimeUsageDisabledState(subject.APIKeyStatus), nil
+}
 func (noopManager) BeforeRecall(context.Context, Subject) (*OperationLease, error) {
 	return nil, nil
 }
@@ -71,6 +85,49 @@ func (noopManager) AfterMemoryDeleteSuccess(context.Context, *OperationLease, Me
 func (noopManager) AfterMemoryDeleteFailure(context.Context, *OperationLease, error) {}
 
 func (m *manager) Enabled() bool { return true }
+
+func (m *manager) ProviderID() string {
+	return strings.TrimSpace(m.cfg.ProviderID)
+}
+
+func (m *manager) RuntimeState(ctx context.Context, subject Subject) (RuntimeState, error) {
+	state, err := m.runtimeStateProvider(ctx, subject)
+	if err != nil {
+		m.logger.WarnContext(ctx, "runtime usage state provider unavailable",
+			"tenant_id", subject.TenantID,
+			"cluster_id", subject.ClusterID,
+			"err", err,
+		)
+		return RuntimeStateProviderUnavailable(subject.APIKeyStatus), nil
+	}
+	applySubjectStatus(&state, subject.APIKeyStatus)
+	return state, nil
+}
+
+func (m *manager) RuntimeStateForNotice(ctx context.Context, subject Subject) (RuntimeState, error) {
+	if m.noticeState == nil {
+		state, err := m.runtimeStateProvider(ctx, subject)
+		if err != nil {
+			return RuntimeState{}, err
+		}
+		return cloneRuntimeStateForSubject(state, subject), nil
+	}
+	return m.noticeState.runtimeState(ctx, subject)
+}
+
+func (m *manager) runtimeStateProvider(ctx context.Context, subject Subject) (RuntimeState, error) {
+	state, err := m.client.RuntimeState(ctx, subject)
+	if err != nil {
+		return RuntimeState{}, err
+	}
+	if err := state.NormalizeProviderData(); err != nil {
+		return RuntimeState{}, &UnavailableError{Err: err}
+	}
+	state.SetProviderDefaults()
+	providerID := m.ProviderID()
+	state.ProviderID = providerID
+	return state, nil
+}
 
 func (m *manager) BeforeRecall(ctx context.Context, subject Subject) (*OperationLease, error) {
 	return m.reserve(ctx, subject, MeterMemoryRecallRequests, 1)

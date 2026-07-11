@@ -3,7 +3,9 @@ import { Monitor, Network } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { DeepAnalysisTab } from "@/components/space/deep-analysis-tab";
 import { MemoryInsightWorkspace } from "@/components/space/memory-insight-workspace";
-import { MemoryPulseOverview } from "@/components/space/memory-pulse-overview";
+import { MemoryProfileOverview } from "@/components/space/memory-profile-overview";
+import { ReportManageOverview } from "@/components/space/report-manage-overview";
+import { PeriodicObservationOverview } from "@/components/space/periodic-observation-overview";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsLargeViewport } from "@/components/space/space-view-utils";
 import { cn } from "@/lib/utils";
@@ -14,38 +16,38 @@ import type {
   AnalysisJobSnapshotResponse,
   MemoryAnalysisMatch,
 } from "@/types/analysis";
-import type { Memory, MemoryStats, MemoryType } from "@/types/memory";
+import type { Memory, MemoryStats, MemoryType, TopicSummary } from "@/types/memory";
 import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 
 export type OverviewMemorySelectionSource = "list" | "insight";
 
-const TAB_VALUES = ["pulse", "insight", "analysis"] as const;
+const TAB_VALUES = ["profile", "periodic", "reports", "pulse", "insight", "analysis"] as const;
+const VISIBLE_TAB_VALUES = TAB_VALUES.filter(
+  (value) => value !== "insight" && value !== "analysis",
+);
 
 export function MemoryOverviewTabs({
   spaceId,
   stats,
   pulseMemories,
+  profileFacetData,
   insightMemories,
   cards,
   snapshot,
   range,
   loading,
   compact,
-  activeType,
   activeCategory,
   activeTag,
-  selectedTimeline,
   matchMap,
-  onTypeSelect,
-  onTagSelect,
   onMemorySelect,
-  onTimelineSelect,
-  onTimelineClear,
   onEntitySearch,
+  onTabChange,
 }: {
   spaceId: string;
   stats: MemoryStats | undefined;
   pulseMemories: Memory[];
+  profileFacetData?: TopicSummary;
   insightMemories: Memory[];
   cards: AnalysisCategoryCard[];
   snapshot: AnalysisJobSnapshotResponse | null;
@@ -57,12 +59,13 @@ export function MemoryOverviewTabs({
   activeTag?: string;
   selectedTimeline?: TimelineSelection;
   matchMap: Map<string, MemoryAnalysisMatch>;
-  onTypeSelect: (type: MemoryType) => void;
-  onTagSelect: (tag: string | undefined) => void;
+  onTypeSelect?: (type: MemoryType) => void;
+  onTagSelect?: (tag: string | undefined) => void;
   onMemorySelect: (memory: Memory, source?: OverviewMemorySelectionSource) => void;
-  onTimelineSelect: (selection: TimelineSelection) => void;
+  onTimelineSelect?: (selection: TimelineSelection) => void;
   onTimelineClear?: () => void;
   onEntitySearch?: (query: string) => void;
+  onTabChange?: (tab: MemoryInsightTab) => void;
 }) {
   // Memory Insight only needs a wide canvas to lay out the relations bubbles
   // legibly — it doesn't depend on the full three-column desktop layout. Gating
@@ -70,7 +73,7 @@ export function MemoryOverviewTabs({
   // breakpoint (1280px) lets every iPad in landscape orientation render the
   // workspace, while phones and iPads in portrait still get the redirect hint.
   const isLargeViewport = useIsLargeViewport();
-  const [tab, setTab] = useState<MemoryInsightTab>("pulse");
+  const [tab, setTab] = useState<MemoryInsightTab>("profile");
   const [hasVisitedAnalysisTab, setHasVisitedAnalysisTab] = useState(false);
   const [insightResetToken, setInsightResetToken] = useState(0);
 
@@ -91,6 +94,7 @@ export function MemoryOverviewTabs({
           setInsightResetToken((current) => current + 1);
         }
         setTab(next);
+        onTabChange?.(next);
       }}
       className="mt-5"
       data-testid="memory-overview-tabs"
@@ -101,24 +105,33 @@ export function MemoryOverviewTabs({
         <MobileOverviewTabsList />
       )}
 
-      <TabsContent value="pulse" className="-mt-px mt-0">
-        <MemoryPulseOverview
+      <TabsContent value="pulse" className="mt-0" />
+
+      <TabsContent value="profile" className="-mt-px mt-0">
+        <MemoryProfileOverview
+          spaceId={spaceId}
           stats={stats}
           memories={pulseMemories}
           cards={cards}
           snapshot={snapshot}
           range={range}
+          matchMap={matchMap}
+          facetSummary={profileFacetData}
           loading={loading}
-          compact={compact}
           className="!mt-0"
-          activeType={activeType}
-          activeTag={activeTag}
-          selectedTimeline={selectedTimeline}
-          onTypeSelect={onTypeSelect}
-          onTagSelect={onTagSelect}
-          onTimelineSelect={onTimelineSelect}
-          onTimelineClear={onTimelineClear}
         />
+      </TabsContent>
+
+      <TabsContent value="reports" className="-mt-px mt-0">
+        <ReportManageOverview spaceId={spaceId} className="!mt-0" />
+      </TabsContent>
+
+      <TabsContent
+        value="periodic"
+        className="-mt-px mt-0 data-[state=inactive]:hidden"
+        forceMount
+      >
+        <PeriodicObservationOverview spaceId={spaceId} active={tab === "periodic"} />
       </TabsContent>
 
       <TabsContent value="insight" className="-mt-px mt-0">
@@ -164,7 +177,7 @@ function DesktopOverviewTabsList() {
         className="inline-flex h-auto gap-0 rounded-none border-0 bg-transparent p-0 shadow-none"
         data-testid="memory-overview-tablist"
       >
-        {TAB_VALUES.map((value) => (
+        {VISIBLE_TAB_VALUES.map((value) => (
           <TabsTrigger
             key={value}
             value={value}
@@ -187,14 +200,15 @@ function MobileOverviewTabsList() {
 
   // Use shadcn's default segmented control look (rounded-lg muted bar + rounded-md
   // chip on the active trigger). Stretching the list to the full row width with
-  // `grid w-full grid-cols-3` keeps each trigger evenly sized and avoids the
+  // `grid w-full` keeps each trigger evenly sized and avoids the
   // horizontal overflow we saw with the long "Memory ___" labels.
   return (
     <TabsList
-      className="grid w-full grid-cols-3"
+      className="grid w-full"
+      style={{ gridTemplateColumns: `repeat(${VISIBLE_TAB_VALUES.length}, minmax(0, 1fr))` }}
       data-testid="memory-overview-tablist"
     >
-      {TAB_VALUES.map((value) => (
+      {VISIBLE_TAB_VALUES.map((value) => (
         <TabsTrigger
           key={value}
           value={value}

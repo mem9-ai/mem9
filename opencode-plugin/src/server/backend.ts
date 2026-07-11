@@ -22,6 +22,8 @@ export interface IngestInput {
 export interface IngestResult {
   status: string;
   memories_changed?: number;
+  message?: string;
+  runtimeState?: unknown;
 }
 
 /**
@@ -36,4 +38,5 @@ export interface MemoryBackend {
   remove(id: string): Promise<boolean>;
   listRecent(limit: number): Promise<Memory[]>;
   ingest(input: IngestInput): Promise<IngestResult>;
+  runtimeState(): Promise<unknown>;
 }

@@ -1,5 +1,6 @@
 ---
 import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
+import PageMarkdownAction from './PageMarkdownAction.astro';
 ---
 
 <section class="release-notes" data-release-notes-root data-release-notes-locale={DEFAULT_LOCALE}>
@@ -11,12 +12,13 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
         data-release-notes-copy={locale}
         hidden={locale !== DEFAULT_LOCALE}
       >
-        <div class="container release-notes-shell">
+        <div class="container release-notes-shell" data-markdown-root data-markdown-lang={locale}>
           <div class="release-notes-hero">
             <header class="release-notes-header">
               <p class="section-kicker">{releaseNotes.kicker}</p>
               <h1>{releaseNotes.title}</h1>
               <p>{releaseNotes.intro}</p>
+              <PageMarkdownAction />
               <div class="release-notes-star">
                 <span>{releaseNotes.starPrompt}</span>
                 <a href={releaseNotes.starHref} target="_blank" rel="noopener">
@@ -33,7 +35,7 @@ import { DEFAULT_LOCALE, siteCopy, siteLocales } from '../content/site';
               </div>
             </header>
 
-            <div class="release-notes-art">
+            <div class="release-notes-art" data-markdown-exclude>
               <img
                 src="/release-notes-hero.jpg"
                 alt={releaseNotes.heroImageAlt}

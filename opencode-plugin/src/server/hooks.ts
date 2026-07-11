@@ -3,8 +3,11 @@ import type { IngestMessage, MemoryBackend } from "./backend.ts";
 import type { DebugLogger } from "./debug.ts";
 import { selectMessagesForIngest } from "./ingest/select.ts";
 import { submitMessagesForIngest } from "./ingest/submit.ts";
+import { formatRuntimeQuotaNotice, parseRuntimeQuotaDenied } from "./quota-error.ts";
 import { formatRecallBlock } from "./recall/format.ts";
 import { buildRecallQuery } from "./recall/query.ts";
+import { normalizeNoticeMessage, responseMessage } from "./response-message.ts";
+import { formatRuntimeStateNotice } from "./runtime-state.ts";
 import type { SessionTranscriptLoader } from "./session-transcript.ts";
 
 const MAX_RECALL_RESULTS = 10;
@@ -17,6 +20,8 @@ const COMPACTION_HINT =
 
 type ChatMessageHook = NonNullable<Hooks["chat.message"]>;
 type ChatMessageOutput = Parameters<ChatMessageHook>[1];
+type MessagesTransformHook = NonNullable<Hooks["experimental.chat.messages.transform"]>;
+type MessagesTransformOutput = Parameters<MessagesTransformHook>[1];
 type EventHook = NonNullable<Hooks["event"]>;
 type EventInput = Parameters<EventHook>[0];
 
@@ -25,6 +30,9 @@ interface SessionState {
   lastIngestFingerprint: string | null;
   pendingIngestFingerprint: string | null;
   agentID: string;
+  runtimeStateNoticeShown: boolean;
+  pendingRuntimeStateNotice: string | null;
+  seenNoticeMessages: Set<string>;
   updatedAt: number;
 }
 
@@ -32,6 +40,7 @@ export interface BuildHooksOptions {
   agentID?: string;
   debugLogger?: DebugLogger;
   loadSessionTranscript?: SessionTranscriptLoader;
+  noticeLogger?: (notice: string) => void;
 }
 
 function runInBackground(task: Promise<unknown>): void {
@@ -61,6 +70,66 @@ function extractLatestUserPrompt(parts: ChatMessageOutput["parts"]): string | nu
   }
 
   return chunks.length > 0 ? chunks.join("\n\n") : null;
+}
+
+function findLatestUserMessage(
+  messages: MessagesTransformOutput["messages"],
+): MessagesTransformOutput["messages"][number] | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.info.role === "user") {
+      return message;
+    }
+  }
+  return null;
+}
+
+function escapeForPrompt(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function runtimeStateNoticeText(notice: string): string {
+  const message = normalizeNoticeMessage(notice);
+  if (!message) {
+    return "";
+  }
+
+  return [
+    "<mem9-status-warning>",
+    `Mem9 notice for the user: ${escapeForPrompt(message)}`,
+    `Start the next response with: Mem9 notice: ${escapeForPrompt(message)}`,
+    "</mem9-status-warning>",
+  ].join("\n");
+}
+
+function consumeNoticeMessage(state: SessionState, message: string): string {
+  const notice = normalizeNoticeMessage(message);
+  if (!notice || state.seenNoticeMessages.has(notice)) {
+    return "";
+  }
+
+  state.seenNoticeMessages.add(notice);
+  return notice;
+}
+
+async function consumeRuntimeStateNotice(
+  state: SessionState,
+  backend: MemoryBackend,
+): Promise<string> {
+  if (state.runtimeStateNoticeShown) {
+    return "";
+  }
+  state.runtimeStateNoticeShown = true;
+
+  try {
+    return consumeNoticeMessage(state, formatRuntimeStateNotice(await backend.runtimeState()));
+  } catch {
+    // Runtime-state warmup is advisory and must stay fail-soft.
+    return "";
+  }
 }
 
 function pruneSessionState(cache: Map<string, SessionState>, now: number): void {
@@ -107,6 +176,9 @@ function ensureSessionState(
     lastIngestFingerprint: null,
     pendingIngestFingerprint: null,
     agentID: fallbackAgentID,
+    runtimeStateNoticeShown: false,
+    pendingRuntimeStateNotice: null,
+    seenNoticeMessages: new Set<string>(),
     updatedAt: now,
   };
   cache.set(sessionID, state);
@@ -185,14 +257,16 @@ async function ingestSessionTranscript(
           sessionID,
           messageCount: selectedMessages.length,
         });
-        await submitMessagesForIngest({
+        const result = await submitMessagesForIngest({
           backend,
           messages: transcript,
           sessionID,
           agentID: state.agentID,
           debugLogger: options.debugLogger,
         });
-        state.lastIngestFingerprint = fingerprint;
+        if (result) {
+          state.lastIngestFingerprint = fingerprint;
+        }
       } finally {
         if (state.pendingIngestFingerprint === fingerprint) {
           state.pendingIngestFingerprint = null;
@@ -209,6 +283,7 @@ export function buildHooks(
   Hooks,
   | "chat.message"
   | "event"
+  | "experimental.chat.messages.transform"
   | "experimental.chat.system.transform"
   | "experimental.session.compacting"
 > {
@@ -246,6 +321,35 @@ export function buildHooks(
         promptLength: prompt.length,
       });
     },
+    "experimental.chat.messages.transform": async (_input, output) => {
+      const latestUserMessage = findLatestUserMessage(output.messages);
+      if (!latestUserMessage) {
+        return;
+      }
+
+      const now = Date.now();
+      pruneSessionState(sessionStateByID, now);
+      const state = ensureSessionState(
+        sessionStateByID,
+        latestUserMessage.info.sessionID,
+        now,
+        fallbackAgentID,
+      );
+      if (latestUserMessage.info.role === "user") {
+        state.agentID = resolveAgentID(latestUserMessage.info.agent, state.agentID);
+      }
+
+      const prompt = extractLatestUserPrompt(latestUserMessage.parts);
+      if (prompt) {
+        state.latestPrompt = prompt;
+      }
+
+      const notice = await consumeRuntimeStateNotice(state, backend);
+      if (!notice) {
+        return;
+      }
+      state.pendingRuntimeStateNotice = notice;
+    },
     event: async (input) => {
       if (input.event.type !== "session.idle") {
         return;
@@ -270,8 +374,14 @@ export function buildHooks(
 
       pruneSessionState(sessionStateByID, Date.now());
 
-      const state = sessionStateByID.get(input.sessionID);
-      if (!state || !state.latestPrompt) {
+      const state = ensureSessionState(
+        sessionStateByID,
+        input.sessionID,
+        Date.now(),
+        fallbackAgentID,
+      );
+
+      if (!state.latestPrompt) {
         await options.debugLogger?.("recall.skip", {
           sessionID: input.sessionID,
           reason: "no_captured_prompt",
@@ -298,16 +408,39 @@ export function buildHooks(
           limit: MAX_RECALL_RESULTS,
         });
         const result = await backend.search({ q: query, limit: MAX_RECALL_RESULTS });
+        const responseNotice = consumeNoticeMessage(state, responseMessage(result));
+        const pendingNotice = state.pendingRuntimeStateNotice;
+        state.pendingRuntimeStateNotice = null;
+        const notice = responseNotice || pendingNotice || "";
+        if (notice) {
+          options.noticeLogger?.(notice);
+        }
         const block = formatRecallBlock(result.memories);
+        const statusBlock = runtimeStateNoticeText(notice);
+        const context = [statusBlock, block].filter(Boolean).join("\n\n");
         await options.debugLogger?.("recall.result", {
           sessionID: input.sessionID,
           memoryCount: result.memories.length,
-          injected: Boolean(block),
+          injected: Boolean(context),
+          hasMessage: Boolean(notice),
+          messageLength: notice.length,
         });
-        if (block) {
-          output.system.push(block);
+        if (context) {
+          output.system.push(context);
         }
       } catch (error) {
+        const quotaDenied = parseRuntimeQuotaDenied(error);
+        if (quotaDenied) {
+          await options.debugLogger?.("recall.quota_denied", {
+            sessionID: input.sessionID,
+            code: quotaDenied.code,
+            actionType: quotaDenied.recommendedAction?.type,
+            hasActionUrl: Boolean(quotaDenied.recommendedAction?.url),
+          });
+          output.system.push(formatRuntimeQuotaNotice(error, "recall paused"));
+          return;
+        }
+
         await options.debugLogger?.("recall.error", {
           sessionID: input.sessionID,
           error: error instanceof Error ? error.message : String(error),

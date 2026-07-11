@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildMemoryPulseData } from "./memory-pulse";
+import { buildFacetComposition, buildMemoryPulseData } from "./memory-pulse";
 import type { AnalysisJobSnapshotResponse } from "@/types/analysis";
 import type { Memory, MemoryStats } from "@/types/memory";
 
@@ -227,5 +227,21 @@ describe("memory pulse helpers", () => {
     expect(data.signals.source).toBe("memory");
     expect(data.signals.items[0]?.value).toBe("react");
     expect(data.trend.buckets).toHaveLength(7);
+  });
+
+  it("builds a profile composition from memory facets returned by the API", () => {
+    const composition = buildFacetComposition(
+      createStats({ total: 3, pinned: 1, insight: 2 }),
+      [
+        { facet: "plans", count: 2 },
+        { facet: "preferences", count: 1 },
+      ],
+    );
+
+    expect(composition.innerKind).toBe("facet");
+    expect(composition.inner).toMatchObject([
+      { key: "plans", value: 2, labelKey: "facet.plans" },
+      { key: "preferences", value: 1, labelKey: "facet.preferences" },
+    ]);
   });
 });

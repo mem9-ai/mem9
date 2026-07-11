@@ -14,11 +14,26 @@ import {
   parseTranscriptText,
   selectStopWindow,
 } from "../hooks/shared/transcript.mjs";
+import { Mem9HttpError } from "../lib/http.mjs";
 import { createTempRoot } from "./test-temp.mjs";
 
 const STOP_ENTRY = path.resolve("./hooks/stop.mjs");
 /** @type {Array<"plugin_disabled" | "plugin_missing" | "legacy_paused">} */
 const NON_READY_ISSUE_CODES = ["plugin_disabled", "plugin_missing", "legacy_paused"];
+
+/**
+ * @param {string} error
+ * @param {Record<string, unknown>} [runtimeQuota]
+ */
+function runtimeQuotaPayload(error, runtimeQuota = {}) {
+  return {
+    error,
+    details: {
+      errorCategory: "runtime_quota_denied",
+      runtimeQuota,
+    },
+  };
+}
 
 test("buildIngestUrl keeps a configured base path", () => {
   assert.equal(
@@ -469,6 +484,51 @@ test("stop posts smart ingest with a recent message window", async () => {
     debugEvents.map((event) => event.stage),
     ["ingest_window_selected", "ingest_sent"],
   );
+});
+
+test("stop records runtime quota denial without failing the hook", async () => {
+  /** @type {Array<{stage: string, fields: Record<string, unknown> | undefined}>} */
+  const debugEvents = [];
+
+  const result = await runStop({
+    sessionId: "session-1",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "codex",
+      defaultTimeoutMs: 8_000,
+    },
+    transcriptMessages: [
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "a1" },
+    ],
+    async post() {
+      throw new Mem9HttpError("quota denied", {
+        status: 402,
+        data: runtimeQuotaPayload("Spending limit is exhausted.", {
+          recommendedAction: {
+            providerActionCode: "increaseSpendingLimit",
+            type: "openUrl",
+            url: "https://console.mem9.ai/console/billing/plan",
+          },
+        }),
+      });
+    },
+    debug(stage, fields) {
+      debugEvents.push({ stage, fields });
+    },
+  });
+
+  assert.equal(result, undefined);
+  assert.deepEqual(
+    debugEvents.map((event) => event.stage),
+    ["ingest_window_selected", "ingest_quota_denied"],
+  );
+  assert.deepEqual(debugEvents.at(-1)?.fields, {
+    code: "runtime_quota_denied",
+    actionType: "openUrl",
+    hasActionUrl: true,
+  });
 });
 
 for (const issueCode of NON_READY_ISSUE_CODES) {

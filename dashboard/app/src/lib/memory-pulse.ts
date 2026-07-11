@@ -9,6 +9,7 @@ import type {
   MemoryFacet,
   MemoryStats,
   MemoryType,
+  TopicCount,
 } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
 
@@ -187,27 +188,53 @@ function isMemoryFacet(value: unknown): value is MemoryFacet {
   return typeof value === "string" && value in FACET_COLOR_TOKENS;
 }
 
-function buildFacetSegments(memories: Memory[]): PulseCompositionSegment[] {
+function buildFacetSegments(
+  facets: Array<{ facet: MemoryFacet; count: number }>,
+): PulseCompositionSegment[] {
+  return normalizeSegments(
+    facets
+      .filter((item) => item.count > 0)
+      .sort((left, right) => right.count - left.count || left.facet.localeCompare(right.facet, "en"))
+      .slice(0, 5)
+      .map(({ facet, count }) => ({
+        key: facet,
+        labelKey: `facet.${facet}`,
+        value: count,
+        colorToken: FACET_COLOR_TOKENS[facet],
+      })),
+  );
+}
+
+export function buildFacetComposition(
+  stats: MemoryStats,
+  facets: TopicCount[],
+): MemoryPulseData["composition"] {
+  const inner = buildFacetSegments(facets);
+
+  return {
+    total: stats.total,
+    outer: buildOuterSegments(stats),
+    inner,
+    innerKind: inner.length > 0 ? "facet" : "none",
+  };
+}
+
+function buildFacetCompositionFromMemories(
+  stats: MemoryStats,
+  memories: Memory[],
+): MemoryPulseData["composition"] {
   const counts = new Map<MemoryFacet, number>();
 
   for (const memory of memories) {
     const facet = memory.metadata?.facet;
-    if (!isMemoryFacet(facet)) {
-      continue;
+    if (isMemoryFacet(facet)) {
+      counts.set(facet, (counts.get(facet) ?? 0) + 1);
     }
-    counts.set(facet, (counts.get(facet) ?? 0) + 1);
   }
 
-  return normalizeSegments(
-    [...counts.entries()]
-      .sort((left, right) => right[1] - left[1])
-      .slice(0, 5)
-      .map(([facet, value]) => ({
-        key: facet,
-        labelKey: `facet.${facet}`,
-        value,
-        colorToken: FACET_COLOR_TOKENS[facet],
-      })),
+  return buildFacetComposition(
+    stats,
+    [...counts.entries()].map(([facet, count]) => ({ facet, count })),
   );
 }
 
@@ -234,12 +261,16 @@ export function buildPulseComposition(
 ): MemoryPulseData["composition"] {
   const inner = buildAnalysisSegments(cards);
 
-  return {
-    total: stats.total,
-    outer: buildOuterSegments(stats),
-    inner: inner.length > 0 ? inner : buildFacetSegments(memories),
-    innerKind: inner.length > 0 ? "analysis" : memories.length > 0 ? "facet" : "none",
-  };
+  if (inner.length > 0) {
+    return {
+      total: stats.total,
+      outer: buildOuterSegments(stats),
+      inner,
+      innerKind: "analysis",
+    };
+  }
+
+  return buildFacetCompositionFromMemories(stats, memories);
 }
 
 function buildSignalItemsFromStats(

@@ -1,7 +1,29 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { ServerBackend } from "../src/server/server-backend.js";
+import { Mem9HttpError, parseRuntimeQuotaDenied } from "../src/server/quota-error.js";
+
+function readPackageVersion(): string {
+  for (const relativePath of ["../package.json", "../../package.json"]) {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(new URL(relativePath, import.meta.url), "utf8"),
+      );
+      if (typeof pkg.version === "string" && pkg.version.trim()) {
+        return pkg.version.trim();
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return "unknown";
+}
+
+const packageVersion = readPackageVersion();
+const expectedUserAgent = `mem9-plugin/opencode/${packageVersion}`;
 
 async function withPatchedAbortSignalTimeout(
   run: (capturedTimeouts: number[]) => Promise<void>,
@@ -45,6 +67,63 @@ test("ServerBackend uses X-API-Key and v1alpha2 paths", async () => {
     await backend.search({ q: "hello" });
     assert.equal(requestURL.includes("/v1alpha2/mem9s/memories"), true);
     assert.equal(requestHeaders?.get("X-API-Key"), "mk_demo");
+    assert.equal(requestHeaders?.get("User-Agent"), expectedUserAgent);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ServerBackend preserves search success response message", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response(
+      JSON.stringify({
+        memories: [],
+        total: 0,
+        limit: 10,
+        offset: 0,
+        message: "mem9 recall has used 80% of included quota.",
+        runtimeState: { mem9ApiKey: { status: "active" } },
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    const result = await backend.search({ q: "hello" });
+    assert.equal(result.message, "mem9 recall has used 80% of included quota.");
+    assert.deepEqual(result.runtimeState, { mem9ApiKey: { status: "active" } });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ServerBackend fetches runtime-state through the public v1alpha2 path", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestURL = "";
+  let requestHeaders: Headers | undefined;
+
+  globalThis.fetch = async (input, init) => {
+    requestURL = String(input);
+    requestHeaders = new Headers(init?.headers);
+    return new Response(JSON.stringify({ mem9ApiKey: { status: "active" }, meters: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await backend.runtimeState();
+    assert.equal(requestURL, "https://api.mem9.ai/v1alpha2/mem9s/runtime-state");
+    assert.equal(requestHeaders?.get("X-API-Key"), "mk_demo");
+    assert.equal(requestHeaders?.get("X-Mnemo-Agent-Id"), "opencode");
+    assert.equal(requestHeaders?.get("User-Agent"), expectedUserAgent);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -78,6 +157,109 @@ test("ServerBackend uses searchTimeoutMs for search and defaultTimeoutMs for wri
 
       assert.deepEqual(capturedTimeouts, [16000, 11000]);
     });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ServerBackend rejects malformed success JSON", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response("{", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await assert.rejects(() => backend.search({ q: "hello" }), SyntaxError);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ServerBackend preserves runtime quota denial response bodies", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      error: "Included quota is exhausted.",
+      details: {
+        errorCategory: "runtime_quota_denied",
+        runtimeQuota: {
+          recommendedAction: {
+            providerActionCode: "claimApiKey",
+            type: "openUrl",
+            url: "https://console.mem9.ai/console/claim?key=mem9_test",
+          },
+        },
+      },
+    }), {
+      status: 402,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await assert.rejects(
+      () => backend.search({ q: "hello" }),
+      (error: unknown) => {
+        assert.equal(error instanceof Mem9HttpError, true);
+        const denied = parseRuntimeQuotaDenied(error);
+        assert.equal(denied?.code, "runtime_quota_denied");
+        assert.equal(denied?.recommendedAction?.url, "https://console.mem9.ai/console/claim?key=mem9_test");
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ServerBackend preserves post-quota rate limit response bodies", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => {
+    return new Response(JSON.stringify({
+      error: "Post-quota rate limit exceeded.",
+      details: {
+        errorCategory: "runtime_quota_denied",
+        runtimeQuota: {
+          meter: "memory_recall_requests",
+          quotaGateResult: {
+            outcome: "rateLimited",
+            mode: "postQuota",
+            reason: "postQuotaRateLimitExceeded",
+            postQuotaRateLimit: {
+              requestsPerMinute: 4,
+              windowDurationSeconds: 60,
+              scope: "apiKeyMeter",
+              retryAfterSeconds: 23,
+            },
+          },
+        },
+      },
+    }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const backend = new ServerBackend("https://api.mem9.ai", "mk_demo", "opencode");
+    await assert.rejects(
+      () => backend.search({ q: "hello" }),
+      (error: unknown) => {
+        assert.equal(error instanceof Mem9HttpError, true);
+        const denied = parseRuntimeQuotaDenied(error);
+        assert.equal(denied?.code, "runtime_quota_denied");
+        assert.equal(denied?.retryAfterSeconds, 23);
+        return true;
+      },
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

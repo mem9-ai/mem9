@@ -555,6 +555,73 @@ func TestContentKeywordSearchBypassesFTSAndVector(t *testing.T) {
 	}
 }
 
+func TestSecondHopAutoSearchHydratesSeedEmbedding(t *testing.T) {
+	score := 0.99
+	seedScore := 0.8
+	vectorCalls := make(chan []float32, 1)
+	autoVectorCalls := make(chan string, 1)
+
+	memRepo := &memoryRepoMock{
+		embeddingLookup: map[string][]float32{
+			"seed-1": {0.25, 0.5},
+		},
+		vectorSearchHook: func(_ context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+			vectorCalls <- append([]float32(nil), queryVec...)
+			if f.AgentID != "agent-1" {
+				t.Errorf("VectorSearch AgentID = %q, want agent-1", f.AgentID)
+			}
+			if limit != 5 {
+				t.Errorf("VectorSearch limit = %d, want 5", limit)
+			}
+			return []domain.Memory{
+				{ID: "neighbor-1", Content: "near seed", Score: &score, MemoryType: domain.TypeInsight, State: domain.StateActive},
+			}, nil
+		},
+		autoVectorSearchHook: func(_ context.Context, queryText string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			autoVectorCalls <- queryText
+			return nil, nil
+		},
+	}
+	svc := NewMemoryService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	results := svc.secondHopAutoSearch(
+		context.Background(),
+		map[string]domain.Memory{
+			"seed-1": {ID: "seed-1", Content: "seed content", Score: &seedScore, MemoryType: domain.TypeInsight, State: domain.StateActive},
+		},
+		map[string]float64{"seed-1": 1},
+		domain.MemoryFilter{AgentID: "agent-1"},
+		5,
+		1,
+	)
+
+	if len(results) != 1 || results[0].ID != "neighbor-1" {
+		t.Fatalf("unexpected second-hop results: %+v", results)
+	}
+
+	select {
+	case got := <-vectorCalls:
+		if len(got) != 2 || got[0] != 0.25 || got[1] != 0.5 {
+			t.Fatalf("VectorSearch queryVec = %v, want [0.25 0.5]", got)
+		}
+	default:
+		t.Fatal("expected second-hop search to use hydrated seed embedding")
+	}
+
+	select {
+	case queryText := <-autoVectorCalls:
+		t.Fatalf("second-hop unexpectedly fell back to AutoVectorSearch with query %q", queryText)
+	default:
+	}
+
+	memRepo.mu.Lock()
+	lookupCalls := append([][]string(nil), memRepo.embeddingLookupCalls...)
+	memRepo.mu.Unlock()
+	if len(lookupCalls) != 1 || len(lookupCalls[0]) != 1 || lookupCalls[0][0] != "seed-1" {
+		t.Fatalf("embedding lookup calls = %#v, want [[seed-1]]", lookupCalls)
+	}
+}
+
 func TestCreateFallsBackToRawWhenLLMUnavailable(t *testing.T) {
 	t.Parallel()
 

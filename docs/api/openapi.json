@@ -241,7 +241,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Memory"
+                  "$ref": "#/components/schemas/MemoryCreateResponse"
                 }
               }
             }
@@ -252,11 +252,17 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -326,8 +332,14 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -401,11 +413,17 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -436,11 +454,17 @@
           "204": {
             "description": "Memory deleted."
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -597,6 +621,52 @@
         }
       }
     },
+    "/v1alpha2/mem9s/runtime-state": {
+      "get": {
+        "tags": [
+          "Runtime State v1alpha2"
+        ],
+        "operationId": "getRuntimeState",
+        "summary": "Get plugin-visible runtime quota state",
+        "description": "Returns runtime-state facts for agent plugins. This route uses local API-key status resolution and does not depend on tenant data DB resolution. Hosted deployments read provider state through the configured runtime usage provider. Provider-disabled self-host deployments return a local fallback response with the same public shape.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/XMnemoAgentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RuntimeState"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
     "/v1alpha2/mem9s/memories": {
       "post": {
         "tags": [
@@ -626,7 +696,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Memory"
+                  "$ref": "#/components/schemas/MemoryCreateResponse"
                 }
               }
             }
@@ -640,6 +710,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
@@ -647,7 +720,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -725,11 +798,14 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -822,6 +898,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
@@ -832,7 +911,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -871,6 +950,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
@@ -881,7 +963,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -936,6 +1018,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "402": {
+            "$ref": "#/components/responses/RuntimeAccessBlocked"
+          },
           "403": {
             "$ref": "#/components/responses/Forbidden"
           },
@@ -943,7 +1028,7 @@
             "$ref": "#/components/responses/Conflict"
           },
           "429": {
-            "$ref": "#/components/responses/RateLimited"
+            "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -2273,6 +2358,77 @@
           }
         }
       },
+      "RuntimeState": {
+        "description": "Plugin-visible runtime quota state. Provider-disabled deployments return the same shape with notMetered budgets.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RuntimeStateResponse"
+            },
+            "examples": {
+              "providerDisabled": {
+                "value": {
+                  "mem9ApiKey": {
+                    "status": "active"
+                  },
+                  "meters": [
+                    {
+                      "meter": "memory_recall_requests",
+                      "quotaGateResult": {
+                        "outcome": "allowed",
+                        "mode": "notMetered",
+                        "reason": "runtimeUsageDisabled"
+                      },
+                      "budgets": [
+                        {
+                          "type": "notMetered",
+                          "state": "unlimited",
+                          "measure": {
+                            "kind": "count",
+                            "quantity": "request",
+                            "scale": 1
+                          },
+                          "period": {
+                            "type": "none"
+                          },
+                          "capacity": {
+                            "type": "unlimited"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "meter": "memory_write_requests",
+                      "quotaGateResult": {
+                        "outcome": "allowed",
+                        "mode": "notMetered",
+                        "reason": "runtimeUsageDisabled"
+                      },
+                      "budgets": [
+                        {
+                          "type": "notMetered",
+                          "state": "unlimited",
+                          "measure": {
+                            "kind": "count",
+                            "quantity": "request",
+                            "scale": 1
+                          },
+                          "period": {
+                            "type": "none"
+                          },
+                          "capacity": {
+                            "type": "unlimited"
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
       "BadRequest": {
         "description": "Invalid request. For v1alpha2 API-key routes this also includes missing, invalid, or inactive X-API-Key values returned by the authentication middleware.",
         "content": {
@@ -2375,6 +2531,148 @@
       },
       "NoContent": {
         "description": "No content."
+      },
+      "RuntimeAccessBlocked": {
+        "description": "Runtime access is blocked by the configured runtime usage provider. The body follows ErrorResponse, includes a stable runtime quota error classification under details.errorCategory, and exposes public runtime quota fields under details.runtimeQuota when provider details include public quota fields.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RuntimeQuotaError"
+            },
+            "examples": {
+              "runtimeAccessBlocked": {
+                "value": {
+                  "error": "Runtime access is blocked.",
+                  "details": {
+                    "errorCategory": "runtime_quota_denied",
+                    "runtimeQuota": {
+                      "meter": "memory_recall_requests",
+                      "quotaGateResult": {
+                        "outcome": "blocked",
+                        "mode": "includedQuota",
+                        "reason": "includedQuotaExhausted"
+                      },
+                      "recommendedAction": {
+                        "type": "openUrl",
+                        "providerActionCode": "upgradePlan",
+                        "severity": "blocking",
+                        "url": "https://example.com/provider/action"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "PostQuotaRateLimited": {
+        "description": "Runtime usage provider returned a temporary runtime quota rate limit, such as post-quota throttling.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds or HTTP date after which the client can retry, forwarded from the runtime usage provider when supplied.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RuntimeQuotaError"
+            },
+            "examples": {
+              "postQuotaRateLimited": {
+                "value": {
+                  "error": "Post-quota rate limit exceeded.",
+                  "details": {
+                    "errorCategory": "runtime_quota_denied",
+                    "runtimeQuota": {
+                      "meter": "memory_recall_requests",
+                      "quotaGateResult": {
+                        "outcome": "rateLimited",
+                        "mode": "postQuota",
+                        "reason": "postQuotaRateLimitExceeded",
+                        "postQuotaRateLimit": {
+                          "requestsPerMinute": 60,
+                          "windowDurationSeconds": 60,
+                          "scope": "providerWindow",
+                          "retryAfterSeconds": 20
+                        }
+                      },
+                      "recommendedAction": {
+                        "type": "openUrl",
+                        "providerActionCode": "upgradePlan",
+                        "severity": "blocking",
+                        "url": "https://example.com/provider/action"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "MemoryRouteRateLimited": {
+        "description": "Memory route rate limit. The response can be a generic API rate-limit envelope from global middleware or a runtime quota rate-limit envelope from the runtime usage provider.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds or HTTP date after which the client can retry, when supplied by the generic API rate limiter or runtime usage provider.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RuntimeQuotaError"
+                },
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              ]
+            },
+            "examples": {
+              "postQuotaRateLimited": {
+                "value": {
+                  "error": "Post-quota rate limit exceeded.",
+                  "details": {
+                    "errorCategory": "runtime_quota_denied",
+                    "runtimeQuota": {
+                      "meter": "memory_recall_requests",
+                      "quotaGateResult": {
+                        "outcome": "rateLimited",
+                        "mode": "postQuota",
+                        "reason": "postQuotaRateLimitExceeded",
+                        "postQuotaRateLimit": {
+                          "requestsPerMinute": 60,
+                          "windowDurationSeconds": 60,
+                          "scope": "providerWindow",
+                          "retryAfterSeconds": 20
+                        }
+                      },
+                      "recommendedAction": {
+                        "type": "openUrl",
+                        "providerActionCode": "upgradePlan",
+                        "severity": "blocking",
+                        "url": "https://example.com/provider/action"
+                      }
+                    }
+                  }
+                }
+              },
+              "genericApiRateLimited": {
+                "value": {
+                  "error": "rate limit exceeded"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "schemas": {
@@ -2432,6 +2730,229 @@
           }
         }
       },
+      "RuntimeStateResponse": {
+        "type": "object",
+        "required": [
+          "mem9ApiKey",
+          "meters"
+        ],
+        "properties": {
+          "mem9ApiKey": {
+            "$ref": "#/components/schemas/RuntimeStateAPIKey"
+          },
+          "meters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeStateMeter"
+            },
+            "minItems": 2
+          },
+          "providerId": {
+            "type": "string",
+            "description": "Optional provider discriminator. Clients can use this value to decide whether to interpret provider-specific providerData fields.",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$",
+            "example": "mem9-official"
+          },
+          "recommendedAction": {
+            "$ref": "#/components/schemas/RuntimeRecommendedAction"
+          },
+          "providerData": {
+            "type": "object",
+            "description": "Optional upstream provider details. Returned independently of providerId; clients should interpret provider-specific fields only when they recognize providerId.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStateAPIKey": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "unknown"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStateMeter": {
+        "type": "object",
+        "required": [
+          "meter",
+          "budgets"
+        ],
+        "properties": {
+          "meter": {
+            "$ref": "#/components/schemas/RuntimeMeter"
+          },
+          "quotaGateResult": {
+            "$ref": "#/components/schemas/RuntimeQuotaGateResult"
+          },
+          "budgets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeStatusBudget"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusBudget": {
+        "type": "object",
+        "required": [
+          "type",
+          "state",
+          "measure",
+          "period",
+          "capacity"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "includedQuota",
+              "spendingLimit",
+              "credits",
+              "notMetered",
+              "unknown",
+              "providerManaged"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warning",
+              "exhausted",
+              "unlimited",
+              "unknown",
+              "providerManaged"
+            ]
+          },
+          "measure": {
+            "$ref": "#/components/schemas/RuntimeStatusMeasure"
+          },
+          "period": {
+            "$ref": "#/components/schemas/RuntimeStatusPeriod"
+          },
+          "capacity": {
+            "$ref": "#/components/schemas/RuntimeStatusCapacity"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/RuntimeStatusUsage"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusMeasure": {
+        "type": "object",
+        "required": [
+          "kind",
+          "quantity",
+          "scale"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "count",
+              "currency",
+              "unknown"
+            ]
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Unit quantity, such as request, USD, or a provider-defined value."
+          },
+          "scale": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Raw values are expressed in this scale. For example, request uses scale 1 and USD cents use scale 100."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusPeriod": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "calendarMonth",
+              "fixedWindow",
+              "none",
+              "unknown",
+              "providerManaged"
+            ]
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Exclusive period end when known."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusCapacity": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "limited",
+              "unlimited",
+              "unknown",
+              "providerManaged"
+            ]
+          },
+          "value": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeStatusUsage": {
+        "type": "object",
+        "properties": {
+          "used": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "percent": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "description": "Used percentage for limited budgets when the provider can compute it."
+          }
+        },
+        "additionalProperties": false
+      },
       "StatusResponse": {
         "type": "object",
         "required": [
@@ -2444,6 +2965,13 @@
               "ok",
               "accepted"
             ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional runtime-state usage notice for hosted mem9 clients."
+          },
+          "runtimeState": {
+            "$ref": "#/components/schemas/RuntimeStateResponse"
           }
         }
       },
@@ -2628,8 +3156,35 @@
           "offset": {
             "type": "integer",
             "minimum": 0
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional runtime-state usage notice for hosted mem9 clients."
+          },
+          "runtimeState": {
+            "$ref": "#/components/schemas/RuntimeStateResponse"
           }
         }
+      },
+      "MemoryCreateResponse": {
+        "description": "Created memory with optional runtime-state usage notice fields.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Memory"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "Optional runtime-state usage notice for hosted mem9 clients."
+              },
+              "runtimeState": {
+                "$ref": "#/components/schemas/RuntimeStateResponse"
+              }
+            }
+          }
+        ]
       },
       "Memory": {
         "type": "object",
@@ -3159,6 +3714,165 @@
             }
           }
         }
+      },
+      "RuntimeRecommendedAction": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Generic client behavior for the action.",
+            "enum": [
+              "openUrl"
+            ]
+          },
+          "providerActionCode": {
+            "type": "string",
+            "description": "Provider-defined action code. The official/reference runtime usage provider currently emits claimApiKey, upgradePlan, enableOnDemand, increaseSpendingLimit, and resolveAccountState; clients should treat any other value as an opaque provider hint.",
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "upgradePlan"
+          },
+          "severity": {
+            "type": "string",
+            "description": "Provider-defined action severity. Clients should treat unknown values as opaque hints.",
+            "minLength": 1,
+            "example": "blocking"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Provider URL for type=openUrl. Present only when supplied by the provider response."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeQuotaGateResult": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "reason"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "allowed",
+              "blocked",
+              "rateLimited"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "description": "Provider-defined quota mode. Clients should treat unknown values as opaque hints.",
+            "example": "includedQuota"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Provider-defined quota reason. Clients should treat unknown values as opaque hints.",
+            "example": "includedQuotaExhausted"
+          },
+          "postQuotaRateLimit": {
+            "$ref": "#/components/schemas/PostQuotaRateLimit"
+          }
+        },
+        "additionalProperties": true
+      },
+      "RuntimeQuotaError": {
+        "description": "Runtime quota error response. This follows the shared ErrorResponse shape, includes a stable runtime quota error classification under details.errorCategory, and exposes public runtime quota fields under details.runtimeQuota when provider details include public quota fields.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "details"
+            ],
+            "properties": {
+              "details": {
+                "$ref": "#/components/schemas/RuntimeQuotaErrorEnvelopeDetails"
+              }
+            }
+          }
+        ]
+      },
+      "RuntimeQuotaErrorEnvelopeDetails": {
+        "type": "object",
+        "required": [
+          "errorCategory"
+        ],
+        "properties": {
+          "errorCategory": {
+            "type": "string",
+            "enum": [
+              "runtime_quota_denied"
+            ],
+            "description": "Stable runtime quota error category for clients that need one routing condition."
+          },
+          "runtimeQuota": {
+            "$ref": "#/components/schemas/RuntimeQuotaErrorDetails"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuntimeMeter": {
+        "type": "string",
+        "description": "Runtime usage meter id supplied by the provider. Clients should treat unknown values as opaque labels.",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$",
+        "example": "memory_recall_requests"
+      },
+      "RuntimeQuotaErrorDetails": {
+        "type": "object",
+        "description": "Public runtime quota details assembled from provider reservation details. Specific provider quota reasons are carried by quotaGateResult.reason.",
+        "properties": {
+          "meter": {
+            "$ref": "#/components/schemas/RuntimeMeter"
+          },
+          "recommendedAction": {
+            "$ref": "#/components/schemas/RuntimeRecommendedAction"
+          },
+          "quotaGateResult": {
+            "$ref": "#/components/schemas/RuntimeQuotaGateResult"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PostQuotaRateLimit": {
+        "type": "object",
+        "required": [
+          "requestsPerMinute",
+          "windowDurationSeconds",
+          "scope"
+        ],
+        "properties": {
+          "requestsPerMinute": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "windowDurationSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Provider-defined rate-limit window duration in seconds."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Provider-defined rate-limit scope. Clients should treat unknown values as opaque labels.",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$",
+            "example": "providerWindow"
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
       }
     }
   }
