@@ -48,7 +48,7 @@ const (
 )
 
 var (
-	ephemeralIntentRE        = regexp.MustCompile(`(?i)^(?:user\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:eat|eating|consume|consuming|have|having|train|training|work out|working out|exercise|exercising)\b`)
+	ephemeralIntentRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:eat|eating|consume|consuming|have|having|train|training|work out|working out|exercise|exercising)\b`)
 	shortTimeCueRE           = regexp.MustCompile(`(?i)\b(?:now|currently|today|tonight|tomorrow|yesterday|right now|this morning|this afternoon|this evening|last night|day before yesterday)\b`)
 	activityLogRE            = regexp.MustCompile(`(?i)\b(?:recorded|logged|weighed|weight is|protein powder|creatine|workout log|fitness session|breakfast|lunch|dinner|snack|sleep|slept|hunger|hungry|cosmetic procedure|botulinum|filler)\b`)
 	explicitActivityLogRE    = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:recorded|logged|weighed)\b`)

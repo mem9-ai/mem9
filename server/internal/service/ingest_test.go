@@ -1043,6 +1043,11 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: factTypeEphemeralIntent,
 		},
 		{
+			name: "third person progressive supplement intent",
+			text: "The user is considering consuming protein powder tonight",
+			want: factTypeEphemeralIntent,
+		},
+		{
 			name: "debug log",
 			text: "The debug log reported a transient import task error",
 			want: factTypeOperationalLog,
