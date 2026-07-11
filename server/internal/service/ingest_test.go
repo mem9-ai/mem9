@@ -1113,6 +1113,21 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: factTypeOperationalLog,
 		},
 		{
+			name: "durable visa confirmation deadline",
+			text: "Visa application requires confirmation today",
+			want: "",
+		},
+		{
+			name: "durable project confirmation deadline",
+			text: "Project proposal requires confirmation today",
+			want: "",
+		},
+		{
+			name: "system confirmation log",
+			text: "System requires confirmation today",
+			want: factTypeOperationalLog,
+		},
+		{
 			name: "durable smoke test implementation",
 			text: "mnemos API smoke test round-2 uses a poll loop to wait for async memory creation",
 			want: "",
@@ -1120,6 +1135,16 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 		{
 			name: "durable social meal event",
 			text: "Had dinner with Alice yesterday",
+			want: "",
+		},
+		{
+			name: "durable possessive relationship meal event",
+			text: "User had dinner with his wife yesterday",
+			want: "",
+		},
+		{
+			name: "durable lowercase name meal event",
+			text: "User had dinner with alice yesterday",
 			want: "",
 		},
 		{
