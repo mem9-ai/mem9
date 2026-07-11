@@ -1063,6 +1063,21 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: "",
 		},
 		{
+			name: "durable visa deadline",
+			text: "User's visa application is due tomorrow",
+			want: "",
+		},
+		{
+			name: "durable project deadline",
+			text: "Project proposal is due tomorrow",
+			want: "",
+		},
+		{
+			name: "assistant eta log",
+			text: "Assistant ETA is tomorrow",
+			want: factTypeOperationalLog,
+		},
+		{
 			name: "durable smoke test implementation",
 			text: "mnemos API smoke test round-2 uses a poll loop to wait for async memory creation",
 			want: "",
