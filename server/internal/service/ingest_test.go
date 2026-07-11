@@ -1053,6 +1053,11 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: factTypeEphemeralIntent,
 		},
 		{
+			name: "specific having supplement intent",
+			text: "The user is considering having protein powder tonight",
+			want: factTypeEphemeralIntent,
+		},
+		{
 			name: "durable future social plan",
 			text: "User plans to have dinner with Alice tomorrow",
 			want: "",
@@ -1060,6 +1065,21 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 		{
 			name: "durable future family plan",
 			text: "User will eat lunch with family tomorrow",
+			want: "",
+		},
+		{
+			name: "durable visa interview commitment",
+			text: "User will have a visa interview tomorrow",
+			want: "",
+		},
+		{
+			name: "durable surgery commitment",
+			text: "User plans to have surgery tomorrow",
+			want: "",
+		},
+		{
+			name: "durable employee training plan",
+			text: "User plans to train a new employee tomorrow",
 			want: "",
 		},
 		{
