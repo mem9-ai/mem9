@@ -48,16 +48,20 @@ const (
 )
 
 var (
-	ephemeralIntentRE        = regexp.MustCompile(`(?i)^(?:user\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:restart|restore|record|continue|remove|pin|send|create|set up|fix|debug|check|confirm|eat|eating|consume|consuming|have|having|train|training|work out|working out|exercise|exercising)\b`)
+	ephemeralIntentRE        = regexp.MustCompile(`(?i)^(?:user\s+)?(?:wants?|needs?|plans?|intends?|considering|thinking about|will|might|may|should|trying)\s+(?:to\s+)?(?:eat|eating|consume|consuming|have|having|train|training|work out|working out|exercise|exercising)\b`)
 	shortTimeCueRE           = regexp.MustCompile(`(?i)\b(?:now|currently|today|tonight|tomorrow|yesterday|right now|this morning|this afternoon|this evening|last night|day before yesterday)\b`)
 	activityLogRE            = regexp.MustCompile(`(?i)\b(?:recorded|logged|weighed|weight is|protein powder|creatine|workout log|fitness session|breakfast|lunch|dinner|snack|sleep|slept|hunger|hungry|cosmetic procedure|botulinum|filler)\b`)
-	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:recorded|logged|ate|had|drank|consumed|completed|ran|woke up|stayed up|trained|resting)\b`)
-	userActivityLogRE        = regexp.MustCompile(`(?i)^(?:the\s+)?user\b.*\b(?:recorded|logged|ate|had|drank|consumed|completed|ran|workout|weight|protein powder|creatine|breakfast|lunch|dinner|snack|sleep|slept|hunger|hungry)\b`)
-	quantifiedHealthLogRE    = regexp.MustCompile(`(?i)\b\d+(?:\.\d+)?\s*(?:kg|lbs?|pounds?|bpm|kcal|calories?)\b`)
-	operationalLogRE         = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|cron job|import task|upload task|planning-only turn|reported tracking event error|requires confirmation today|received service error|selected model is at capacity|eta is|eta tomorrow|due tomorrow|fixed issue|debug(?:ging)? (?:log|trace|session|command|output|run|task)|smoke test|functioning correctly)\b`)
-	stableSignalRE           = regexp.MustCompile(`(?i)\b(?:prefers?|preference|usually|regularly|often|default|goal|target|long-term|habit|birthday|relationship|lives in|based in|works at|uses|primary|source of truth|architecture|configured to|configuration|setting)\b`)
-	oneTimeIntentRE          = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:(?:restart|restore)\s+(?:a\s+)?(?:task|conversation|session|workflow|working condition)|(?:remove|pin)\s+(?:a\s+)?(?:memory|fact|insight)|send\s+(?:a\s+)?handoff|(?:record|log)\s+(?:a\s+)?(?:meal|weight|workout|sleep|activity))\b`)
+	explicitActivityLogRE    = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:recorded|logged|weighed)\b`)
+	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:ate|had|drank|consumed|completed|ran|woke up|stayed up|trained|resting)\b`)
+	userActivityLogRE        = regexp.MustCompile(`(?i)^(?:the\s+)?user\b.*\b(?:recorded|logged|ate|had|drank|consumed|completed|ran|slept)\b`)
+	narrativeActivityCueRE   = regexp.MustCompile(`(?i)\bwith\b|(?:和|跟|与).{1,40}(?:一起|见面|吃|喝)`)
+	operationalLogRE         = regexp.MustCompile(`(?i)\b(?:temporary workspace|temporary table|temporary monitoring|planning-only turn|reported tracking event error|requires confirmation today|received service error|selected model is at capacity|eta is|eta tomorrow|due tomorrow|(?:import|upload) task (?:started|completed|failed|queued|running)|debug(?:ging)? (?:log|trace|session|command|output|run|task)|smoke test (?:passed|failed|completed)|functioning correctly (?:now|today))\b`)
+	oneTimeIntentRE          = regexp.MustCompile(`(?i)\buser\s+wants?\s+to\s+(?:(?:restart|restore)\s+(?:a\s+)?(?:task|conversation|session|workflow|working condition)|(?:remove|pin)\s+(?:a\s+)?(?:memory|fact|insight)|send\s+(?:a\s+)?handoff|(?:record|log)\s+(?:a\s+)?(?:meal|weight|workout|sleep|activity)|(?:create|set up)\s+(?:temporary\s+)?(?:monitoring|alert|reminder))\b`)
 	transientStatusRE        = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:is|am|are)\s+(?:currently\s+)?(?:working out|training|resting|hungry|using voice input)\b|^(?:now|right now|currently)\b.*\b(?:working out|training|resting|hungry|using voice input)\b`)
+	chineseEphemeralIntentRE = regexp.MustCompile(`^(?:用户)?(?:想|想要|准备|打算|考虑)(?:(?:去|要)?(?:重启|恢复)(?:任务|会话|工作流)|(?:记录|删除|移除|置顶)(?:记忆|事实|洞察|饮食|体重|训练|睡眠|活动)|发送(?:交接|handoff)|(?:创建|设置)(?:临时)?(?:监控|提醒)|(?:今晚|今天|现在)?(?:吃|喝|服用|健身|训练|锻炼))`)
+	chineseTransientStatusRE = regexp.MustCompile(`^(?:用户)?(?:现在|当前|正在)(?:健身|训练|锻炼|休息|挨饿|使用语音输入)`)
+	chineseActivityLogRE     = regexp.MustCompile(`^(?:用户)?(?:记录了?|打卡了?|称重|记下了?)(?:体重|饮食|早餐|午餐|晚餐|训练|锻炼|睡眠|活动)`)
+	chineseOperationalLogRE  = regexp.MustCompile(`(?:临时工作区|临时表|临时监控|(?:导入|上传)任务(?:已)?(?:开始|完成|失败|排队|运行中)|调试(?:日志|跟踪|会话|命令|输出|任务)|冒烟测试(?:通过|失败|完成)|模型容量已满)`)
 )
 
 // IngestRequest is the input for the ingest pipeline.
@@ -198,7 +202,7 @@ type Phase1Result struct {
 type ExtractedFact struct {
 	Text         string               `json:"text"`
 	Tags         []string             `json:"tags,omitempty"`
-	FactType     string               `json:"fact_type,omitempty"` // "fact" | "query_intent" | "raw_fallback"; omitted = "fact"
+	FactType     string               `json:"fact_type,omitempty"` // "fact" plus non-durable fallback classifications; omitted = "fact"
 	RouteTargets []string             `json:"route_targets,omitempty"`
 	SourceSeqs   []int                `json:"source_seqs,omitempty"`
 	SourceTurns  []sourceTurnMetadata `json:"source_turns,omitempty"`
@@ -221,7 +225,7 @@ func filterLongTermFacts(facts []ExtractedFact) []ExtractedFact {
 		reason, source := longTermFactDropReason(f)
 		if reason != "" {
 			metrics.IngestFactsFilteredTotal.WithLabelValues(reason, source).Inc()
-			slog.Info("dropping non-long-term fact", "reason", reason, "source", source, "len", len(f.Text))
+			slog.Debug("dropping non-long-term fact", "reason", reason, "source", source, "len", len(f.Text))
 			continue
 		}
 		out = append(out, f)
@@ -263,20 +267,16 @@ func serverGuardDropReason(text string) string {
 		return ""
 	}
 
-	if stableSignalRE.MatchString(text) {
-		return ""
-	}
-
 	switch {
+	case oneTimeIntentRE.MatchString(text), chineseEphemeralIntentRE.MatchString(text):
+		return factTypeEphemeralIntent
 	case ephemeralIntentRE.MatchString(text) && shortTimeCueRE.MatchString(text):
 		return factTypeEphemeralIntent
-	case oneTimeIntentRE.MatchString(text):
-		return factTypeEphemeralIntent
-	case shortTimeCueRE.MatchString(text) && transientStatusRE.MatchString(text):
+	case shortTimeCueRE.MatchString(text) && transientStatusRE.MatchString(text), chineseTransientStatusRE.MatchString(text):
 		return factTypeTransientStatus
-	case isActivityLogText(text):
+	case isActivityLogText(text), chineseActivityLogRE.MatchString(text):
 		return factTypeActivityLog
-	case operationalLogRE.MatchString(text):
+	case operationalLogRE.MatchString(text), chineseOperationalLogRE.MatchString(text):
 		return factTypeOperationalLog
 	default:
 		return ""
@@ -284,13 +284,14 @@ func serverGuardDropReason(text string) string {
 }
 
 func isActivityLogText(text string) bool {
-	if !activityLogRE.MatchString(text) && !quantifiedHealthLogRE.MatchString(text) {
+	if narrativeActivityCueRE.MatchString(text) {
 		return false
 	}
-	return subjectlessActivityLogRE.MatchString(text) ||
-		userActivityLogRE.MatchString(text) ||
-		quantifiedHealthLogRE.MatchString(text) ||
-		strings.Contains(strings.ToLower(text), "recorded")
+	if explicitActivityLogRE.MatchString(text) {
+		return true
+	}
+	return activityLogRE.MatchString(text) &&
+		(subjectlessActivityLogRE.MatchString(text) || userActivityLogRE.MatchString(text))
 }
 
 type preparedExtractionInput struct {
@@ -794,7 +795,7 @@ atomic facts from a conversation.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
-   ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), classify it as query_intent.
+   ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), omit it from the facts array entirely.
    Only store what the user STATED about themselves, their work, or their world.
    Heuristic: if the fact can only be known because the user asked, it is query_intent.
    If it reveals something stable about the user independently, it is a fact.
@@ -812,8 +813,8 @@ atomic facts from a conversation.
    habits, identities, relationships, long-term goals, long-running projects, durable
    configuration, architecture, source-of-truth facts, and meaningful dated narrative
    events involving people, places, relationships, projects, or commitments.
-8. Classify short-lived or one-off information with the appropriate fact_type instead of
-   treating it as a long-term fact:
+8. Omit short-lived or one-off information from the facts array. Use these categories
+   only as an internal decision checklist; never emit them as facts:
    - transient_status: the user's current/temporary state or environment such as
      "is working out now", hunger, voice-input status, today's weather, or "currently
      doing X" when it has no durable value.
@@ -824,7 +825,7 @@ atomic facts from a conversation.
      single health, diet, workout, sleep, weight, supplement, or medical-aesthetic log.
    - operational_log: assistant/system runtime/task/debug/import/cron/status/error/ETA/
      temporary-workspace logs.
-   These items are not long-term insight memories.
+   These items are not long-term insight memories and must not appear in the output.
    Do NOT classify ordinary narrative events or future plans as non-long-term solely
    because they contain today/yesterday/tomorrow, ate/had/went, or plans/will. If the
    statement describes a person, place, relationship, project, trip, event, or commitment
@@ -877,19 +878,22 @@ atomic facts from a conversation.
 - "Melanie went camping in the mountains last week"
 - "James plans to call Samantha next month"
 
-## Examples to classify as non-long-term
+## Examples to omit from facts
 
-- {"text": "User wants to restart a task and restore it to normal working condition", "fact_type": "ephemeral_intent"}
-- {"text": "Is working out now", "fact_type": "transient_status"}
-- {"text": "Considering consuming protein powder tonight (2026-06-14)", "fact_type": "ephemeral_intent"}
-- {"text": "Recorded weight is 79.7kg", "fact_type": "activity_log"}
-- {"text": "Temporary workspace is /home/ec2-user/clawd-workspace/", "fact_type": "operational_log"}
+- "User wants to restart a task and restore it to normal working condition"
+- "Is working out now"
+- "Considering consuming protein powder tonight (2026-06-14)"
+- "Recorded weight is 79.7kg"
+- "Temporary workspace is /home/ec2-user/clawd-workspace/"
 
 ## Output Format
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
-{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, {"text": "Is working out now", "fact_type": "transient_status"}, ...]}`
+The "facts" array must contain durable facts only. Return {"facts": []} when every
+candidate is a query, transient status, one-off intent, activity log, or operational log.
+
+{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}]}`
 	systemPrompt += routingPromptSection(routingTargets)
 
 	userPrompt := fmt.Sprintf("Extract facts.\n\n%s", input.formatted)
@@ -973,7 +977,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
-   ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), classify it as query_intent.
+   ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), omit it from the facts array entirely.
    Only store what the user STATED about themselves, their work, or their world.
    Heuristic: if the fact can only be known because the user asked, it is query_intent.
    If it reveals something stable about the user independently, it is a fact.
@@ -991,8 +995,8 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    habits, identities, relationships, long-term goals, long-running projects, durable
    configuration, architecture, source-of-truth facts, and meaningful dated narrative
    events involving people, places, relationships, projects, or commitments.
-8. Classify short-lived or one-off information with the appropriate fact_type instead of
-   treating it as a long-term fact:
+8. Omit short-lived or one-off information from the facts array. Use these categories
+   only as an internal decision checklist; never emit them as facts:
    - transient_status: the user's current/temporary state or environment such as
      "is working out now", hunger, voice-input status, today's weather, or "currently
      doing X" when it has no durable value.
@@ -1003,7 +1007,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
      single health, diet, workout, sleep, weight, supplement, or medical-aesthetic log.
    - operational_log: assistant/system runtime/task/debug/import/cron/status/error/ETA/
      temporary-workspace logs.
-   These items are not long-term insight memories.
+   These items are not long-term insight memories and must not appear in the output.
    Do NOT classify ordinary narrative events or future plans as non-long-term solely
    because they contain today/yesterday/tomorrow, ate/had/went, or plans/will. If the
    statement describes a person, place, relationship, project, trip, event, or commitment
@@ -1076,7 +1080,7 @@ Output: {"facts": [{"text": "Debugging a memory leak in a Go service", "tags": [
 Input:
 User: I'm working remotely this week.
 Assistant: Noted.
-Output: {"facts": [{"text": "Working remotely this week", "tags": ["work", "timeline"], "fact_type": "transient_status"}], "message_tags": [["work", "timeline"], ["answer"]]}
+Output: {"facts": [], "message_tags": [["work", "timeline"], ["answer"]]}
 
 Input:
 User: Melanie went camping in the mountains last week, and James plans to call Samantha next month.
@@ -1091,13 +1095,16 @@ Output: {"facts": [{"text": "Usually sleeps more than 7 hours", "tags": ["person
 Input:
 User: Is working out now. Considering consuming protein powder tonight (2026-06-14).
 Assistant: Got it.
-Output: {"facts": [{"text": "Is working out now", "fact_type": "transient_status"}, {"text": "Considering consuming protein powder tonight (2026-06-14)", "fact_type": "ephemeral_intent"}], "message_tags": [["fitness", "diet", "timeline"], ["answer"]]}
+Output: {"facts": [], "message_tags": [["fitness", "diet", "timeline"], ["answer"]]}
 
 ## Output Format
 
 Return ONLY valid JSON. No markdown fences, no explanation.
 
-{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}, {"text": "User asked about X", "fact_type": "query_intent"}, {"text": "Is working out now", "fact_type": "transient_status"}], "message_tags": [["tag1", "tag2"], ["tag3"], [], ...]}`
+The "facts" array must contain durable facts only. Return an empty array when all
+user content is non-durable, while still returning message_tags for every message.
+
+{"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}], "message_tags": [["tag1", "tag2"], ["tag3"]]}`
 	systemPrompt += routingPromptSection(routingTargets)
 
 	userPrompt := fmt.Sprintf("Extract facts and assign message tags.\n\n%s", input.formatted)

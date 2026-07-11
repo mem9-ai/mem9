@@ -410,6 +410,84 @@ func TestExtractPhase1WithoutRoutingOmitsRoutingPrompt(t *testing.T) {
 	}
 }
 
+func TestExtractionPromptsRequireDurableFactsOnly(t *testing.T) {
+	tests := []struct {
+		name     string
+		response string
+		invoke   func(*IngestService) error
+	}{
+		{
+			name:     "facts only",
+			response: `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}]}`,
+			invoke: func(svc *IngestService) error {
+				_, err := svc.ExtractContentWithRouting(context.Background(), "I use Go 1.22", nil)
+				return err
+			},
+		},
+		{
+			name:     "facts and message tags",
+			response: `{"facts": [{"text": "Uses Go 1.22", "tags": ["tech"]}], "message_tags": [["tech"]]}`,
+			invoke: func(svc *IngestService) error {
+				_, err := svc.ExtractPhase1(context.Background(), []IngestMessage{{Role: "user", Content: "I use Go 1.22"}})
+				return err
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var systemPrompt string
+			mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req struct {
+					Messages []struct {
+						Content string `json:"content"`
+					} `json:"messages"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatalf("decode llm request: %v", err)
+				}
+				if len(req.Messages) > 0 {
+					systemPrompt = req.Messages[0].Content
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{
+					"choices": []map[string]any{
+						{"message": map[string]string{"content": tc.response}},
+					},
+				})
+			}))
+			defer mockLLM.Close()
+
+			llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+			svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+			if err := tc.invoke(svc); err != nil {
+				t.Fatalf("extract: %v", err)
+			}
+
+			for _, want := range []string{
+				"omit it from the facts array entirely",
+				"never emit them as facts",
+				`The "facts" array must contain durable facts only`,
+			} {
+				if !strings.Contains(systemPrompt, want) {
+					t.Fatalf("durable-only extraction prompt missing %q in:\n%s", want, systemPrompt)
+				}
+			}
+			for _, unwanted := range []string{
+				`"fact_type": "query_intent"`,
+				`"fact_type": "transient_status"`,
+				`"fact_type": "ephemeral_intent"`,
+				`"fact_type": "activity_log"`,
+				`"fact_type": "operational_log"`,
+			} {
+				if strings.Contains(systemPrompt, unwanted) {
+					t.Fatalf("durable-only extraction prompt still emits %q in:\n%s", unwanted, systemPrompt)
+				}
+			}
+		})
+	}
+}
+
 func TestExtractPhase1WithRoutingIncludesPromptAndParsesTargets(t *testing.T) {
 	var systemPrompt string
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -950,9 +1028,54 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: factTypeEphemeralIntent,
 		},
 		{
+			name: "restart task with stable configuration wording",
+			text: "User wants to restart a task using the default configuration",
+			want: factTypeEphemeralIntent,
+		},
+		{
+			name: "record weight for durable goal",
+			text: "User wants to record a weight for the long-term goal",
+			want: factTypeEphemeralIntent,
+		},
+		{
+			name: "short lived supplement intent mentioning goal",
+			text: "Considering consuming protein powder tonight for the goal",
+			want: factTypeEphemeralIntent,
+		},
+		{
 			name: "debug log",
 			text: "The debug log reported a transient import task error",
 			want: factTypeOperationalLog,
+		},
+		{
+			name: "completed import task log",
+			text: "Import task completed successfully",
+			want: factTypeOperationalLog,
+		},
+		{
+			name: "durable cron configuration",
+			text: "Cron job is configured to run daily",
+			want: "",
+		},
+		{
+			name: "durable smoke test implementation",
+			text: "mnemos API smoke test round-2 uses a poll loop to wait for async memory creation",
+			want: "",
+		},
+		{
+			name: "durable social meal event",
+			text: "Had dinner with Alice yesterday",
+			want: "",
+		},
+		{
+			name: "durable historical health event",
+			text: "Lost 20kg after cancer treatment in 2015",
+			want: "",
+		},
+		{
+			name: "durable birth measurement",
+			text: "User's birth weight is 3kg",
+			want: "",
 		},
 		{
 			name: "durable startup goal",
@@ -974,6 +1097,34 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			text: "Completed a PhD in 2015",
 			want: "",
 		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := serverGuardDropReason(tc.text); got != tc.want {
+				t.Fatalf("serverGuardDropReason(%q) = %q, want %q", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestServerGuardHandlesChineseNonLongTermContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "restart task", text: "用户想重启任务", want: factTypeEphemeralIntent},
+		{name: "consume supplement tonight", text: "用户考虑今晚喝蛋白粉", want: factTypeEphemeralIntent},
+		{name: "current workout", text: "用户正在健身", want: factTypeTransientStatus},
+		{name: "recorded weight", text: "用户记录了体重79.7kg", want: factTypeActivityLog},
+		{name: "temporary workspace", text: "临时工作区是 /tmp/mem9", want: factTypeOperationalLog},
+		{name: "completed import task", text: "导入任务已完成", want: factTypeOperationalLog},
+		{name: "durable company plan", text: "用户计划明年创办一家公司", want: ""},
+		{name: "durable import configuration", text: "导入任务使用批处理架构", want: ""},
+		{name: "durable social event", text: "昨天和 Alice 一起吃了晚饭", want: ""},
 	}
 
 	for _, tc := range tests {
