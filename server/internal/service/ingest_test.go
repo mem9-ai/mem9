@@ -1193,6 +1193,21 @@ func TestServerGuardDropsOnlyNarrowOperationalIntentAndLogs(t *testing.T) {
 			want: "",
 		},
 		{
+			name: "subjectless sleep duration log",
+			text: "Slept 5 hours last night",
+			want: factTypeActivityLog,
+		},
+		{
+			name: "subjectless sleep quality log",
+			text: "Slept poorly last night",
+			want: factTypeActivityLog,
+		},
+		{
+			name: "durable subjectless travel sleep event",
+			text: "Slept at a Tokyo hotel yesterday",
+			want: "",
+		},
+		{
 			name: "durable historical health event",
 			text: "Lost 20kg after cancer treatment in 2015",
 			want: "",

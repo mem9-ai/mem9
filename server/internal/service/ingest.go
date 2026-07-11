@@ -55,6 +55,7 @@ var (
 	quantifiedHealthLogRE    = regexp.MustCompile(`(?i)\b\d+(?:\.\d+)?\s*(?:kg|lbs?|pounds?|bpm|kcal|calories?)\b`)
 	explicitActivityLogRE    = regexp.MustCompile(`(?i)^(?:(?:the\s+)?user\s+)?(?:recorded|logged|weighed)\b`)
 	subjectlessActivityLogRE = regexp.MustCompile(`(?i)^(?:ate|had|drank|consumed|woke up|stayed up|resting)\b`)
+	subjectlessSleepLogRE    = regexp.MustCompile(`(?i)^slept\s+(?:\d+(?:\.\d+)?\s*(?:hours?|hrs?|minutes?)|well|poorly|badly)\b`)
 	userActivityLogRE        = regexp.MustCompile(`(?i)^(?:the\s+)?user\b.*\b(?:ate|had|drank|consumed)\b`)
 	namedCompanionRE         = regexp.MustCompile(`\bwith\s+[A-Z][\p{L}\p{M}'-]*\b`)
 	activityNarrativeCueRE   = regexp.MustCompile(`(?i)\bwith\b|(?:和|跟|与).{1,40}(?:一起|见面|吃|喝)`)
@@ -294,6 +295,9 @@ func isActivityLogText(text string) bool {
 	}
 	if activityNarrativeCueRE.MatchString(text) {
 		return false
+	}
+	if subjectlessSleepLogRE.MatchString(text) {
+		return true
 	}
 	return activityLogRE.MatchString(text) &&
 		(subjectlessActivityLogRE.MatchString(text) || userActivityLogRE.MatchString(text))
