@@ -12,17 +12,11 @@ import path from "node:path";
 import test from "node:test";
 
 import {
-  applyCodexHooksPatch,
   assertNodeVersion,
   buildInstallMetadata,
-  buildNodeCommand,
-  buildHookCommands,
   inspectSetup,
   main,
-  mergeMem9Hooks,
   parseArgs,
-  removeManagedHooks,
-  renderHooksTemplate,
   runSetup,
 } from "../skills/setup/scripts/setup.mjs";
 import { MEM9_PLUGIN_USER_AGENT } from "../lib/http.mjs";
@@ -235,194 +229,6 @@ test("assertNodeVersion rejects runtimes below Node 22", () => {
   );
 });
 
-test("applyCodexHooksPatch enables legacy codex hooks without removing existing feature keys", () => {
-  const patched = applyCodexHooksPatch([
-    "[features]",
-    "foo = true",
-    "codex_hooks = false",
-    "",
-    "[model]",
-    "name = \"gpt-5\"",
-    "",
-  ].join("\n"));
-
-  assert.match(patched, /\[features\]/);
-  assert.match(patched, /foo = true/);
-  assert.match(patched, /foo = true\ncodex_hooks = true/);
-  assert.doesNotMatch(patched, /^hooks = true$/m);
-  assert.match(patched, /\[model\]/);
-});
-
-test("applyCodexHooksPatch writes hooks for Codex 0.129+ and removes legacy aliases", () => {
-  const patched = applyCodexHooksPatch([
-    "[features]",
-    "foo = true",
-    "codex_hooks = true",
-    "hooks = false",
-    "",
-  ].join("\n"), {
-    featureKey: "hooks",
-  });
-
-  assert.match(patched, /\[features\]/);
-  assert.match(patched, /foo = true/);
-  assert.match(patched, /foo = true\nhooks = true/);
-  assert.doesNotMatch(patched, /codex_hooks = true/);
-  assert.doesNotMatch(patched, /hooks = false/);
-});
-
-test("applyCodexHooksPatch inserts the selected feature key directly under features when missing", () => {
-  const patched = applyCodexHooksPatch([
-    "[features]",
-    "multi_agent = true",
-    "",
-    "# [mcp_servers]",
-    "# enabled = true",
-    "",
-    "[model_providers.example]",
-    "name = \"Example\"",
-    "",
-  ].join("\n"));
-
-  assert.match(
-    patched,
-    /\[features\]\ncodex_hooks = true\nmulti_agent = true\n\n# \[mcp_servers\]/,
-  );
-});
-
-test("applyCodexHooksPatch falls back to codex_hooks for unknown feature keys", () => {
-  const patched = applyCodexHooksPatch("[features]\nhooks = true\n", {
-    featureKey: "unknown",
-  });
-
-  assert.match(patched, /\[features\]\ncodex_hooks = true\n/);
-  assert.doesNotMatch(patched, /\nhooks = true\n/);
-});
-
-test("applyCodexHooksPatch handles commented features and next section headers", () => {
-  const patched = applyCodexHooksPatch([
-    "[features] # local overrides",
-    "multi_agent = true",
-    "",
-    "[model_providers.example] # keep this section boundary",
-    "name = \"Example\"",
-    "",
-  ].join("\n"));
-
-  assert.match(
-    patched,
-    /\[features\] # local overrides\ncodex_hooks = true\nmulti_agent = true\n\n\[model_providers\.example\] # keep this section boundary/,
-  );
-  assert.doesNotMatch(
-    patched,
-    /\n\[features\]\ncodex_hooks = true\n\[model_providers\.example\]/,
-  );
-});
-
-test("removeManagedHooks removes only mem9 hooks from mixed groups", () => {
-  const cleaned = removeManagedHooks({
-    hooks: {
-      SessionStart: [
-        {
-          hooks: [
-            {
-              type: "command",
-              command: buildNodeCommand("/tmp/example/mem9/runtime/session-start.mjs"),
-              statusMessage: "[mem9] session start",
-            },
-            {
-              type: "command",
-              command: "echo foreign-session-start",
-              statusMessage: "foreign-session-start",
-            },
-          ],
-        },
-      ],
-    },
-  });
-
-  assert.equal(cleaned.hooks.SessionStart.length, 1);
-  assert.equal(cleaned.hooks.SessionStart[0].hooks.length, 1);
-  assert.equal(
-    cleaned.hooks.SessionStart[0].hooks[0].statusMessage,
-    "foreign-session-start",
-  );
-});
-
-test("mergeMem9Hooks replaces old mem9-managed groups and keeps foreign hooks", () => {
-  const merged = mergeMem9Hooks(
-    {
-      hooks: {
-        SessionStart: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: buildNodeCommand("/tmp/example/mem9/runtime/session-start.mjs"),
-                statusMessage: "[mem9] session start",
-              },
-              {
-                type: "command",
-                command: "echo mixed-foreign",
-                statusMessage: "foreign-session-start",
-              },
-            ],
-          },
-          {
-            hooks: [
-              {
-                type: "command",
-                command: "echo existing-session-start",
-              },
-            ],
-          },
-        ],
-        Stop: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: "echo existing-stop",
-              },
-            ],
-          },
-        ],
-      },
-    },
-    renderHooksTemplate({
-      templateText: readFileSync("./templates/hooks.json", "utf8"),
-      hooksDir: "/scope/mem9/hooks",
-    }),
-  );
-
-  assert.equal(
-    merged.hooks.SessionStart[0].hooks[0].command,
-    buildNodeCommand("/scope/mem9/hooks/session-start.mjs"),
-  );
-  assert.equal(
-    merged.hooks.SessionStart[1].hooks[0].command,
-    "echo mixed-foreign",
-  );
-  assert.equal(
-    merged.hooks.SessionStart[2].hooks[0].command,
-    "echo existing-session-start",
-  );
-  assert.equal(
-    merged.hooks.Stop[1].hooks[0].command,
-    "echo existing-stop",
-  );
-});
-
-test("buildHookCommands points hooks at the installed hook shim directory", () => {
-  const commands = buildHookCommands("/scope/mem9/hooks");
-
-  assert.deepEqual(commands, {
-    sessionStartCommand: buildNodeCommand("/scope/mem9/hooks/session-start.mjs"),
-    userPromptSubmitCommand: buildNodeCommand("/scope/mem9/hooks/user-prompt-submit.mjs"),
-    stopCommand: buildNodeCommand("/scope/mem9/hooks/stop.mjs"),
-  });
-});
-
 test("buildInstallMetadata derives marketplace and plugin identity from the installed cache path", () => {
   const installMetadata = buildInstallMetadata(
     "/scope/codex-home",
@@ -433,7 +239,6 @@ test("buildInstallMetadata derives marketplace and plugin identity from the inst
     schemaVersion: 1,
     marketplaceName: "acme-labs",
     pluginName: "mem9-pro",
-    shimVersion: 1,
   });
 });
 
@@ -445,24 +250,16 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
     const codexHome = path.join(tempRoot, "codex-home");
     const mem9Home = path.join(tempRoot, "mem9-home");
     mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
-    mkdirSync(path.join(codexHome, "mem9", "hooks", "shared"), { recursive: true });
+    mkdirSync(path.join(codexHome, "mem9"), { recursive: true });
     mkdirSync(mem9Home, { recursive: true });
     installActivePlugin(codexHome);
 
-    writeFileSync(
-      path.join(codexHome, "config.toml"),
-      "[features]\ncodex_hooks = true\n",
-    );
     writeJson(path.join(codexHome, "mem9", "install.json"), {
       schemaVersion: 1,
       marketplaceName: "mem9-ai",
       pluginName: "mem9",
       shimVersion: 1,
     });
-    writeJson(path.join(codexHome, "hooks.json"), renderHooksTemplate({
-      templateText: readFileSync("./templates/hooks.json", "utf8"),
-      hooksDir: path.join(codexHome, "mem9", "hooks"),
-    }));
     writeJson(path.join(codexHome, "mem9", "config.json"), {
       schemaVersion: 1,
       enabled: false,
@@ -512,10 +309,6 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
       cwd: projectRoot,
       codexHome,
       mem9Home,
-      hookShimSourceDir: "./bootstrap-hooks",
-      execFileSync() {
-        throw new Error("codex unavailable");
-      },
     });
 
     assert.equal(summary.status, "ok");
@@ -525,12 +318,9 @@ test("inspect reports runtime, plugin, configs, and saved profiles without expos
     assert.equal(summary.runtime.recallMinPromptLength, 4);
     assert.deepEqual(summary.runtime.legacyPausedSources, ["global", "project"]);
     assert.equal(summary.runtime.effectiveLegacyPausedSource, "project");
-    assert.equal(summary.plugin.hooksFeatureEnabled, true);
-    assert.equal(summary.plugin.hooksFeatureKey, "codex_hooks");
-    assert.equal(summary.plugin.preferredHooksFeatureKey, "codex_hooks");
-    assert.equal(summary.plugin.codexVersion, "");
-    assert.equal(summary.plugin.codexVersionSource, "unavailable");
-    assert.equal(summary.plugin.hooksInstalled, true);
+    assert.equal(summary.plugin.hooksSource, "plugin");
+    assert.equal(summary.plugin.hooksConfigState, "valid");
+    assert.equal(summary.plugin.hooksBundled, true);
     assert.equal(summary.plugin.installMetadataPresent, true);
     assert.equal(summary.globalConfig.summary.profileId, "default");
     assert.equal(summary.globalConfig.summary.legacyEnabledFalse, true);
@@ -638,7 +428,6 @@ test("inspect uses install metadata identity for setup script repair guidance", 
       cwd: projectRoot,
       codexHome,
       mem9Home,
-      hookShimSourceDir: "./bootstrap-hooks",
     });
 
     assert.equal(
@@ -654,7 +443,7 @@ test("inspect uses install metadata identity for setup script repair guidance", 
   }
 });
 
-test("inspect recognizes the renamed hooks feature key", () => {
+test("inspect reports bundled hooks without reading the global feature flag", () => {
   const tempRoot = createTempRoot("setup");
 
   try {
@@ -674,14 +463,12 @@ test("inspect recognizes the renamed hooks feature key", () => {
       cwd: projectRoot,
       codexHome,
       mem9Home,
-      codexVersion: "codex 0.129.0",
     });
 
-    assert.equal(summary.plugin.hooksFeatureEnabled, true);
-    assert.equal(summary.plugin.hooksFeatureKey, "hooks");
-    assert.equal(summary.plugin.preferredHooksFeatureKey, "hooks");
-    assert.equal(summary.plugin.codexVersion, "codex 0.129.0");
-    assert.equal(summary.plugin.codexVersionSource, "test");
+    assert.equal(summary.plugin.hooksSource, "plugin");
+    assert.equal(summary.plugin.hooksConfigState, "valid");
+    assert.equal(summary.plugin.hooksBundled, true);
+    assert.equal(summary.paths.hooksPath, "hooks/hooks.json");
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -728,7 +515,6 @@ test("inspect keeps project config paths readable from a nested repo cwd", () =>
       cwd: nestedCwd,
       codexHome,
       mem9Home,
-      hookShimSourceDir: "./bootstrap-hooks",
     });
 
     assert.equal(summary.projectConfig.path, ".codex/mem9/config.json");
@@ -1017,7 +803,7 @@ test("scope apply errors with stable guidance when the selected profile is missi
   }
 });
 
-test("scope apply user installs global config, hooks, metadata, and repairs legacy project hooks", async () => {
+test("scope apply user writes mem9 config without modifying Codex hook configuration", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -1030,18 +816,16 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
     mkdirSync(codexHome, { recursive: true });
     mkdirSync(mem9Home, { recursive: true });
 
-    writeFileSync(
-      path.join(codexHome, "config.toml"),
-      "[features]\nother = true\n",
-    );
-    writeJson(path.join(codexHome, "hooks.json"), {
+    const originalConfigToml = "[features]\nother = true\n";
+    writeFileSync(path.join(codexHome, "config.toml"), originalConfigToml);
+    const originalGlobalHooks = {
       hooks: {
         SessionStart: [
           {
             hooks: [
               {
                 type: "command",
-                command: buildNodeCommand(path.join(codexHome, "mem9", "runtime", "session-start.mjs")),
+                command: `node ${path.join(codexHome, "mem9", "runtime", "session-start.mjs")}`,
                 statusMessage: "[mem9] session start",
               },
               {
@@ -1052,15 +836,16 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
           },
         ],
       },
-    });
-    writeJson(path.join(projectRoot, ".codex", "hooks.json"), {
+    };
+    writeJson(path.join(codexHome, "hooks.json"), originalGlobalHooks);
+    const originalProjectHooks = {
       hooks: {
         SessionStart: [
           {
             hooks: [
               {
                 type: "command",
-                command: buildNodeCommand(path.join(projectRoot, ".codex", "mem9", "runtime", "session-start.mjs")),
+                command: `node ${path.join(projectRoot, ".codex", "mem9", "runtime", "session-start.mjs")}`,
                 statusMessage: "[mem9] session start",
               },
               {
@@ -1072,7 +857,8 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
           },
         ],
       },
-    });
+    };
+    writeJson(path.join(projectRoot, ".codex", "hooks.json"), originalProjectHooks);
     writeJson(path.join(mem9Home, ".credentials.json"), {
       schemaVersion: 1,
       profiles: {
@@ -1104,9 +890,6 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
         codexHome,
         mem9Home,
         userWritable: true,
-        execFileSync() {
-          throw new Error("codex unavailable");
-        },
         stdout: {
           write(chunk) {
             stdoutText += chunk;
@@ -1123,21 +906,13 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
       intervalHours: 72,
     });
     assert.equal(result.configSummary.recallMinPromptLength, 6);
-    assert.equal(
-      existsSync(path.join(codexHome, "mem9", "hooks", "session-start.mjs")),
-      true,
-    );
-    assert.equal(
-      existsSync(path.join(codexHome, "mem9", "hooks", "shared", "bootstrap.mjs")),
-      true,
-    );
+    assert.equal(existsSync(path.join(codexHome, "mem9", "hooks")), false);
     assert.deepEqual(
       readJson(path.join(codexHome, "mem9", "install.json")),
       {
         schemaVersion: 1,
         marketplaceName: "mem9-ai",
         pluginName: "mem9",
-        shimVersion: 1,
       },
     );
 
@@ -1151,26 +926,17 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
       intervalHours: 72,
     });
 
-    const patchedToml = readFileSync(path.join(codexHome, "config.toml"), "utf8");
-    assert.match(patchedToml, /other = true/);
-    assert.match(patchedToml, /codex_hooks = true/);
-
-    const hooks = readJson(path.join(codexHome, "hooks.json"));
     assert.equal(
-      hooks.hooks.SessionStart[0].hooks[0].command,
-      buildNodeCommand(path.join(codexHome, "mem9", "hooks", "session-start.mjs")),
+      readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+      originalConfigToml,
     );
-    assert.equal(
-      hooks.hooks.SessionStart[1].hooks[0].command,
-      "echo existing-session-start",
+    assert.deepEqual(
+      readJson(path.join(codexHome, "hooks.json")),
+      originalGlobalHooks,
     );
-
-    const legacyHooks = readJson(path.join(projectRoot, ".codex", "hooks.json"));
-    assert.equal(legacyHooks.hooks.SessionStart.length, 1);
-    assert.equal(legacyHooks.hooks.SessionStart[0].hooks.length, 1);
-    assert.equal(
-      legacyHooks.hooks.SessionStart[0].hooks[0].statusMessage,
-      "foreign-session-start",
+    assert.deepEqual(
+      readJson(path.join(projectRoot, ".codex", "hooks.json")),
+      originalProjectHooks,
     );
 
     const stdoutSummary = JSON.parse(stdoutText);
@@ -1187,7 +953,7 @@ test("scope apply user installs global config, hooks, metadata, and repairs lega
   }
 });
 
-test("scope apply preserves an existing renamed hooks feature key", async () => {
+test("scope apply leaves mixed global hook feature keys untouched", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -1230,15 +996,16 @@ test("scope apply preserves an existing renamed hooks feature key", async () => 
       },
     );
 
-    const patchedToml = readFileSync(path.join(codexHome, "config.toml"), "utf8");
-    assert.match(patchedToml, /\[features\]\nhooks = true\n/);
-    assert.doesNotMatch(patchedToml, /codex_hooks = true/);
+    assert.equal(
+      readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+      "[features]\nhooks = true\ncodex_hooks = true\n",
+    );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("scope apply migrates legacy codex_hooks to hooks for Codex 0.129+", async () => {
+test("scope apply leaves the legacy global hook feature key untouched", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -1278,15 +1045,13 @@ test("scope apply migrates legacy codex_hooks to hooks for Codex 0.129+", async 
         codexHome,
         mem9Home,
         userWritable: true,
-        execFileSync() {
-          return "codex 0.129.0\n";
-        },
       },
     );
 
-    const patchedToml = readFileSync(path.join(codexHome, "config.toml"), "utf8");
-    assert.match(patchedToml, /\[features\]\nhooks = true\nother = true\n/);
-    assert.doesNotMatch(patchedToml, /codex_hooks = true/);
+    assert.equal(
+      readFileSync(path.join(codexHome, "config.toml"), "utf8"),
+      "[features]\ncodex_hooks = true\nother = true\n",
+    );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -1496,7 +1261,7 @@ test("scope clear project fails before mutating global runtime files when the pr
   }
 });
 
-test("scope apply repairs malformed json files and rewrites them with valid config", async () => {
+test("scope apply repairs mem9 json without touching malformed global hooks", async () => {
   const tempRoot = createTempRoot();
 
   try {
@@ -1547,10 +1312,9 @@ test("scope apply repairs malformed json files and rewrites them with valid conf
     );
 
     assert.equal(result.scope, "user");
-    assert.equal(result.backups.length, 3);
+    assert.equal(result.backups.length, 2);
 
     const repairedConfig = readJson(path.join(codexHome, "mem9", "config.json"));
-    const repairedHooks = readJson(path.join(codexHome, "hooks.json"));
     const repairedInstall = readJson(path.join(codexHome, "mem9", "install.json"));
 
     assert.equal(repairedConfig.profileId, "work");
@@ -1559,7 +1323,8 @@ test("scope apply repairs malformed json files and rewrites them with valid conf
       enabled: true,
       intervalHours: 24,
     });
-    assert.equal(repairedHooks.hooks.Stop[0].hooks[0].statusMessage, "[mem9] save");
+    assert.equal(readFileSync(path.join(codexHome, "hooks.json"), "utf8"), "{broken");
+    assert.equal(readFileSync(path.join(codexHome, "config.toml"), "utf8"), "[features]\n");
     assert.equal(repairedInstall.pluginName, "mem9");
 
     for (const backup of result.backups) {
@@ -1568,7 +1333,7 @@ test("scope apply repairs malformed json files and rewrites them with valid conf
     }
 
     const stdoutSummary = JSON.parse(stdoutText);
-    assert.equal(stdoutSummary.backups.length, 3);
+    assert.equal(stdoutSummary.backups.length, 2);
     assert.deepEqual(stdoutSummary.configSummary.updateCheck, {
       enabled: true,
       intervalHours: 24,

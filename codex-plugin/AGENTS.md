@@ -4,7 +4,7 @@ title: codex-plugin — Codex hooks and skills
 
 ## Purpose
 
-Codex plugin package for mem9. It installs managed Codex hooks, exposes `$mem9:*` skills, reads shared mem9 profiles, and calls the mem9 HTTP API for recall and store flows.
+Codex plugin package for mem9. It bundles Codex lifecycle hooks, exposes `$mem9:*` skills, reads shared mem9 profiles, and calls the mem9 HTTP API for recall and store flows.
 
 ## Commands
 
@@ -18,9 +18,8 @@ pnpm --dir codex-plugin typecheck
 | Task | File |
 |------|------|
 | Plugin manifest | `.codex-plugin/plugin.json` |
-| Hook templates | `templates/hooks.json` |
-| Runtime hooks | `hooks/` |
-| Bootstrap hook shims | `bootstrap-hooks/` |
+| Hook config | `hooks/hooks.json` |
+| Runtime hooks | `hooks/*.mjs` |
 | Config/profile logic | `lib/config.mjs` |
 | HTTP client | `lib/http.mjs` |
 | Project root detection | `lib/project-root.mjs` |
@@ -37,6 +36,7 @@ pnpm --dir codex-plugin typecheck
 - This package is ESM-only; use `.mjs` for runtime scripts.
 - Shared credentials live at `$MEM9_HOME/.credentials.json`; `MEM9_HOME` defaults to `$HOME/.mem9`.
 - Codex runtime files live under `$CODEX_HOME/mem9/`.
+- Codex discovers lifecycle hooks from the plugin-owned `hooks/hooks.json`; setup must not write `$CODEX_HOME/hooks.json` or hook feature flags in `$CODEX_HOME/config.toml`.
 - Keep API key entry out of the Codex TUI.
 - Hook debug logs default to `$CODEX_HOME/mem9/logs/codex-hooks.jsonl`.
 - Use explicit HTTP timeouts from the active profile or project override.
@@ -45,5 +45,5 @@ pnpm --dir codex-plugin typecheck
 
 - Do NOT store API keys in repo-local project config.
 - Do NOT require users to edit Codex hook files manually before `$mem9:setup`.
-- Do NOT duplicate hook JSON mutation logic outside the setup/cleanup helpers.
+- Do NOT copy hook shims into `$CODEX_HOME` or mutate global hook configuration during setup.
 - Do NOT add TypeScript-only source files unless the package build/test flow is updated.

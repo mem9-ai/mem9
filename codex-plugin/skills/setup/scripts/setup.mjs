@@ -2,9 +2,6 @@
 // @ts-nocheck
 
 import {
-  execFileSync,
-} from "node:child_process";
-import {
   accessSync,
   constants,
   copyFileSync,
@@ -33,8 +30,7 @@ import { resolveProjectRoot } from "../../../lib/project-root.mjs";
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, "../../..");
 const PLUGIN_MANIFEST_PATH = path.join(PACKAGE_ROOT, ".codex-plugin", "plugin.json");
-const HOOK_SHIM_SOURCE_DIR = path.join(PACKAGE_ROOT, "bootstrap-hooks");
-const HOOK_TEMPLATE_PATH = path.join(PACKAGE_ROOT, "templates", "hooks.json");
+const PLUGIN_HOOKS_PATH = path.join(PACKAGE_ROOT, "hooks", "hooks.json");
 const DEFAULT_BASE_URL = "https://api.mem9.ai";
 const DEFAULT_UPDATE_CHECK = Object.freeze({
   enabled: true,
@@ -44,35 +40,6 @@ const DEFAULT_INSTALL_METADATA = {
   schemaVersion: 1,
   marketplaceName: "mem9-ai",
   pluginName: "mem9",
-  shimVersion: 1,
-};
-const CODEX_HOOKS_CANONICAL_RENAME_VERSION = {
-  major: 0,
-  minor: 129,
-  patch: 0,
-};
-const HOOKS_FEATURE_KEY = "hooks";
-const LEGACY_HOOKS_FEATURE_KEY = "codex_hooks";
-const HOOKS_FEATURE_KEYS = [HOOKS_FEATURE_KEY, LEGACY_HOOKS_FEATURE_KEY];
-const MEM9_EVENTS = ["SessionStart", "UserPromptSubmit", "Stop"];
-const HOOK_TEMPLATE_KEYS = {
-  sessionStartCommand: "__MEM9_SESSION_START_COMMAND__",
-  userPromptSubmitCommand: "__MEM9_USER_PROMPT_SUBMIT_COMMAND__",
-  stopCommand: "__MEM9_STOP_COMMAND__",
-};
-const MEM9_MANAGED_HOOKS = {
-  SessionStart: {
-    statusMessage: "[mem9] session start",
-    scriptName: "session-start.mjs",
-  },
-  UserPromptSubmit: {
-    statusMessage: "[mem9] recall",
-    scriptName: "user-prompt-submit.mjs",
-  },
-  Stop: {
-    statusMessage: "[mem9] save",
-    scriptName: "stop.mjs",
-  },
 };
 
 function isRecord(value) {
@@ -120,89 +87,6 @@ function parseNonNegativeIntegerArg(flag, value) {
   }
 
   return parsed;
-}
-
-function parseSemver(value) {
-  const match = normalizeString(value).match(/(?:^|[^0-9])v?(\d+)\.(\d+)\.(\d+)(?:[^0-9]|$)/);
-  if (!match) {
-    return null;
-  }
-
-  return {
-    major: Number.parseInt(match[1], 10),
-    minor: Number.parseInt(match[2], 10),
-    patch: Number.parseInt(match[3], 10),
-  };
-}
-
-function compareSemver(left, right) {
-  if (!left || !right) {
-    return null;
-  }
-
-  for (const key of ["major", "minor", "patch"]) {
-    if (left[key] > right[key]) {
-      return 1;
-    }
-    if (left[key] < right[key]) {
-      return -1;
-    }
-  }
-
-  return 0;
-}
-
-function detectCodexVersion(options = {}) {
-  const explicitVersion = normalizeString(options.codexVersion);
-  if (explicitVersion) {
-    return {
-      version: explicitVersion,
-      source: "test",
-    };
-  }
-
-  const execFile = options.execFileSync ?? execFileSync;
-  if (typeof execFile !== "function") {
-    return {
-      version: "",
-      source: "unavailable",
-    };
-  }
-
-  try {
-    const output = execFile("codex", ["--version"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 1000,
-    });
-    const detectedVersion = normalizeString(output);
-    if (detectedVersion) {
-      return {
-        version: detectedVersion,
-        source: "codex-cli",
-      };
-    }
-  } catch {}
-
-  return {
-    version: "",
-    source: "unavailable",
-  };
-}
-
-function selectHooksFeatureKey(options = {}) {
-  const detected = detectCodexVersion(options);
-  const parsed = parseSemver(detected.version);
-  const comparison = compareSemver(parsed, CODEX_HOOKS_CANONICAL_RENAME_VERSION);
-  const key = comparison != null && comparison >= 0
-    ? HOOKS_FEATURE_KEY
-    : LEGACY_HOOKS_FEATURE_KEY;
-
-  return {
-    key,
-    codexVersion: parsed ? detected.version : "",
-    source: detected.source,
-  };
 }
 
 function parseUpdateCheckMode(value) {
@@ -356,7 +240,7 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "  node ./scripts/setup.mjs scope clear ...",
         "",
         "Subcommands:",
-        "  apply      Write user or project mem9 config and repair managed Codex runtime files.",
+        "  apply      Write user or project mem9 config and install metadata.",
         "  clear      Remove the current project's mem9 override.",
         "",
         "Run a subcommand with --help for full flag details.",
@@ -428,12 +312,12 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "  inspect              Print the current mem9 setup state as JSON.",
         "  profile create       Create or update a profile by provisioning a new mem9 API key.",
         "  profile save-key     Create or update a profile from an existing API key env var.",
-        "  scope apply          Write user or project config and repair managed Codex runtime files.",
+        "  scope apply          Write user or project config and install metadata.",
         "  scope clear          Remove the current project's mem9 override.",
         "",
         "Notes:",
         "  - Successful non-help commands print sanitized JSON summaries.",
-        "  - `scope apply` and `scope clear` repair $CODEX_HOME hooks and install metadata.",
+        "  - `scope apply` writes mem9 config and install metadata without changing global Codex hooks.",
         "  - Save API keys from a trusted shell with MEM9_API_KEY when possible.",
         "",
         "Examples:",
@@ -516,31 +400,12 @@ function readJsonFileOrDefault(filePath, fallback, fsOps = {}, options = {}) {
   }
 }
 
-function readTextFileOrDefault(filePath, fallback, fsOps = {}) {
-  const exists = fsOps.existsSync ?? existsSync;
-  const readFile = fsOps.readFileSync ?? readFileSync;
-
-  if (!exists(filePath)) {
-    return fallback;
-  }
-
-  return readTextFile(filePath, readFile);
-}
-
 function writeJsonFile(filePath, value, fsOps = {}) {
   const mkdir = fsOps.mkdirSync ?? mkdirSync;
   const writeFile = fsOps.writeFileSync ?? writeFileSync;
 
   mkdir(path.dirname(filePath), { recursive: true });
   writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-function writeTextFile(filePath, text, fsOps = {}) {
-  const mkdir = fsOps.mkdirSync ?? mkdirSync;
-  const writeFile = fsOps.writeFileSync ?? writeFileSync;
-
-  mkdir(path.dirname(filePath), { recursive: true });
-  writeFile(filePath, text);
 }
 
 function buildBackupPath(filePath, fsOps = {}) {
@@ -824,77 +689,6 @@ function normalizeUpdateCheckConfig(value) {
   };
 }
 
-function stripTomlLineComment(line) {
-  const text = String(line ?? "");
-  let quotedBy = "";
-  let escaped = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const ch = text[index];
-
-    if (quotedBy) {
-      if (quotedBy === "\"" && ch === "\\" && !escaped) {
-        escaped = true;
-        continue;
-      }
-
-      if (ch === quotedBy && !escaped) {
-        quotedBy = "";
-      }
-
-      escaped = false;
-      continue;
-    }
-
-    if (ch === "\"" || ch === "'") {
-      quotedBy = ch;
-      escaped = false;
-      continue;
-    }
-
-    if (ch === "#") {
-      return text.slice(0, index);
-    }
-  }
-
-  return text;
-}
-
-function parseFeaturesHooksState(configTomlText = "") {
-  const lines = String(configTomlText ?? "").split(/\r?\n/);
-  let inFeatures = false;
-  /** @type {{ key: string, enabled: boolean }[]} */
-  const features = [];
-
-  for (const line of lines) {
-    const normalized = stripTomlLineComment(line).trim();
-
-    if (/^\[[^\]]+\]$/.test(normalized)) {
-      inFeatures = normalized === "[features]";
-      continue;
-    }
-
-    if (!inFeatures) {
-      continue;
-    }
-
-    const match = normalized.match(/^(hooks|codex_hooks)\s*=\s*(true|false)$/i);
-    if (match) {
-      features.push({
-        key: match[1].toLowerCase(),
-        enabled: match[2].toLowerCase() === "true",
-      });
-    }
-  }
-
-  const enabledKey = features.find((feature) => feature.enabled)?.key ?? "";
-
-  return {
-    enabled: Boolean(enabledKey),
-    key: enabledKey || features[0]?.key || "",
-  };
-}
-
 function inspectJsonFile(filePath, fallback, fsOps = {}) {
   const exists = fsOps.existsSync ?? existsSync;
   const readFile = fsOps.readFileSync ?? readFileSync;
@@ -988,52 +782,6 @@ function inspectInstallMetadata(filePath, context, fsOps = {}) {
     present: inspected.exists,
     path: sanitizeDisplayPath(filePath, context),
   };
-}
-
-function listRelativeFiles(dirPath, fsOps = {}, prefix = "") {
-  const readDir = fsOps.readdirSync ?? readdirSync;
-
-  return readDir(dirPath, { withFileTypes: true }).flatMap((entry) => {
-    const relativePath = prefix
-      ? path.join(prefix, entry.name)
-      : entry.name;
-    const sourcePath = path.join(dirPath, entry.name);
-
-    if (entry.isDirectory()) {
-      return listRelativeFiles(sourcePath, fsOps, relativePath);
-    }
-
-    return [relativePath];
-  });
-}
-
-function detectHookShimsInstalled(sourceDir, targetDir, fsOps = {}) {
-  const exists = fsOps.existsSync ?? existsSync;
-
-  try {
-    return listRelativeFiles(sourceDir, fsOps)
-      .every((relativePath) => exists(path.join(targetDir, relativePath)));
-  } catch {
-    return false;
-  }
-}
-
-function detectManagedHooksInstalled(existingHooks) {
-  for (const eventName of MEM9_EVENTS) {
-    const groups = Array.isArray(existingHooks?.hooks?.[eventName])
-      ? existingHooks.hooks[eventName]
-      : [];
-    const hasManagedHook = groups.some((group) =>
-      Array.isArray(group?.hooks)
-      && group.hooks.some((hook) => isMem9ManagedHook(eventName, hook)),
-    );
-
-    if (!hasManagedHook) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 export function parseArgs(argv = process.argv.slice(2)) {
@@ -1200,7 +948,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
 export function assertNodeVersion(nodeVersion = process.versions.node) {
   const major = Number.parseInt(String(nodeVersion).split(".")[0] ?? "", 10);
   if (!Number.isFinite(major) || major < 22) {
-    throw new Error("Node.js 22+ is required before installing mem9 hooks.");
+    throw new Error("Node.js 22+ is required to configure mem9.");
   }
 
   return major;
@@ -1233,11 +981,8 @@ export function resolveGlobalPaths(codexHome) {
   const mem9Dir = path.join(codexHome, "mem9");
   return {
     mem9Dir,
-    hooksDir: path.join(mem9Dir, "hooks"),
     installPath: path.join(mem9Dir, "install.json"),
     configPath: path.join(mem9Dir, "config.json"),
-    hooksPath: path.join(codexHome, "hooks.json"),
-    configTomlPath: path.join(codexHome, "config.toml"),
   };
 }
 
@@ -1277,205 +1022,6 @@ export function shellQuote(value, platform = process.platform) {
   }
 
   return `'${text.replaceAll("'", `'\"'\"'`)}'`;
-}
-
-export function buildNodeCommand(scriptPath, platform = process.platform) {
-  const resolved = path.resolve(scriptPath);
-  return `node ${shellQuote(resolved, platform)}`;
-}
-
-export function buildHookCommands(hooksDir) {
-  return {
-    sessionStartCommand: buildNodeCommand(
-      path.join(hooksDir, "session-start.mjs"),
-    ),
-    userPromptSubmitCommand: buildNodeCommand(
-      path.join(hooksDir, "user-prompt-submit.mjs"),
-    ),
-    stopCommand: buildNodeCommand(path.join(hooksDir, "stop.mjs")),
-  };
-}
-
-/**
- * @param {{
- *   templateText?: string,
- *   hooksDir?: string,
- *   commands?: {
- *     sessionStartCommand: string,
- *     userPromptSubmitCommand: string,
- *     stopCommand: string,
- *   },
- * }} [input]
- */
-export function renderHooksTemplate({
-  templateText = readTextFile(HOOK_TEMPLATE_PATH),
-  hooksDir,
-  commands,
-} = {}) {
-  const nextCommands = commands ?? buildHookCommands(hooksDir);
-  let rendered = templateText;
-
-  for (const [key, placeholder] of Object.entries(HOOK_TEMPLATE_KEYS)) {
-    rendered = rendered.replaceAll(
-      placeholder,
-      JSON.stringify(nextCommands[key]).slice(1, -1),
-    );
-  }
-
-  return JSON.parse(rendered);
-}
-
-function normalizeHookCommand(command) {
-  return String(command).replaceAll("\\", "/");
-}
-
-function managedHookCommandFragments(scriptName) {
-  return [
-    `mem9/hooks/${scriptName}`,
-    `mem9/runtime/${scriptName}`,
-  ];
-}
-
-function isMem9ManagedHook(eventName, hook) {
-  if (!isRecord(hook) || typeof hook.command !== "string") {
-    return false;
-  }
-
-  const expected = MEM9_MANAGED_HOOKS[eventName];
-  if (!expected) {
-    return false;
-  }
-
-  return hook.statusMessage === expected.statusMessage
-    && managedHookCommandFragments(expected.scriptName)
-      .some((fragment) => normalizeHookCommand(hook.command).includes(fragment));
-}
-
-export function removeManagedHooks(existingHooks) {
-  const next = isRecord(existingHooks) ? structuredClone(existingHooks) : {};
-  next.hooks = isRecord(next.hooks) ? next.hooks : {};
-
-  for (const eventName of MEM9_EVENTS) {
-    const groups = Array.isArray(next.hooks[eventName]) ? next.hooks[eventName] : [];
-    next.hooks[eventName] = groups
-      .map((group) => {
-        if (!isRecord(group) || !Array.isArray(group.hooks)) {
-          return group;
-        }
-
-        const remainingHooks = group.hooks.filter(
-          (hook) => !isMem9ManagedHook(eventName, hook),
-        );
-        if (remainingHooks.length === 0) {
-          return null;
-        }
-
-        return {
-          ...group,
-          hooks: remainingHooks,
-        };
-      })
-      .filter(Boolean);
-  }
-
-  return next;
-}
-
-export function mergeMem9Hooks(existingHooks, mem9Hooks) {
-  const next = removeManagedHooks(existingHooks);
-  const managed = isRecord(mem9Hooks) ? structuredClone(mem9Hooks) : {};
-
-  next.hooks = isRecord(next.hooks) ? next.hooks : {};
-  const managedHooks = isRecord(managed.hooks) ? managed.hooks : {};
-
-  for (const eventName of MEM9_EVENTS) {
-    const foreignGroups = Array.isArray(next.hooks[eventName])
-      ? structuredClone(next.hooks[eventName])
-      : [];
-    const nextManagedGroups = Array.isArray(managedHooks[eventName])
-      ? structuredClone(managedHooks[eventName])
-      : [];
-
-    next.hooks[eventName] = [...nextManagedGroups, ...foreignGroups];
-  }
-
-  return next;
-}
-
-export function applyCodexHooksPatch(sourceText = "", options = {}) {
-  const targetKey = HOOKS_FEATURE_KEYS.includes(normalizeString(options.featureKey))
-    ? normalizeString(options.featureKey)
-    : LEGACY_HOOKS_FEATURE_KEY;
-  const text = String(sourceText ?? "");
-  const eol = text.includes("\r\n") ? "\r\n" : "\n";
-  const lines = text ? text.split(/\r?\n/) : [];
-  const normalizedTableHeader = (line) => {
-    const normalized = stripTomlLineComment(line).trim();
-    return /^\[[^\]]+\]$/.test(normalized) ? normalized : "";
-  };
-
-  if (lines.at(-1) === "") {
-    lines.pop();
-  }
-
-  let sectionStart = -1;
-  let sectionEnd = lines.length;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    if (normalizedTableHeader(lines[index]) === "[features]") {
-      sectionStart = index;
-      for (let probe = index + 1; probe < lines.length; probe += 1) {
-        if (normalizedTableHeader(lines[probe])) {
-          sectionEnd = probe;
-          break;
-        }
-      }
-      break;
-    }
-  }
-
-  if (sectionStart === -1) {
-    if (lines.length > 0) {
-      lines.push("");
-    }
-    lines.push("[features]", `${targetKey} = true`);
-    return `${lines.join(eol)}${eol}`;
-  }
-
-  const before = lines.slice(0, sectionStart + 1);
-  const inside = lines.slice(sectionStart + 1, sectionEnd);
-  const after = lines.slice(sectionEnd);
-  let seenTargetKey = false;
-  const normalizedInside = [];
-
-  for (const line of inside) {
-    const match = line.match(/^\s*(hooks|codex_hooks)\s*=/);
-    if (match) {
-      if (match[1] !== targetKey) {
-        continue;
-      }
-      if (seenTargetKey) {
-        continue;
-      }
-      seenTargetKey = true;
-      normalizedInside.push(`${targetKey} = true`);
-      continue;
-    }
-
-    normalizedInside.push(line);
-  }
-
-  if (!seenTargetKey) {
-    normalizedInside.unshift(`${targetKey} = true`);
-  }
-
-  const rebuilt = [
-    ...before,
-    ...normalizedInside,
-    ...after,
-  ];
-
-  return `${rebuilt.join(eol)}${eol}`;
 }
 
 export function upsertCredentialsProfile(credentials, profile) {
@@ -1608,26 +1154,6 @@ export function buildScopeConfig(profileId, options = {}) {
   };
 }
 
-export function installHookShims(sourceDir, targetDir, fsOps = {}) {
-  const mkdir = fsOps.mkdirSync ?? mkdirSync;
-  const readDir = fsOps.readdirSync ?? readdirSync;
-  const copyFile = fsOps.copyFileSync ?? copyFileSync;
-
-  mkdir(targetDir, { recursive: true });
-
-  for (const entry of readDir(sourceDir, { withFileTypes: true })) {
-    const sourcePath = path.join(sourceDir, entry.name);
-    const targetPath = path.join(targetDir, entry.name);
-
-    if (entry.isDirectory()) {
-      installHookShims(sourcePath, targetPath, fsOps);
-      continue;
-    }
-
-    copyFile(sourcePath, targetPath);
-  }
-}
-
 function resolveCommandContext(args = {}, options = {}) {
   const env = options.env ?? process.env;
   const cwd = path.resolve(
@@ -1652,9 +1178,6 @@ function resolveCommandContext(args = {}, options = {}) {
     cwd,
     exists: fsOps.existsSync ?? existsSync,
   });
-  const legacyProjectHooksPath = projectRoot
-    ? path.join(projectRoot, ".codex", "hooks.json")
-    : "";
 
   return {
     args,
@@ -1665,7 +1188,6 @@ function resolveCommandContext(args = {}, options = {}) {
     fsOps,
     globalPaths,
     projectRoot,
-    legacyProjectHooksPath,
     pathContext: {
       cwd,
       codexHome,
@@ -1673,18 +1195,6 @@ function resolveCommandContext(args = {}, options = {}) {
       projectRoot,
     },
   };
-}
-
-function resolveHooksFeature(options = {}) {
-  return options.hooksFeatureKey
-    ? {
-        key: HOOKS_FEATURE_KEYS.includes(normalizeString(options.hooksFeatureKey))
-          ? normalizeString(options.hooksFeatureKey)
-          : LEGACY_HOOKS_FEATURE_KEY,
-        codexVersion: "",
-        source: "configured",
-      }
-    : selectHooksFeatureKey(options);
 }
 
 function emitMachineSummary(summary, context, stdout) {
@@ -1703,12 +1213,6 @@ function sanitizeScopeResultForOutput(result, context) {
       ? sanitizeProjectPath(result.configPath, context)
       : sanitizeDisplayPath(result.configPath, context),
     installPath: sanitizeDisplayPath(result.installPath, context),
-    hooksPath: sanitizeDisplayPath(result.hooksPath, context),
-    hooksDir: sanitizeDisplayPath(result.hooksDir, context),
-    configTomlPath: sanitizeDisplayPath(result.configTomlPath, context),
-    legacyProjectHooksPath: normalizeString(result.legacyProjectHooksPath)
-      ? sanitizeProjectPath(result.legacyProjectHooksPath, context)
-      : "",
     backups: sanitizeBackupsForOutput(result.backups, context),
   };
 }
@@ -1726,37 +1230,11 @@ function sanitizeProfileResultForOutput(result, context) {
   };
 }
 
-function prepareManagedRuntimeRepair(context, noteInvalidJson, options = {}) {
-  const fsOps = context.fsOps;
-  const existingConfigToml = readTextFileOrDefault(
-    context.globalPaths.configTomlPath,
-    "",
-    fsOps,
-  );
-  const existingHooks = readJsonFileOrDefault(
-    context.globalPaths.hooksPath,
-    { hooks: {} },
-    fsOps,
-    {
-      fallbackOnParseError: true,
-      onParseError: noteInvalidJson,
-    },
-  );
-  const existingLegacyProjectHooks = context.legacyProjectHooksPath
-    ? readJsonFileOrDefault(
-      context.legacyProjectHooksPath,
-      { hooks: {} },
-      fsOps,
-      {
-        fallbackOnParseError: true,
-        onParseError: noteInvalidJson,
-      },
-    )
-    : { hooks: {} };
+function prepareInstallMetadata(context, noteInvalidJson, options = {}) {
   readJsonFileOrDefault(
     context.globalPaths.installPath,
     {},
-    fsOps,
+    context.fsOps,
     {
       fallbackOnParseError: true,
       onParseError: noteInvalidJson,
@@ -1764,64 +1242,19 @@ function prepareManagedRuntimeRepair(context, noteInvalidJson, options = {}) {
   );
 
   return {
-    existingConfigToml,
-    existingHooks,
-    existingLegacyProjectHooks,
     installMetadata: buildInstallMetadata(
       context.codexHome,
       options.packageRoot ?? PACKAGE_ROOT,
     ),
-    mem9Hooks: renderHooksTemplate({
-      templateText: options.hooksTemplateText
-        ?? readTextFile(HOOK_TEMPLATE_PATH),
-      hooksDir: context.globalPaths.hooksDir,
-    }),
   };
 }
 
-function applyManagedRuntimeRepair(context, prepared, options = {}) {
-  const existingHooksFeature = parseFeaturesHooksState(prepared.existingConfigToml);
-  const detectedHooksFeature = resolveHooksFeature(options);
-  const hooksFeature = detectedHooksFeature.source !== "unavailable"
-    ? detectedHooksFeature
-    : existingHooksFeature.enabled
-    ? {
-        key: existingHooksFeature.key,
-      }
-    : detectedHooksFeature;
-  installHookShims(
-    options.hookShimSourceDir ?? HOOK_SHIM_SOURCE_DIR,
-    context.globalPaths.hooksDir,
-    context.fsOps,
-  );
+function writeInstallMetadata(context, prepared) {
   writeJsonFile(
     context.globalPaths.installPath,
     prepared.installMetadata,
     context.fsOps,
   );
-  writeTextFile(
-    context.globalPaths.configTomlPath,
-    applyCodexHooksPatch(prepared.existingConfigToml, {
-      featureKey: hooksFeature.key,
-    }),
-    context.fsOps,
-  );
-  writeJsonFile(
-    context.globalPaths.hooksPath,
-    mergeMem9Hooks(prepared.existingHooks, prepared.mem9Hooks),
-    context.fsOps,
-  );
-
-  if (
-    context.legacyProjectHooksPath
-    && (context.fsOps.existsSync ?? existsSync)(context.legacyProjectHooksPath)
-  ) {
-    writeJsonFile(
-      context.legacyProjectHooksPath,
-      removeManagedHooks(prepared.existingLegacyProjectHooks),
-      context.fsOps,
-    );
-  }
 }
 
 function loadCredentialsForWrite(context, noteInvalidJson) {
@@ -1893,15 +1326,8 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
         .map((entry) => entry.name);
     },
   });
-  const hooksTomlText = readTextFileOrDefault(
-    context.globalPaths.configTomlPath,
-    "",
-    context.fsOps,
-  );
-  const hooksFeatureState = parseFeaturesHooksState(hooksTomlText);
-  const preferredHooksFeature = resolveHooksFeature(options);
-  const hooksJson = inspectJsonFile(
-    context.globalPaths.hooksPath,
+  const bundledHooks = inspectJsonFile(
+    PLUGIN_HOOKS_PATH,
     { hooks: {} },
     context.fsOps,
   );
@@ -1974,18 +1400,9 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
       effectiveLegacyPausedSource: runtimeState.effectiveLegacyPausedSource,
     },
     plugin: {
-      hooksFeatureEnabled: hooksFeatureState.enabled,
-      hooksFeatureKey: hooksFeatureState.key,
-      preferredHooksFeatureKey: preferredHooksFeature.key,
-      codexVersion: preferredHooksFeature.codexVersion,
-      codexVersionSource: preferredHooksFeature.source,
-      hooksInstalled: hooksJson.state === "valid"
-        && detectManagedHooksInstalled(hooksJson.value),
-      hookShimsInstalled: detectHookShimsInstalled(
-        options.hookShimSourceDir ?? HOOK_SHIM_SOURCE_DIR,
-        context.globalPaths.hooksDir,
-        context.fsOps,
-      ),
+      hooksSource: "plugin",
+      hooksConfigState: bundledHooks.state,
+      hooksBundled: bundledHooks.state === "valid",
       installMetadataState: installMetadata.state,
       installMetadataPresent: installMetadata.present,
     },
@@ -2006,18 +1423,7 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
       items: profileSummaries,
     },
     paths: {
-      configTomlPath: sanitizeDisplayPath(
-        context.globalPaths.configTomlPath,
-        context.pathContext,
-      ),
-      hooksPath: sanitizeDisplayPath(
-        context.globalPaths.hooksPath,
-        context.pathContext,
-      ),
-      hooksDir: sanitizeDisplayPath(
-        context.globalPaths.hooksDir,
-        context.pathContext,
-      ),
+      hooksPath: "hooks/hooks.json",
       installPath: sanitizeDisplayPath(
         context.globalPaths.installPath,
         context.pathContext,
@@ -2218,7 +1624,7 @@ async function runScopeApply(args, options = {}) {
       },
     },
   );
-  const preparedRepair = prepareManagedRuntimeRepair(
+  const preparedInstallMetadata = prepareInstallMetadata(
     context,
     (filePath) => {
       invalidJsonFiles.add(filePath);
@@ -2236,7 +1642,7 @@ async function runScopeApply(args, options = {}) {
     updateCheckIntervalHours: args.updateCheckIntervalHours,
   });
 
-  applyManagedRuntimeRepair(context, preparedRepair, options);
+  writeInstallMetadata(context, preparedInstallMetadata);
   writeJsonFile(targetConfigPath, nextConfig, context.fsOps);
 
   const result = {
@@ -2249,11 +1655,7 @@ async function runScopeApply(args, options = {}) {
       includeUpdateCheck: args.scope === "user",
     }),
     configPath: targetConfigPath,
-    configTomlPath: context.globalPaths.configTomlPath,
-    hooksPath: context.globalPaths.hooksPath,
-    hooksDir: context.globalPaths.hooksDir,
     installPath: context.globalPaths.installPath,
-    legacyProjectHooksPath: context.legacyProjectHooksPath,
     backups,
   };
 
@@ -2269,10 +1671,7 @@ async function runScopeApply(args, options = {}) {
 async function runScopeClear(args, options = {}) {
   assertNodeVersion(options.nodeVersion);
   const context = resolveCommandContext(args, options);
-  const { globalWritable, projectWritable } = resolveWritableFlags(context, options);
-  if (!globalWritable) {
-    throw new Error("Global Codex home is not writable.");
-  }
+  const { projectWritable } = resolveWritableFlags(context, options);
 
   if (!context.projectRoot) {
     throw new Error("Current directory is not inside a Git repository. Run `$mem9:setup` from a project before clearing project scope.");
@@ -2296,16 +1695,8 @@ async function runScopeClear(args, options = {}) {
     },
   );
   const existed = (context.fsOps.existsSync ?? existsSync)(targetConfigPath);
-  const preparedRepair = prepareManagedRuntimeRepair(
-    context,
-    (filePath) => {
-      invalidJsonFiles.add(filePath);
-    },
-    options,
-  );
   const backups = backupFiles([...invalidJsonFiles], context.fsOps);
 
-  applyManagedRuntimeRepair(context, preparedRepair, options);
   rmSync(targetConfigPath, { force: true });
 
   const result = {
@@ -2314,11 +1705,7 @@ async function runScopeClear(args, options = {}) {
     action: existed ? "removed" : "already-clear",
     scope: "project",
     configPath: targetConfigPath,
-    configTomlPath: context.globalPaths.configTomlPath,
-    hooksPath: context.globalPaths.hooksPath,
-    hooksDir: context.globalPaths.hooksDir,
     installPath: context.globalPaths.installPath,
-    legacyProjectHooksPath: context.legacyProjectHooksPath,
     backups,
   };
 
