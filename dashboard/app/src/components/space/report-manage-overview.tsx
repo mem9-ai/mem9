@@ -5,14 +5,14 @@ import {
   Activity,
   ArrowUpRight,
   AlertTriangle,
-  BrainCircuit,
   ChevronLeft,
   ChevronRight,
-  Flag,
-  HeartPulse,
   Loader2,
   Play,
-  Sprout,
+  RefreshCw,
+  Sparkles,
+  Target,
+  TrendingUp,
 } from "lucide-react";
 import {
   useAllMemoryAnalysisReports,
@@ -31,14 +31,23 @@ import {
 import { cn } from "@/lib/utils";
 
 type TemplateId = "weekly" | "trend" | "emotion" | "structure" | "growth";
+type TemplateTone = "amber" | "blue" | "green" | "violet";
 
 const templateIcons = {
-  weekly: Activity,
-  trend: Flag,
-  emotion: HeartPulse,
-  structure: BrainCircuit,
-  growth: Sprout,
+  weekly: TrendingUp,
+  trend: Target,
+  emotion: Activity,
+  structure: Sparkles,
+  growth: RefreshCw,
 } as const;
+
+const templateTone: Record<TemplateId, TemplateTone> = {
+  weekly: "blue",
+  trend: "amber",
+  emotion: "violet",
+  structure: "green",
+  growth: "blue",
+};
 
 const workflowSteps = [0, 1, 2] as const;
 const REPORT_HISTORY_PAGE_SIZE = 10;
@@ -67,6 +76,7 @@ export function ReportManageOverview({
 
   const selected = templates.find((template) => template.id === selectedTemplate) ?? templates[0]!;
   const SelectedIcon = templateIcons[selectedTemplate];
+  const selectedToneClass = templateToneClass(templateTone[selectedTemplate]);
   const allReportsQuery = useAllMemoryAnalysisReports(spaceId);
   const generateReportMutation = useGenerateMemoryAnalysisReport(spaceId);
   const [isRefreshingReports, setIsRefreshingReports] = useState(false);
@@ -136,9 +146,10 @@ export function ReportManageOverview({
             <div className="mt-4 max-h-[17.5rem] space-y-2 overflow-y-auto pr-1">
               {templates.map((template) => {
                 const Icon = templateIcons[template.id];
+                const iconToneClass = templateToneClass(templateTone[template.id]);
                 const active = template.id === selectedTemplate;
                 return <button key={template.id} onClick={() => selectTemplate(template.id)} disabled={isGenerating} className={cn("w-full rounded-xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60", active ? "border-ring/45 bg-ring/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" : "border-foreground/7 bg-background/25 hover:border-foreground/16 hover:bg-foreground/[0.025]")}>
-                  <div className="flex items-center gap-2.5"><span className="flex size-7 items-center justify-center rounded-lg bg-foreground/[0.06] text-ring"><Icon className="size-3.5" /></span><span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{template.name}</span><span className="rounded-md bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">{t("report_manage.enabled")}</span></div>
+                  <div className="flex items-center gap-2.5"><span className={cn("flex size-7 items-center justify-center rounded-lg", iconToneClass)}><Icon className="size-3.5" /></span><span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{template.name}</span><span className="rounded-md bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">{t("report_manage.enabled")}</span></div>
                   <div className="mt-2 flex items-center justify-between text-[11px] text-soft-foreground"><span>{t("report_manage.cadence", { value: template.cadence })}</span><ChevronRight className="size-3.5" /></div>
                   <p className="mt-1 text-[11px] text-soft-foreground">{t("report_manage.last_generated", { value: template.lastGenerated })}</p>
                 </button>;
@@ -150,7 +161,7 @@ export function ReportManageOverview({
             <div>
               <p className="text-base font-semibold tracking-[-0.03em] text-foreground">{t("report_manage.details_title")}</p>
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="flex size-10 items-center justify-center rounded-full bg-blue-500/20 text-blue-400 shadow-[0_0_22px_rgba(59,130,246,0.18)]">
+                <span className={cn("flex size-10 items-center justify-center rounded-full", selectedToneClass)}>
                   <SelectedIcon className="size-4" />
                 </span>
                 <span className="text-[clamp(1.05rem,1.55vw,1.3rem)] font-semibold leading-none tracking-[-0.04em] text-foreground">{selected.name}</span>
@@ -370,6 +381,19 @@ function reportStatusClass(status: MemoryAnalysisReportStatus): string {
     return "bg-blue-500/12 text-blue-600 dark:text-blue-400";
   }
   return "bg-amber-500/12 text-amber-700 dark:text-amber-300";
+}
+
+function templateToneClass(tone: TemplateTone): string {
+  if (tone === "amber") {
+    return "bg-amber-500/12 text-amber-500";
+  }
+  if (tone === "green") {
+    return "bg-emerald-500/12 text-emerald-500";
+  }
+  if (tone === "violet") {
+    return "bg-violet-500/12 text-violet-500";
+  }
+  return "bg-blue-500/12 text-blue-500";
 }
 
 function formatReportPeriod(report: MemoryAnalysisReport): string {
