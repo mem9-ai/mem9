@@ -301,6 +301,30 @@ vi.mock("@/lib/memory-insight-background", async () => {
   };
 });
 
+vi.mock("@/components/space/memory-insight-workspace", () => ({
+  MemoryInsightWorkspace: ({
+    memories,
+    onMemorySelect,
+  }: {
+    memories: Memory[];
+    onMemorySelect: (memory: Memory) => void;
+  }) => (
+    <div data-testid="mock-memory-insight-workspace">
+      <button
+        type="button"
+        onClick={() => {
+          const memory = memories[0];
+          if (memory) {
+            onMemorySelect(memory);
+          }
+        }}
+      >
+        Open insight memory
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock("@/lib/session", () => ({
   getActiveSpaceId: () => "space-1",
   getSpaceId: () => "space-1",
@@ -600,6 +624,55 @@ describe("SpacePage", () => {
     expect(shouldCompactMemoryOverview(selected, true, "sheet")).toBe(false);
     expect(shouldCompactMemoryOverview(selected, true, "panel")).toBe(true);
     expect(shouldCompactMemoryOverview(selected, false, "sheet")).toBe(false);
+  });
+
+  it("opens an insight memory detail sheet from the Memory Insight tab", async () => {
+    renderSpacePage();
+
+    const insightTab = screen.getByRole("tab", { name: "Memory Insight" });
+    insightTab.focus();
+    fireEvent.keyDown(insightTab, { key: "Enter" });
+
+    await waitFor(() => expect(insightTab).toHaveAttribute("data-state", "active"));
+    fireEvent.click(screen.getByRole("button", { name: "Open insight memory" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Deploy dashboard status update" }),
+    ).toBeInTheDocument();
+  });
+
+  it("closes the list memory detail when switching to Memory Insight", async () => {
+    renderSpacePage();
+
+    const listTab = screen.getByRole("tab", { name: "Memory List" });
+    listTab.focus();
+    fireEvent.keyDown(listTab, { key: "Enter" });
+
+    await waitFor(() => expect(listTab).toHaveAttribute("data-state", "active"));
+
+    const activityCard = screen
+      .getByText("Deploy dashboard status update")
+      .closest('[role="button"]');
+
+    expect(activityCard).not.toBeNull();
+    fireEvent.click(activityCard!);
+
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+      ).not.toBeNull();
+    });
+
+    const insightTab = screen.getByRole("tab", { name: "Memory Insight" });
+    insightTab.focus();
+    fireEvent.keyDown(insightTab, { key: "Enter" });
+
+    await waitFor(() => expect(insightTab).toHaveAttribute("data-state", "active"));
+    await waitFor(() => {
+      expect(
+        document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
+      ).toBeNull();
+    });
   });
 
   it("filters memories by clicked analysis category without auto-opening detail", async () => {

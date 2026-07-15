@@ -104,7 +104,8 @@ export const SpacePageLayout = ({
 }: SpacePageLayoutProps) => {
   const [activeOverviewTab, setActiveOverviewTab] = useState<MemoryInsightTab>("profile");
   const isMemoryListTab = activeOverviewTab === "pulse";
-  const selectedMemoryForDetail = isMemoryListTab ? routeState.selected : null;
+  const supportsMemoryDetail = isMemoryListTab || activeOverviewTab === "insight";
+  const selectedMemoryForDetail = supportsMemoryDetail ? routeState.selected : null;
   const showSelectedMemoryDetail = selectedMemoryForDetail !== null;
   const isEmpty =
     !dataModel.isMemoryLoading &&
@@ -264,7 +265,7 @@ export const SpacePageLayout = ({
               }
               onTabChange={(nextTab) => {
                 setActiveOverviewTab(nextTab);
-                if (nextTab !== "pulse") {
+                if (nextTab !== activeOverviewTab) {
                   routeState.setSelected(null);
                 }
               }}
