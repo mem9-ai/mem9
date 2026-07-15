@@ -71,13 +71,14 @@ var (
 
 // IngestRequest is the input for the ingest pipeline.
 type IngestRequest struct {
-	Messages           []IngestMessage `json:"messages"`
-	SessionID          string          `json:"session_id"`
-	AgentID            string          `json:"agent_id"`
-	AppID              string          `json:"appId,omitempty"`
-	Mode               IngestMode      `json:"mode"`
-	DisableSessionSave bool            `json:"disableSessionSave,omitempty"`
-	Metadata           json.RawMessage `json:"metadata,omitempty"`
+	Messages           []IngestMessage     `json:"messages"`
+	SessionID          string              `json:"session_id"`
+	AgentID            string              `json:"agent_id"`
+	AppID              string              `json:"appId,omitempty"`
+	Mode               IngestMode          `json:"mode"`
+	DisableSessionSave bool                `json:"disableSessionSave,omitempty"`
+	Metadata           json.RawMessage     `json:"metadata,omitempty"`
+	ExternalProvenance *ExternalProvenance `json:"-"`
 }
 
 // IngestMessage represents a single conversation message.
@@ -171,7 +172,7 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	// Cap conversation size to avoid blowing LLM token limits.
 	formatted = truncateRunes(formatted, maxExtractionConversationRunes)
 
-	changes, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, formatted)
+	changes, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, formatted, req.ExternalProvenance)
 	if err != nil {
 		slog.Error("insight extraction failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
@@ -504,7 +505,7 @@ func (s *IngestService) ExtractPhase1WithRouting(ctx context.Context, messages [
 
 // ReconcilePhase2 runs reconciliation of extracted facts against existing memories.
 // Equivalent to the existing reconcile() pipeline, now exported for use by the handler.
-func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) (*IngestResult, error) {
+func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact, externalProvenance *ExternalProvenance) (*IngestResult, error) {
 	facts = filterLongTermFacts(facts)
 	if len(facts) == 0 {
 		return &IngestResult{Status: "complete"}, nil
@@ -514,7 +515,7 @@ func (s *IngestService) ReconcilePhase2(ctx context.Context, agentName, agentID,
 		slog.Warn("ReconcilePhase2: truncating facts", "count", len(facts), "max", maxFacts)
 		facts = facts[:maxFacts]
 	}
-	changes, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, facts)
+	changes, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, facts, externalProvenance)
 	if err != nil {
 		slog.Error("ReconcilePhase2: reconciliation failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
@@ -587,7 +588,7 @@ func (s *IngestService) ReconcileContent(ctx context.Context, agentName, agentID
 		}, nil
 	}
 
-	changes, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, allFacts)
+	changes, warnings, err := s.reconcile(ctx, agentName, agentID, appID, sessionID, allFacts, nil)
 	totalWarnings += warnings
 	if err != nil {
 		slog.Error("reconcile content: batched reconciliation failed", "err", err)
@@ -655,7 +656,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 		AppID:      req.AppID,
 		SessionID:  req.SessionID,
 		Embedding:  embedding,
-		Metadata:   req.Metadata,
+		Metadata:   SetExternalProvenanceMetadata(req.Metadata, req.ExternalProvenance),
 		State:      domain.StateActive,
 		Version:    1,
 		UpdatedBy:  agentName,
@@ -678,7 +679,7 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 }
 
 // extractAndReconcile runs Phase 1a (extraction) + Phase 2 (reconciliation).
-func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID, conversation string) ([]MemoryChange, int, error) {
+func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID, conversation string, externalProvenance *ExternalProvenance) ([]MemoryChange, int, error) {
 	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
 	// Phase 1a: Extract facts only — no message_tags needed here (smart-ingest / raw-ingest path).
@@ -698,7 +699,7 @@ func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agen
 	}
 
 	// Phase 2: Reconcile each fact against existing memories.
-	return s.reconcile(ctx, agentName, agentID, appID, sessionID, facts)
+	return s.reconcile(ctx, agentName, agentID, appID, sessionID, facts, externalProvenance)
 }
 
 // normalizeParsedFacts converts []ExtractedFact from a successful parse into a
@@ -1183,7 +1184,7 @@ user content is non-durable, while still returning message_tags for every messag
 // all facts and all retrieved memories to the LLM in a single call for batch
 // decision-making. This gives the LLM a complete view of both the new facts and
 // the existing knowledge base, enabling better ADD/UPDATE/DELETE/NOOP decisions.
-func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) ([]MemoryChange, int, error) {
+func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact, externalProvenance *ExternalProvenance) ([]MemoryChange, int, error) {
 	start := time.Now()
 	var (
 		applyActionsDuration   time.Duration
@@ -1238,7 +1239,7 @@ func (s *IngestService) reconcile(ctx context.Context, agentName, agentID, appID
 
 	if len(existingMemories) == 0 {
 		applyActionsStart := time.Now()
-		changes, warningCount, err := s.addAllFacts(ctx, agentName, agentID, appID, sessionID, facts)
+		changes, warningCount, err := s.addAllFacts(ctx, agentName, agentID, appID, sessionID, facts, externalProvenance)
 		applyActionsDuration = time.Since(applyActionsStart)
 		warnings = warningCount
 		if err != nil {
@@ -1428,7 +1429,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				sessionID,
 				normalizedText,
 				event.Tags,
-				SetSourceProvenanceMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs, sourceTurns),
+				SetExternalProvenanceMetadata(SetSourceProvenanceMetadata(MergeTemporalMetadata(nil, temporal), sourceSeqs, sourceTurns), externalProvenance),
 			)
 			if addErr != nil {
 				slog.Warn("failed to add insight", "err", addErr)
@@ -1459,7 +1460,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 			}
 			sourceSeqs := sourceSeqsForReconcileText(event.Text, facts)
 			sourceTurns := sourceTurnsForReconcileText(event.Text, facts)
-			metadata := SetSourceProvenanceMetadata(MergeTemporalMetadata(existingMemories[intID].Metadata, temporal), sourceSeqs, sourceTurns)
+			metadata := SetExternalProvenanceMetadata(SetSourceProvenanceMetadata(MergeTemporalMetadata(existingMemories[intID].Metadata, temporal), sourceSeqs, sourceTurns), externalProvenance)
 			if existingMemories[intID].MemoryType == domain.TypePinned {
 				slog.Warn("skipping UPDATE for pinned memory — treating as ADD", "id", realID)
 				newID, addErr := s.addInsight(ctx, agentName, agentID, appID, sessionID, normalizedText, effectiveTags, metadata)
@@ -1714,11 +1715,11 @@ func (s *IngestService) searchExistingMemoriesForFact(
 
 // addAllFacts adds all facts as new insights when no existing memories are
 // found (i.e., all facts are guaranteed new). Called only when gatherExistingMemories returns empty.
-func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact) ([]MemoryChange, int, error) {
+func (s *IngestService) addAllFacts(ctx context.Context, agentName, agentID, appID, sessionID string, facts []ExtractedFact, externalProvenance *ExternalProvenance) ([]MemoryChange, int, error) {
 	var changes []MemoryChange
 	var warnings int
 	for _, fact := range facts {
-		id, err := s.addInsight(ctx, agentName, agentID, appID, sessionID, fact.Text, fact.Tags, metadataForExtractedFact(fact))
+		id, err := s.addInsight(ctx, agentName, agentID, appID, sessionID, fact.Text, fact.Tags, SetExternalProvenanceMetadata(metadataForExtractedFact(fact), externalProvenance))
 		if err != nil {
 			slog.Warn("failed to add fact", "err", err, "fact_len", len(fact.Text))
 			warnings++

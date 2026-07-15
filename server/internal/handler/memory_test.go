@@ -38,6 +38,7 @@ type testMemoryRepo struct {
 	bulkCreateCalls      int
 	bulkCreateHook       func(context.Context)
 	updateCalls          []*domain.Memory
+	vectorSearchResults  []domain.Memory
 	keywordSearchResults []domain.Memory
 	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordQuery     string
@@ -139,11 +140,11 @@ func (m *testMemoryRepo) BulkCreate(ctx context.Context, _ []*domain.Memory) err
 	return nil
 }
 func (m *testMemoryRepo) VectorSearch(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error) {
-	return nil, nil
+	return append([]domain.Memory(nil), m.vectorSearchResults...), nil
 }
 
 func (m *testMemoryRepo) AutoVectorSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
-	return nil, nil
+	return append([]domain.Memory(nil), m.vectorSearchResults...), nil
 }
 
 func (m *testMemoryRepo) KeywordSearch(ctx context.Context, query string, filter domain.MemoryFilter, limit int) ([]domain.Memory, error) {
@@ -848,8 +849,9 @@ func TestReconcileRoutedChainFactsRuntimeUsageUsesTargetSubjects(t *testing.T) {
 	}
 
 	result := srv.reconcileRoutedChainFacts(context.Background(), auth, service.IngestRequest{
-		AgentID:   "actor-agent",
-		SessionID: "session-a",
+		AgentID:            "actor-agent",
+		SessionID:          "session-a",
+		ExternalProvenance: &service.ExternalProvenance{Schema: service.ExternalProvenanceSchema, SourceMessageID: "message_routed"},
 	}, []service.ExtractedFact{
 		{Text: "mem9 uses PingCAP TiDB for this test", Tags: []string{"tech"}, RouteTargets: []string{"space-target-a", "space-target-b"}},
 	})
@@ -859,6 +861,14 @@ func TestReconcileRoutedChainFactsRuntimeUsageUsesTargetSubjects(t *testing.T) {
 	}
 	if len(targetARepo.createCalls) != 1 || len(targetBRepo.createCalls) != 1 {
 		t.Fatalf("target writes = %d/%d, want 1/1", len(targetARepo.createCalls), len(targetBRepo.createCalls))
+	}
+	for _, created := range []*domain.Memory{targetARepo.createCalls[0], targetBRepo.createCalls[0]} {
+		var metadata struct {
+			ExternalProvenance *service.ExternalProvenance `json:"external_provenance"`
+		}
+		if err := json.Unmarshal(created.Metadata, &metadata); err != nil || metadata.ExternalProvenance == nil || metadata.ExternalProvenance.SourceMessageID != "message_routed" {
+			t.Fatalf("routed metadata = %s, error = %v", created.Metadata, err)
+		}
 	}
 	if runtimeUsage.beforeCreateCalls != 2 || runtimeUsage.afterCreateSuccessCalls != 2 {
 		t.Fatalf("runtime create calls = before:%d success:%d, want 2/2", runtimeUsage.beforeCreateCalls, runtimeUsage.afterCreateSuccessCalls)
@@ -883,6 +893,85 @@ func TestReconcileRoutedChainFactsRuntimeUsageUsesTargetSubjects(t *testing.T) {
 	for _, createResult := range runtimeUsage.createResults {
 		if createResult.AgentName != "chain-agent" || createResult.ObjectsAffected != 1 || len(createResult.MemoryIDs) != 1 {
 			t.Fatalf("create result = %+v, want chain-agent/1 object/1 memory", createResult)
+		}
+	}
+}
+
+func TestReconcileRoutedChainFactsUpdateUsesCurrentExternalProvenance(t *testing.T) {
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{
+				"content": `{"memory":[{"id":"0","text":"Works at company Y","event":"UPDATE","old_memory":"Works at startup X"}]}`,
+			}}},
+		})
+	}))
+	defer mockLLM.Close()
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	oldMetadata := json.RawMessage(`{"external_provenance":{"schema":"agent9/message-source@1","source_message_id":"message_old"}}`)
+	predecessor := domain.Memory{
+		ID:         "memory_old",
+		Content:    "Works at startup X",
+		MemoryType: domain.TypeInsight,
+		State:      domain.StateActive,
+		Metadata:   oldMetadata,
+	}
+	targetRepo := &testMemoryRepo{
+		createCalls:         []*domain.Memory{&predecessor},
+		vectorSearchResults: []domain.Memory{predecessor},
+	}
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	srv.svcCache.Store(tenantSvcKey("tenant-target-a-0x0"), resolvedSvc{
+		memory:  service.NewMemoryService(targetRepo, nil, nil, "", service.ModeSmart),
+		ingest:  service.NewIngestService(targetRepo, llmClient, nil, "auto-model", service.ModeSmart),
+		session: service.NewSessionService(&testSessionRepo{}, nil, ""),
+	})
+	auth := &domain.AuthInfo{
+		AgentName: "chain-agent",
+		Chain: &domain.ChainAuth{
+			ChainID: "chain-a",
+			Nodes: []domain.ChainAuthNode{
+				{
+					SpaceChainNode: domain.SpaceChainNode{TenantID: "tenant-source", ExternalSpaceID: "space-source", Position: 0},
+				},
+				{
+					SpaceChainNode: domain.SpaceChainNode{
+						TenantID:             "tenant-target-a",
+						ExternalSpaceID:      "space-target-a",
+						Position:             1,
+						RoutingPolicyEnabled: true,
+						RoutingPolicyPrompt:  "employment facts",
+					},
+				},
+			},
+		},
+	}
+
+	result := srv.reconcileRoutedChainFacts(context.Background(), auth, service.IngestRequest{
+		AgentID:            "actor-agent",
+		SessionID:          "session-a",
+		ExternalProvenance: &service.ExternalProvenance{Schema: service.ExternalProvenanceSchema, SourceMessageID: "message_current"},
+	}, []service.ExtractedFact{{
+		Text:         "Works at company Y",
+		RouteTargets: []string{"space-target-a"},
+	}})
+
+	if result.memoriesChanged != 1 || len(targetRepo.createCalls) != 2 {
+		t.Fatalf("result = %+v, create calls = %d, want one routed update", result, len(targetRepo.createCalls))
+	}
+	for _, check := range []struct {
+		name     string
+		metadata json.RawMessage
+		want     string
+	}{
+		{name: "successor", metadata: targetRepo.createCalls[1].Metadata, want: "message_current"},
+		{name: "predecessor", metadata: predecessor.Metadata, want: "message_old"},
+	} {
+		var decoded struct {
+			ExternalProvenance *service.ExternalProvenance `json:"external_provenance"`
+		}
+		if err := json.Unmarshal(check.metadata, &decoded); err != nil || decoded.ExternalProvenance == nil || decoded.ExternalProvenance.SourceMessageID != check.want {
+			t.Fatalf("%s metadata = %s, error = %v, want source %s", check.name, check.metadata, err, check.want)
 		}
 	}
 }
@@ -1812,9 +1901,13 @@ func TestCreateMemory_SyncMessagesWithMetadataPreservesMetadata(t *testing.T) {
 		"messages": []map[string]string{
 			{"role": "user", "content": "This is a test with metadata"},
 		},
-		"metadata": map[string]string{
+		"metadata": map[string]any{
 			"source": "unit-test",
 			"key":    "val",
+			"external_provenance": map[string]string{
+				"schema":            "agent9/message-source@1",
+				"source_message_id": "message_handler_source",
+			},
 		},
 	}
 	req := makeRequest(t, http.MethodPost, "/memories", body)
@@ -1856,6 +1949,13 @@ func TestCreateMemory_SyncMessagesWithMetadataPreservesMetadata(t *testing.T) {
 	}
 	if keyVal != "val" {
 		t.Fatalf("updated metadata.key = %q, want val", keyVal)
+	}
+	var externalProvenance service.ExternalProvenance
+	if err := json.Unmarshal(updatedMeta["external_provenance"], &externalProvenance); err != nil {
+		t.Fatalf("updated external_provenance unmarshal error: %v", err)
+	}
+	if externalProvenance.Schema != service.ExternalProvenanceSchema || externalProvenance.SourceMessageID != "message_handler_source" {
+		t.Fatalf("updated external_provenance = %+v", externalProvenance)
 	}
 
 	// Verify mergeMetadata preserves existing keys.
@@ -2802,6 +2902,58 @@ func TestCreateMemory_AsyncMessages_Returns202(t *testing.T) {
 	}
 }
 
+func TestCreateMemory_AsyncMessagesValidatesExternalProvenanceBeforeAcceptance(t *testing.T) {
+	validEnvelope := func(sourceMessageID string) map[string]any {
+		return map[string]any{
+			"external_provenance": map[string]any{
+				"schema":            "agent9/message-source@1",
+				"source_message_id": sourceMessageID,
+			},
+		}
+	}
+	defaultMessages := []map[string]string{
+		{"role": "user", "content": "hello"},
+		{"role": "assistant", "content": "hi"},
+	}
+	tests := []struct {
+		name       string
+		messages   []map[string]string
+		content    string
+		metadata   any
+		wantStatus int
+	}{
+		{name: "legacy metadata", messages: defaultMessages, metadata: map[string]any{"source": "legacy"}, wantStatus: http.StatusAccepted},
+		{name: "exact envelope", messages: defaultMessages, metadata: validEnvelope(strings.Repeat("🙂", 64)), wantStatus: http.StatusAccepted},
+		{name: "opaque id is not normalized", messages: defaultMessages, metadata: validEnvelope(" Message-ID "), wantStatus: http.StatusAccepted},
+		{name: "unknown schema", messages: defaultMessages, metadata: map[string]any{"external_provenance": map[string]any{"schema": "agent9/message-source@2", "source_message_id": "message_user"}}, wantStatus: http.StatusBadRequest},
+		{name: "missing member", messages: defaultMessages, metadata: map[string]any{"external_provenance": map[string]any{"schema": "agent9/message-source@1"}}, wantStatus: http.StatusBadRequest},
+		{name: "unexpected member", messages: defaultMessages, metadata: map[string]any{"external_provenance": map[string]any{"schema": "agent9/message-source@1", "source_message_id": "message_user", "session_id": "untrusted"}}, wantStatus: http.StatusBadRequest},
+		{name: "empty id", messages: defaultMessages, metadata: validEnvelope(""), wantStatus: http.StatusBadRequest},
+		{name: "over-limit id", messages: defaultMessages, metadata: validEnvelope(strings.Repeat("x", 65)), wantStatus: http.StatusBadRequest},
+		{name: "multiple user messages", messages: []map[string]string{{"role": "user", "content": "one"}, {"role": "assistant", "content": "context"}, {"role": "user", "content": "two"}}, metadata: validEnvelope("message_user"), wantStatus: http.StatusBadRequest},
+		{name: "content request", content: "hello", metadata: validEnvelope("message_user"), wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+			req := makeRequest(t, http.MethodPost, "/memories", map[string]any{
+				"messages":   tt.messages,
+				"content":    tt.content,
+				"session_id": "test-session",
+				"metadata":   tt.metadata,
+			})
+			rr := httptest.NewRecorder()
+
+			srv.createMemory(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", rr.Code, tt.wantStatus, rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestCreateMemory_AsyncMessages_DisableSessionSaveSkipsRawSession(t *testing.T) {
 	llmServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -3391,6 +3543,101 @@ func TestUpdateMemory_RuntimeUsageRecordsUpdate(t *testing.T) {
 	}
 	if runtimeUsage.updateResults[0].ObjectsAffected != 1 {
 		t.Fatalf("objects affected = %d, want 1", runtimeUsage.updateResults[0].ObjectsAffected)
+	}
+}
+
+func TestUpdateMemory_GenericMetadataCannotOverwriteExternalProvenance(t *testing.T) {
+	originalMetadata, err := json.Marshal(map[string]any{
+		"external_provenance": map[string]any{
+			"schema":            service.ExternalProvenanceSchema,
+			"source_message_id": "message_original",
+		},
+		"old": "value",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memRepo := &testMemoryRepo{createCalls: []*domain.Memory{{
+		ID:       "mem-1",
+		Content:  "old",
+		Version:  1,
+		Metadata: originalMetadata,
+	}}}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+
+	body := map[string]any{
+		"metadata": map[string]any{
+			"external_provenance": map[string]any{
+				"schema":            service.ExternalProvenanceSchema,
+				"source_message_id": "message_attacker",
+			},
+			"generic": "updated",
+		},
+	}
+	req := withURLParam(makeTenantRequest(t, http.MethodPatch, "/memories/mem-1", body), "id", "mem-1")
+	rr := httptest.NewRecorder()
+
+	srv.updateMemory(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if len(memRepo.updateCalls) != 1 {
+		t.Fatalf("update calls = %d, want 1", len(memRepo.updateCalls))
+	}
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(memRepo.updateCalls[0].Metadata, &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	var provenance service.ExternalProvenance
+	if err := json.Unmarshal(metadata["external_provenance"], &provenance); err != nil {
+		t.Fatalf("unmarshal external_provenance: %v", err)
+	}
+	if provenance.SourceMessageID != "message_original" {
+		t.Fatalf("source_message_id = %q, want message_original", provenance.SourceMessageID)
+	}
+	var generic string
+	if err := json.Unmarshal(metadata["generic"], &generic); err != nil || generic != "updated" {
+		t.Fatalf("generic metadata = %q (%v), want updated", generic, err)
+	}
+}
+
+func TestUpdateMemory_ProvenanceBearingMetadataRejectsNonObjectReplacement(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		metadata any
+	}{
+		{name: "null", metadata: nil},
+		{name: "string", metadata: "replacement"},
+		{name: "array", metadata: []any{"replacement"}},
+		{name: "number", metadata: 42},
+		{name: "boolean", metadata: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			originalMetadata := json.RawMessage(`{"external_provenance":{"schema":"agent9/message-source@1","source_message_id":"message_original"},"old":"value"}`)
+			memRepo := &testMemoryRepo{createCalls: []*domain.Memory{{
+				ID:       "mem-1",
+				Content:  "old",
+				Version:  1,
+				Metadata: originalMetadata,
+			}}}
+			srv := newTestServer(memRepo, &testSessionRepo{})
+			req := withURLParam(
+				makeTenantRequest(t, http.MethodPatch, "/memories/mem-1", map[string]any{"metadata": tt.metadata}),
+				"id",
+				"mem-1",
+			)
+			rr := httptest.NewRecorder()
+
+			srv.updateMemory(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+			}
+			if len(memRepo.updateCalls) != 0 {
+				t.Fatalf("update calls = %d, want 0", len(memRepo.updateCalls))
+			}
+		})
 	}
 }
 

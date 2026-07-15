@@ -219,6 +219,55 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	}
 }
 
+func TestOpenAPIExternalProvenanceContract(t *testing.T) {
+	openapi := loadOpenAPI(t)
+	components := objectValue(t, openapi, "components")
+	schemas := objectValue(t, components, "schemas")
+
+	create := objectValue(t, schemas, "CreateMemoryRequest")
+	createProperties := objectValue(t, create, "properties")
+	metadata := objectValue(t, createProperties, "metadata")
+	if got, want := metadata["$ref"], "#/components/schemas/CreateMemoryMetadata"; got != want {
+		t.Fatalf("CreateMemoryRequest.metadata ref = %#v, want %s", got, want)
+	}
+
+	createMetadata := objectValue(t, schemas, "CreateMemoryMetadata")
+	objectAlternatives := objectSlice(t, createMetadata["oneOf"])
+	if len(objectAlternatives) == 0 {
+		t.Fatal("CreateMemoryMetadata.oneOf should contain an object alternative")
+	}
+	metadataObject := objectAlternatives[0]
+	metadataProperties := objectValue(t, metadataObject, "properties")
+	reserved := objectValue(t, metadataProperties, "external_provenance")
+	if got, want := reserved["$ref"], "#/components/schemas/ExternalProvenance"; got != want {
+		t.Fatalf("external_provenance ref = %#v, want %s", got, want)
+	}
+
+	provenance := objectValue(t, schemas, "ExternalProvenance")
+	if got, ok := provenance["additionalProperties"].(bool); !ok || got {
+		t.Fatalf("ExternalProvenance.additionalProperties = %#v, want false", provenance["additionalProperties"])
+	}
+	for _, field := range []string{"schema", "source_message_id"} {
+		if !containsString(stringSlice(t, provenance["required"]), field) {
+			t.Fatalf("ExternalProvenance.required missing %q", field)
+		}
+	}
+	provenanceProperties := objectValue(t, provenance, "properties")
+	schema := objectValue(t, provenanceProperties, "schema")
+	if got, want := stringSlice(t, schema["enum"]), []string{"agent9/message-source@1"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ExternalProvenance.schema enum = %#v, want %#v", got, want)
+	}
+	sourceMessageID := objectValue(t, provenanceProperties, "source_message_id")
+	if sourceMessageID["minLength"] != float64(1) || sourceMessageID["maxLength"] != float64(64) {
+		t.Fatalf("source_message_id bounds = %#v/%#v, want 1/64", sourceMessageID["minLength"], sourceMessageID["maxLength"])
+	}
+	updateMetadata := objectValue(t, schemas, "Metadata")
+	description, _ := updateMetadata["description"].(string)
+	if !strings.Contains(description, "metadata updates to a provenance-bearing memory must therefore be objects") {
+		t.Fatalf("Metadata.description does not document the conditional object requirement: %q", description)
+	}
+}
+
 func TestOpenAPIRuntimeStateContract(t *testing.T) {
 	openapi := loadOpenAPI(t)
 	responses := operationResponses(t, openapi, "/v1alpha2/mem9s/runtime-state", "get")

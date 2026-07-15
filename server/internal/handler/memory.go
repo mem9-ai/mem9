@@ -91,6 +91,11 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 		s.handleError(r.Context(), w, &domain.ValidationError{Field: "memory_type", Message: "memory_type is only allowed with content, not messages"})
 		return
 	}
+	genericMetadata, externalProvenance, err := service.ParseExternalProvenance(req.Metadata, req.Messages)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
 
 	if hasMessages {
 		messages := append([]service.IngestMessage(nil), req.Messages...)
@@ -101,7 +106,8 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			AppID:              appID,
 			Mode:               req.Mode,
 			DisableSessionSave: s.disableSessionSave || req.DisableSessionSave,
-			Metadata:           append(json.RawMessage(nil), req.Metadata...),
+			Metadata:           genericMetadata,
+			ExternalProvenance: externalProvenance,
 		}
 
 		if req.Sync {
@@ -244,7 +250,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tags := append([]string(nil), req.Tags...)
-	metadata := append(json.RawMessage(nil), req.Metadata...)
+	metadata := append(json.RawMessage(nil), genericMetadata...)
 	content := req.Content
 	explicitMemoryType := strings.TrimSpace(req.MemoryType)
 
@@ -605,7 +611,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 			reconcileDuration = time.Since(reconcileStart)
 		}()
 		reconcileResult, reconcileErr = svc.ingest.ReconcilePhase2(
-			ctx, auth.AgentName, req.AgentID, req.AppID, req.SessionID, phase1.Facts)
+			ctx, auth.AgentName, req.AgentID, req.AppID, req.SessionID, phase1.Facts, req.ExternalProvenance)
 	}()
 
 	wg.Wait()
@@ -662,7 +668,7 @@ func (s *Server) createSmartContentWithRouting(ctx context.Context, chainAuth *d
 	if len(facts) == 0 {
 		return &service.IngestResult{Status: "complete"}, nil
 	}
-	result, err := svc.ingest.ReconcilePhase2(ctx, agentName, agentID, appID, sessionID, facts)
+	result, err := svc.ingest.ReconcilePhase2(ctx, agentName, agentID, appID, sessionID, facts, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -1032,7 +1032,11 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 		current.Tags = tags
 	}
 	if metadata != nil {
-		current.Metadata = metadata
+		preservedMetadata, err := preserveExternalProvenanceMetadata(current.Metadata, metadata)
+		if err != nil {
+			return nil, err
+		}
+		current.Metadata = preservedMetadata
 	}
 	current.UpdatedBy = agentName
 

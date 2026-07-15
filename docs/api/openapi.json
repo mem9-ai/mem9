@@ -2988,7 +2988,7 @@
       },
       "CreateMemoryRequest": {
         "type": "object",
-        "description": "Provide either content or messages, not both. memory_type is only accepted for content requests. mode is only accepted for messages requests.",
+        "description": "Provide either content or messages, not both. memory_type is only accepted for content requests. mode is only accepted for messages requests. The reserved metadata.external_provenance envelope is optional, creation-only, and accepted only for a messages request containing exactly one fact-eligible user message; invalid reserved envelopes are rejected before asynchronous acceptance.",
         "properties": {
           "content": {
             "type": "string",
@@ -3014,7 +3014,7 @@
             }
           },
           "metadata": {
-            "$ref": "#/components/schemas/Metadata"
+            "$ref": "#/components/schemas/CreateMemoryMetadata"
           },
           "messages": {
             "type": "array",
@@ -3420,7 +3420,7 @@
         }
       },
       "Metadata": {
-        "description": "Raw JSON metadata. The server accepts any valid JSON value.",
+        "description": "Raw JSON metadata. The server accepts any valid JSON value. Generic update metadata cannot create, replace, or remove the creation-only external_provenance field; metadata updates to a provenance-bearing memory must therefore be objects.",
         "nullable": true,
         "oneOf": [
           {
@@ -3441,6 +3441,56 @@
             "type": "boolean"
           }
         ]
+      },
+      "CreateMemoryMetadata": {
+        "description": "Raw JSON metadata for memory creation. Object metadata may carry the optional reserved external_provenance envelope; all other object members remain application-defined.",
+        "nullable": true,
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "external_provenance": {
+                "$ref": "#/components/schemas/ExternalProvenance"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "array",
+            "items": {}
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "ExternalProvenance": {
+        "type": "object",
+        "description": "Reserved creation provenance. This exact envelope is accepted only on message ingest with exactly one fact-eligible user message and is copied to every newly created memory revision.",
+        "required": [
+          "schema",
+          "source_message_id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "schema": {
+            "type": "string",
+            "enum": [
+              "agent9/message-source@1"
+            ]
+          },
+          "source_message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
       },
       "MemoryType": {
         "type": "string",

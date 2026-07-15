@@ -56,6 +56,19 @@ type setStateCall struct {
 	State domain.MemoryState
 }
 
+func requireExternalSourceMessageID(t *testing.T, metadata json.RawMessage, want string) {
+	t.Helper()
+	var decoded struct {
+		ExternalProvenance *ExternalProvenance `json:"external_provenance"`
+	}
+	if err := json.Unmarshal(metadata, &decoded); err != nil {
+		t.Fatalf("metadata unmarshal error = %v: %s", err, metadata)
+	}
+	if decoded.ExternalProvenance == nil || decoded.ExternalProvenance.Schema != ExternalProvenanceSchema || decoded.ExternalProvenance.SourceMessageID != want {
+		t.Fatalf("external_provenance = %+v, want schema=%s source=%s", decoded.ExternalProvenance, ExternalProvenanceSchema, want)
+	}
+}
+
 func (m *memoryRepoMock) Create(ctx context.Context, mem *domain.Memory) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -591,7 +604,7 @@ func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
 
 	_, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "", "sess-1", []ExtractedFact{
 		{Text: "Jon lost his job, which motivated him to start a dance studio", Tags: []string{"work"}, SourceSeqs: []int{4, 2, 4}},
-	})
+	}, &ExternalProvenance{Schema: ExternalProvenanceSchema, SourceMessageID: "message_user"})
 	if err != nil {
 		t.Fatalf("ReconcilePhase2() error = %v", err)
 	}
@@ -599,8 +612,9 @@ func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
 		t.Fatalf("expected 1 created memory, got %d", len(memRepo.createCalls))
 	}
 	var metadata struct {
-		SourceSeqs  []int                `json:"source_seqs"`
-		SourceTurns []sourceTurnMetadata `json:"source_turns"`
+		SourceSeqs         []int                `json:"source_seqs"`
+		SourceTurns        []sourceTurnMetadata `json:"source_turns"`
+		ExternalProvenance *ExternalProvenance  `json:"external_provenance"`
 	}
 	if err := json.Unmarshal(memRepo.createCalls[0].Metadata, &metadata); err != nil {
 		t.Fatalf("metadata unmarshal error = %v", err)
@@ -610,6 +624,9 @@ func TestReconcilePhase2PersistsSourceSeqMetadata(t *testing.T) {
 	}
 	if len(metadata.SourceTurns) != 0 {
 		t.Fatalf("source_turns should be empty when facts did not provide turn payloads, got %+v", metadata.SourceTurns)
+	}
+	if metadata.ExternalProvenance == nil || metadata.ExternalProvenance.SourceMessageID != "message_user" {
+		t.Fatalf("external_provenance = %+v, want message_user", metadata.ExternalProvenance)
 	}
 }
 
@@ -629,7 +646,7 @@ func TestReconcilePhase2AddPersistsSourceTurnMetadata(t *testing.T) {
 				{Seq: 2, Content: "[date:1 January 2023] [speaker:Gina] You should open your own studio."},
 			},
 		},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ReconcilePhase2() error = %v", err)
 	}
@@ -664,6 +681,40 @@ func TestSetSourceSeqMetadataClearsStaleSourceSeqs(t *testing.T) {
 	}
 	if _, ok := decoded["temporal"]; !ok {
 		t.Fatalf("temporal metadata should be preserved: %s", metadata)
+	}
+}
+
+func TestSetExternalProvenanceMetadataPreservesLegacyNonObjectWithoutProvenance(t *testing.T) {
+	legacy := json.RawMessage(`"legacy-metadata"`)
+
+	if got := SetExternalProvenanceMetadata(legacy, nil); string(got) != string(legacy) {
+		t.Fatalf("metadata = %s, want unchanged %s", got, legacy)
+	}
+}
+
+func TestSetExternalProvenanceMetadataPreservesLegacyEmptyObject(t *testing.T) {
+	legacy := json.RawMessage(`{}`)
+
+	if got := SetExternalProvenanceMetadata(legacy, nil); string(got) != string(legacy) {
+		t.Fatalf("metadata = %s, want unchanged %s", got, legacy)
+	}
+}
+
+func TestPreserveExternalProvenanceMetadataKeepsLegacyNonObjectUpdateBehavior(t *testing.T) {
+	for _, update := range []json.RawMessage{
+		json.RawMessage(`null`),
+		json.RawMessage(`"replacement"`),
+		json.RawMessage(`["replacement"]`),
+		json.RawMessage(`42`),
+		json.RawMessage(`true`),
+	} {
+		got, err := preserveExternalProvenanceMetadata(json.RawMessage(`{"old":"value"}`), update)
+		if err != nil {
+			t.Fatalf("update %s returned error: %v", update, err)
+		}
+		if string(got) != string(update) {
+			t.Fatalf("metadata = %s, want replacement %s", got, update)
+		}
 	}
 }
 
@@ -1304,7 +1355,7 @@ func TestReconcilePhase2FiltersNonLongTermFactsBeforeWrite(t *testing.T) {
 	res, err := svc.ReconcilePhase2(context.Background(), "agent-1", "agent-1", "", "sess-1", []ExtractedFact{
 		{Text: "Is working out now"},
 		{Text: "Temporary workspace is /home/ec2-user/clawd-workspace/"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ReconcilePhase2() error = %v", err)
 	}
@@ -1416,9 +1467,10 @@ func TestReconcileAddSetsTagsOnMemory(t *testing.T) {
 	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
-		Mode:      ModeSmart,
-		SessionID: "sess-add",
-		AgentID:   "agent-1",
+		Mode:               ModeSmart,
+		SessionID:          "sess-add",
+		AgentID:            "agent-1",
+		ExternalProvenance: &ExternalProvenance{Schema: ExternalProvenanceSchema, SourceMessageID: "message_add"},
 		Messages: []IngestMessage{
 			{Role: "user", Content: "I use Go 1.22"},
 			{Role: "assistant", Content: "Noted."},
@@ -1434,6 +1486,7 @@ func TestReconcileAddSetsTagsOnMemory(t *testing.T) {
 	if len(got) != 2 || got[0] != "tech" || got[1] != "work" {
 		t.Fatalf("expected tags [tech work], got %v", got)
 	}
+	requireExternalSourceMessageID(t, memRepo.createCalls[0].Metadata, "message_add")
 }
 
 func TestReconcileUpdateSetsTagsOnMemory(t *testing.T) {
@@ -1458,15 +1511,16 @@ func TestReconcileUpdateSetsTagsOnMemory(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	memRepo := &memoryRepoMock{
 		vectorResults: []domain.Memory{
-			{ID: "mem-startup", Content: "Works at startup X", MemoryType: domain.TypeInsight, State: domain.StateActive},
+			{ID: "mem-startup", Content: "Works at startup X", MemoryType: domain.TypeInsight, State: domain.StateActive, Metadata: json.RawMessage(`{"external_provenance":{"schema":"agent9/message-source@1","source_message_id":"message_old"},"kept":"yes"}`)},
 		},
 	}
 	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
-		Mode:      ModeSmart,
-		SessionID: "sess-update",
-		AgentID:   "agent-1",
+		Mode:               ModeSmart,
+		SessionID:          "sess-update",
+		AgentID:            "agent-1",
+		ExternalProvenance: &ExternalProvenance{Schema: ExternalProvenanceSchema, SourceMessageID: "message_update"},
 		Messages: []IngestMessage{
 			{Role: "user", Content: "I now work at company Y"},
 			{Role: "assistant", Content: "Noted."},
@@ -1482,6 +1536,8 @@ func TestReconcileUpdateSetsTagsOnMemory(t *testing.T) {
 	if len(got) != 1 || got[0] != "work" {
 		t.Fatalf("expected tags [work], got %v", got)
 	}
+	requireExternalSourceMessageID(t, memRepo.createCalls[0].Metadata, "message_update")
+	requireExternalSourceMessageID(t, memRepo.vectorResults[0].Metadata, "message_old")
 }
 
 func TestReconcileUpdateTagsOmitted(t *testing.T) {
@@ -1659,15 +1715,16 @@ func TestReconcilePinnedFallbackCarriesTags(t *testing.T) {
 	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
 	memRepo := &memoryRepoMock{
 		vectorResults: []domain.Memory{
-			{ID: "pinned-1", Content: "Uses Python", MemoryType: domain.TypePinned, State: domain.StateActive},
+			{ID: "pinned-1", Content: "Uses Python", MemoryType: domain.TypePinned, State: domain.StateActive, Metadata: json.RawMessage(`{"external_provenance":{"schema":"agent9/message-source@1","source_message_id":"message_pinned_old"}}`)},
 		},
 	}
 	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
-		Mode:      ModeSmart,
-		SessionID: "sess-pinned",
-		AgentID:   "agent-1",
+		Mode:               ModeSmart,
+		SessionID:          "sess-pinned",
+		AgentID:            "agent-1",
+		ExternalProvenance: &ExternalProvenance{Schema: ExternalProvenanceSchema, SourceMessageID: "message_pinned_new"},
 		Messages: []IngestMessage{
 			{Role: "user", Content: "I use Go 1.22"},
 			{Role: "assistant", Content: "Noted."},
@@ -1683,6 +1740,8 @@ func TestReconcilePinnedFallbackCarriesTags(t *testing.T) {
 	if len(got) != 1 || got[0] != "tech" {
 		t.Fatalf("expected tags [tech], got %v", got)
 	}
+	requireExternalSourceMessageID(t, memRepo.createCalls[0].Metadata, "message_pinned_new")
+	requireExternalSourceMessageID(t, memRepo.vectorResults[0].Metadata, "message_pinned_old")
 }
 
 func TestIngestDoesNotReconcileWhenExtractionReturnsNoFacts(t *testing.T) {
@@ -2439,16 +2498,17 @@ func TestReconcileDeleteErrNotFoundIsNotWarning(t *testing.T) {
 	memRepo := &memoryRepoMock{
 		setStateErr: domain.ErrNotFound,
 		vectorResults: []domain.Memory{
-			{ID: "mem-123", Content: "user prefers dark mode", MemoryType: domain.TypeInsight, State: domain.StateActive},
+			{ID: "mem-123", Content: "user prefers dark mode", MemoryType: domain.TypeInsight, State: domain.StateActive, Metadata: json.RawMessage(`{"external_provenance":{"schema":"agent9/message-source@1","source_message_id":"message_delete_old"}}`)},
 		},
 	}
 
 	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	res, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
-		Mode:      ModeSmart,
-		SessionID: "sess-1",
-		AgentID:   "agent-1",
+		Mode:               ModeSmart,
+		SessionID:          "sess-1",
+		AgentID:            "agent-1",
+		ExternalProvenance: &ExternalProvenance{Schema: ExternalProvenanceSchema, SourceMessageID: "message_delete_new"},
 		Messages: []IngestMessage{
 			{Role: "user", Content: "I prefer dark mode"},
 			{Role: "assistant", Content: "Noted, dark mode preference saved."},
@@ -2476,6 +2536,10 @@ func TestReconcileDeleteErrNotFoundIsNotWarning(t *testing.T) {
 	if memRepo.setStateCalls[0].State != domain.StateDeleted {
 		t.Fatalf("expected StateDeleted, got %q", memRepo.setStateCalls[0].State)
 	}
+	if len(memRepo.createCalls) != 0 {
+		t.Fatalf("DELETE created %d facts, want 0", len(memRepo.createCalls))
+	}
+	requireExternalSourceMessageID(t, memRepo.vectorResults[0].Metadata, "message_delete_old")
 }
 
 // TestReconcileDeleteRealErrorCountsAsWarning verifies that a real database error
@@ -3088,6 +3152,7 @@ func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 				Content:    "Prefers light mode",
 				MemoryType: domain.TypeInsight,
 				State:      domain.StateActive,
+				Metadata:   json.RawMessage(`{"external_provenance":{"schema":"agent9/message-source@1","source_message_id":"message_noop_old"}}`),
 				// UpdatedAt is zero value
 			},
 		},
@@ -3096,9 +3161,10 @@ func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 	svc := NewIngestService(memRepo, llmClient, nil, "auto-model", ModeSmart)
 
 	_, err := svc.Ingest(context.Background(), "agent-1", IngestRequest{
-		Mode:      ModeSmart,
-		SessionID: "sess-noage",
-		AgentID:   "agent-1",
+		Mode:               ModeSmart,
+		SessionID:          "sess-noage",
+		AgentID:            "agent-1",
+		ExternalProvenance: &ExternalProvenance{Schema: ExternalProvenanceSchema, SourceMessageID: "message_noop_new"},
 		Messages: []IngestMessage{
 			{Role: "user", Content: "I prefer dark mode"},
 			{Role: "assistant", Content: "Noted."},
@@ -3125,6 +3191,10 @@ func TestReconcileOmitsAgeForZeroTimestamp(t *testing.T) {
 	} else {
 		t.Fatal("could not find 'Current memory contents:' marker in reconciliation body")
 	}
+	if len(memRepo.createCalls) != 0 || len(memRepo.setStateCalls) != 0 {
+		t.Fatalf("NOOP mutated facts: creates=%d states=%d", len(memRepo.createCalls), len(memRepo.setStateCalls))
+	}
+	requireExternalSourceMessageID(t, memRepo.vectorResults[0].Metadata, "message_noop_old")
 }
 
 func TestReconcileAcceptsEmptyChangeList(t *testing.T) {

@@ -137,7 +137,7 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 					return
 				}
 			}
-			result, err := targetSvc.ingest.ReconcilePhase2(ctx, nodeAuth.AgentName, req.AgentID, req.AppID, req.SessionID, factsForTarget)
+			result, err := targetSvc.ingest.ReconcilePhase2(ctx, nodeAuth.AgentName, req.AgentID, req.AppID, req.SessionID, factsForTarget, req.ExternalProvenance)
 			if err != nil {
 				if s.runtimeUsageEnabled() && lease != nil {
 					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
