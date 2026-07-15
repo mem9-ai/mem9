@@ -380,9 +380,9 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 						return w.failTask(ctx, task, fmt.Errorf("validate memory app_id: %w", err), logger)
 					}
 				}
-				metadata, err := marshalMetadata(entry.Metadata)
+				metadata, err := marshalImportedMemoryMetadata(entry.Metadata)
 				if err != nil {
-					return w.failTask(ctx, task, fmt.Errorf("marshal memory metadata: %w", err), logger)
+					return w.failTask(ctx, task, fmt.Errorf("validate memories[%d] metadata: %w", i+j, err), logger)
 				}
 				memType := domain.TypeInsight
 				if entry.MemoryType != "" {
@@ -530,7 +530,13 @@ func (w *UploadWorker) cleanupFile(task domain.UploadTask, logger *slog.Logger) 
 	}
 }
 
-func marshalMetadata(metadata map[string]any) (json.RawMessage, error) {
+// marshalImportedMemoryMetadata keeps the reserved external provenance envelope exclusive to
+// validated message ingest. A generic memory import has no source message against which the
+// envelope can be validated, so any occurrence of the reserved key must fail the task.
+func marshalImportedMemoryMetadata(metadata map[string]any) (json.RawMessage, error) {
+	if err := validateImportedMemoryMetadata(metadata); err != nil {
+		return nil, err
+	}
 	if metadata == nil {
 		return nil, nil
 	}
@@ -541,6 +547,16 @@ func marshalMetadata(metadata map[string]any) (json.RawMessage, error) {
 	return json.RawMessage(b), nil
 }
 
+func validateImportedMemoryMetadata(metadata map[string]any) error {
+	if _, present := metadata[externalProvenanceKey]; present {
+		return &domain.ValidationError{
+			Field:   "metadata.external_provenance",
+			Message: "is reserved for validated message ingest",
+		}
+	}
+	return nil
+}
+
 // parseMemoryFile parses upload data as a MemoryFile.
 // It accepts two formats:
 //   - JSON: {"agent_id":"...","memories":[{"content":"..."},...]}
@@ -548,6 +564,14 @@ func marshalMetadata(metadata map[string]any) (json.RawMessage, error) {
 func parseMemoryFile(data []byte, fallbackAgentID string) (MemoryFile, error) {
 	var file MemoryFile
 	if err := json.Unmarshal(data, &file); err == nil && len(file.Memories) > 0 {
+		// Validate the whole import before the worker starts batching writes. Keeping this
+		// check here prevents a reserved envelope in a later batch from leaving a partially
+		// imported file behind; the per-entry write-path check remains defense in depth.
+		for i, entry := range file.Memories {
+			if err := validateImportedMemoryMetadata(entry.Metadata); err != nil {
+				return MemoryFile{}, fmt.Errorf("validate memories[%d] metadata: %w", i, err)
+			}
+		}
 		if file.AgentID == "" {
 			file.AgentID = fallbackAgentID
 		}

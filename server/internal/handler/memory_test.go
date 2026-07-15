@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1558,6 +1559,57 @@ func TestGetMemory_FallsBackToSessionRow(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), `"memory_type":"session"`) {
 		t.Fatalf("body = %s, want session memory type", rr.Body.String())
+	}
+}
+
+func TestGetMemory_ReturnsExternalProvenanceMetadataAsStored(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata json.RawMessage
+	}{
+		{
+			name:     "validated envelope",
+			metadata: json.RawMessage(`{"external_provenance":{"schema":"agent9/message-source@1","source_message_id":"message_valid"},"generic":"kept"}`),
+		},
+		{
+			name:     "historical malformed envelope",
+			metadata: json.RawMessage(`{"external_provenance":{"schema":"agent9/message-source@2","source_message_id":331,"extra":"untrusted"},"generic":"kept"}`),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			memRepo := &testMemoryRepo{createCalls: []*domain.Memory{{
+				ID:         "mem-provenance",
+				Content:    "stored fact",
+				MemoryType: domain.TypeInsight,
+				Metadata:   tt.metadata,
+				State:      domain.StateActive,
+				Version:    1,
+			}}}
+			srv := newTestServer(memRepo, &testSessionRepo{})
+			req := withURLParam(makeRequest(t, http.MethodGet, "/memories/mem-provenance", nil), "id", "mem-provenance")
+			rr := httptest.NewRecorder()
+
+			srv.getMemory(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+			}
+			var response domain.Memory
+			if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			var got, want any
+			if err := json.Unmarshal(response.Metadata, &got); err != nil {
+				t.Fatalf("decode returned metadata: %v", err)
+			}
+			if err := json.Unmarshal(tt.metadata, &want); err != nil {
+				t.Fatalf("decode expected metadata: %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("metadata = %#v, want stored %#v", got, want)
+			}
+		})
 	}
 }
 

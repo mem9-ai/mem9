@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -82,9 +84,9 @@ func TestChunkMessages(t *testing.T) {
 	}
 }
 
-func TestMarshalMetadata(t *testing.T) {
+func TestMarshalImportedMemoryMetadata(t *testing.T) {
 	t.Run("nil metadata", func(t *testing.T) {
-		raw, err := marshalMetadata(nil)
+		raw, err := marshalImportedMemoryMetadata(nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -95,7 +97,7 @@ func TestMarshalMetadata(t *testing.T) {
 
 	t.Run("non-nil metadata", func(t *testing.T) {
 		m := map[string]any{"key": "value", "num": 42.0}
-		raw, err := marshalMetadata(m)
+		raw, err := marshalImportedMemoryMetadata(m)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -108,6 +110,37 @@ func TestMarshalMetadata(t *testing.T) {
 			t.Errorf("unexpected empty result: %s", s)
 		}
 	})
+
+	for _, tt := range []struct {
+		name     string
+		reserved any
+	}{
+		{
+			name: "valid reserved envelope",
+			reserved: map[string]any{
+				"schema":            ExternalProvenanceSchema,
+				"source_message_id": "message_imported",
+			},
+		},
+		{name: "malformed reserved envelope", reserved: "untrusted"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := marshalImportedMemoryMetadata(map[string]any{
+				"external_provenance": tt.reserved,
+				"generic":             "preserved",
+			})
+			if err == nil {
+				t.Fatal("expected reserved external_provenance to be rejected")
+			}
+			var validationErr *domain.ValidationError
+			if !errors.As(err, &validationErr) {
+				t.Fatalf("error = %T, want ValidationError", err)
+			}
+			if validationErr.Field != "metadata.external_provenance" {
+				t.Fatalf("field = %q, want metadata.external_provenance", validationErr.Field)
+			}
+		})
+	}
 }
 
 func TestNormalizeUploadAppID(t *testing.T) {
@@ -355,6 +388,39 @@ func TestParseMemoryFile(t *testing.T) {
 				t.Errorf("content = %q, want %q", file.Memories[0].Content, tt.wantContent)
 			}
 		})
+	}
+}
+
+func TestParseMemoryFileRejectsReservedExternalProvenanceBeforeImport(t *testing.T) {
+	entries := make([]MemoryFileEntry, uploadMemoryBatchSize+1)
+	for i := range entries {
+		entries[i].Content = "safe imported memory"
+	}
+	entries[uploadMemoryBatchSize].Metadata = map[string]any{
+		"external_provenance": map[string]any{
+			"schema":            ExternalProvenanceSchema,
+			"source_message_id": "message_imported",
+		},
+	}
+	payload, marshalErr := json.Marshal(MemoryFile{AgentID: "agent-a", Memories: entries})
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+
+	_, err := parseMemoryFile(payload, "fallback-agent")
+	if err == nil {
+		t.Fatal("expected memory import with reserved external_provenance to fail")
+	}
+	wantPath := fmt.Sprintf("memories[%d]", uploadMemoryBatchSize)
+	if !strings.Contains(err.Error(), wantPath) {
+		t.Fatalf("error = %q, want indexed path %s", err, wantPath)
+	}
+	var validationErr *domain.ValidationError
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("error = %T, want ValidationError", err)
+	}
+	if validationErr.Field != "metadata.external_provenance" {
+		t.Fatalf("field = %q, want metadata.external_provenance", validationErr.Field)
 	}
 }
 

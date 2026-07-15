@@ -2246,7 +2246,7 @@
       },
       "CreateImport": {
         "required": true,
-        "description": "Multipart upload for async file ingest. File size is limited to 50 MiB.",
+        "description": "Multipart upload for async file ingest. File size is limited to 50 MiB. The upload may return 202 before background processing; for file_type=memory, any memories[].metadata.external_provenance member is reserved and causes the import task to fail without writing that file.",
         "content": {
           "multipart/form-data": {
             "schema": {
@@ -3128,7 +3128,7 @@
             "description": "Optional session ID associated with session imports."
           }
         },
-        "description": "Multipart upload for async file ingest. File size is limited to 50 MiB. For JSON memory/session import files, include top-level appId or per-memory appId fields to assign imported rows to an application isolation id."
+        "description": "Multipart upload for async file ingest. File size is limited to 50 MiB. For JSON memory/session import files, include top-level appId or per-memory appId fields to assign imported rows to an application isolation id. The HTTP upload may return 202 before background validation; a memory import containing memories[].metadata.external_provenance fails as a task because the reserved envelope is accepted only through validated message ingest."
       },
       "MemoryListResponse": {
         "type": "object",
@@ -3420,7 +3420,7 @@
         }
       },
       "Metadata": {
-        "description": "Raw JSON metadata. The server accepts any valid JSON value. Generic update metadata cannot create, replace, or remove the creation-only external_provenance field; metadata updates to a provenance-bearing memory must therefore be objects.",
+        "description": "Raw JSON metadata. The server accepts any valid JSON value. Generic update metadata cannot create, replace, or remove the creation-only external_provenance field; metadata updates to a provenance-bearing memory must therefore be objects. New fact responses may contain the exact agent9/message-source@1 envelope, while historical values are returned as stored and consumers must treat unrecognized provenance shapes as opaque.",
         "nullable": true,
         "oneOf": [
           {
