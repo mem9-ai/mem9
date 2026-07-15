@@ -218,7 +218,7 @@
     "tabs": {
       "pulse": "记忆列表",
       "profile": "记忆画像",
-      "insight": "Memory Insight",
+      "insight": "记忆洞察",
       "analysis": "Memory Analysis",
       "reports": "报告模板",
       "periodic": "周期观察"
@@ -232,7 +232,7 @@
       "periodic": "观察"
     },
     "desktop_only": {
-      "title": "Memory Insight 需要更宽的屏幕",
+      "title": "记忆洞察需要更宽的屏幕",
       "body": "关系画布需要至少平板横屏（1024px 宽）才能完整铺开。",
       "hint": "把平板转为横屏，或在桌面浏览器打开 mem9.ai/your-memory。"
     }
@@ -499,7 +499,7 @@
       "relations": "Relations"
     },
     "eyebrow": "关系拓扑",
-    "title": "Memory Insight",
+    "title": "记忆洞察",
     "subtitle": "用关系拓扑探索当前范围内的分类、标签、实体和记忆之间如何连接。",
     "helper": "拖拽气泡和标签来整理关系图。点击任意气泡，它会游向画布右侧展开，但始终停留在同一个大画布里继续查看标签、实体和记忆。",
     "canvas_hint": "单一共享画布，必要时可上下左右滚动。",

@@ -103,6 +103,9 @@ export const SpacePageLayout = ({
   onHandleFarmAction,
 }: SpacePageLayoutProps) => {
   const [activeOverviewTab, setActiveOverviewTab] = useState<MemoryInsightTab>("profile");
+  const isMemoryListTab = activeOverviewTab === "pulse";
+  const selectedMemoryForDetail = isMemoryListTab ? routeState.selected : null;
+  const showSelectedMemoryDetail = selectedMemoryForDetail !== null;
   const isEmpty =
     !dataModel.isMemoryLoading &&
     dataModel.displayedMemories.length === 0 &&
@@ -122,7 +125,7 @@ export const SpacePageLayout = ({
   });
   const pageShellClass = getPageShellClass(
     features.enableAnalysis,
-    routeState.selected !== null,
+    showSelectedMemoryDetail,
   );
 
   return (
@@ -251,7 +254,7 @@ export const SpacePageLayout = ({
               snapshot={dataModel.analysis.state.snapshot}
               range={routeState.range}
               loading={!dataModel.stats || dataModel.analysis.sourceLoading}
-              compact={routeState.selected !== null && routeState.isDesktopViewport}
+              compact={showSelectedMemoryDetail && routeState.isDesktopViewport}
               activeCategory={routeState.analysisCategory}
               activeTag={routeState.tag}
               matchMap={dataModel.analysis.matchMap}
@@ -259,10 +262,15 @@ export const SpacePageLayout = ({
               onEntitySearch={(query) =>
                 navigateAndScrollToMemoryList(() => routeState.handleEntitySearch(query))
               }
-              onTabChange={setActiveOverviewTab}
+              onTabChange={(nextTab) => {
+                setActiveOverviewTab(nextTab);
+                if (nextTab !== "pulse") {
+                  routeState.setSelected(null);
+                }
+              }}
             />
 
-            {activeOverviewTab !== "reports" && activeOverviewTab !== "profile" && activeOverviewTab !== "periodic" && (
+            {isMemoryListTab && (
               <>
             <div className="relative mt-5">
               <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-soft-foreground" />
@@ -559,20 +567,20 @@ export const SpacePageLayout = ({
             </div>
           )}
 
-          {routeState.selected &&
+          {showSelectedMemoryDetail &&
             routeState.isDesktopViewport &&
             routeState.selectedDetailMode === "panel" && (
               <DetailPanel
-                key={routeState.selected.id}
-                memory={routeState.selected}
-                derivedTags={dataModel.getActiveDerivedTags(routeState.selected)}
+                key={selectedMemoryForDetail.id}
+                memory={selectedMemoryForDetail}
+                derivedTags={dataModel.getActiveDerivedTags(selectedMemoryForDetail)}
                 sessionMessages={dataModel.selectedSessionMessages}
                 sessionMessagesLoading={dataModel.selectedSessionMessagesLoading}
                 onClose={() => routeState.setSelected(null)}
-                onDelete={() => setDeleteTarget(routeState.selected!)}
+                onDelete={() => setDeleteTarget(selectedMemoryForDetail)}
                 onEdit={
-                  routeState.selected.memory_type === "pinned"
-                    ? () => setEditTarget(routeState.selected)
+                  selectedMemoryForDetail.memory_type === "pinned"
+                    ? () => setEditTarget(selectedMemoryForDetail)
                     : undefined
                 }
                 t={t}
@@ -612,24 +620,23 @@ export const SpacePageLayout = ({
         />
       )}
 
-      {routeState.selected &&
+      {showSelectedMemoryDetail &&
         (!routeState.isDesktopViewport || routeState.selectedDetailMode === "sheet") && (
           <MobileDetailSheet
-            memory={routeState.selected}
-            derivedTags={dataModel.getActiveDerivedTags(routeState.selected)}
+            memory={selectedMemoryForDetail}
+            derivedTags={dataModel.getActiveDerivedTags(selectedMemoryForDetail)}
             sessionMessages={dataModel.selectedSessionMessages}
             sessionMessagesLoading={dataModel.selectedSessionMessagesLoading}
             open={!!routeState.selected}
             onOpenChange={(open) => !open && routeState.setSelected(null)}
             onDelete={() => {
-              if (!routeState.selected) return;
-              setDeleteTarget(routeState.selected);
+              setDeleteTarget(selectedMemoryForDetail);
               routeState.setSelected(null);
             }}
             onEdit={
-              routeState.selected?.memory_type === "pinned"
+              selectedMemoryForDetail.memory_type === "pinned"
                 ? () => {
-                    setEditTarget(routeState.selected);
+                    setEditTarget(selectedMemoryForDetail);
                     routeState.setSelected(null);
                   }
                 : undefined

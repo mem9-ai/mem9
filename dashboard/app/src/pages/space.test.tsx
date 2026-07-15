@@ -461,6 +461,21 @@ vi.mock("@/api/source-memories", () => ({
 }));
 
 vi.mock("@/api/analysis-queries", () => ({
+  useUserProfile: () => ({
+    data: {
+      generatedAt: "2026-03-21T12:00:00.000Z",
+      source: { memoryTypes: ["insight", "pinned"], memoryCount: mockedSourceMemories.length },
+      summary: {
+        text: "Mocked user profile summary.",
+        evidence: [],
+      },
+      attributes: [],
+      changes: [],
+      relationships: [],
+      items: [],
+    },
+    isLoading: false,
+  }),
   useSpaceAnalysis: () => ({
     state: analysisState,
     taxonomy: {
@@ -603,18 +618,11 @@ describe("SpacePage", () => {
     ).toBeNull();
   });
 
-  it("does not prefetch deep-analysis reports before the analysis tab is opened", async () => {
+  it("keeps deep-analysis reports idle while the analysis tab entry is hidden", async () => {
     renderSpacePage();
 
+    expect(screen.queryByRole("tab", { name: "Memory Analysis" })).not.toBeInTheDocument();
     expect(mocks.useDeepAnalysisReports).not.toHaveBeenCalled();
-
-    const analysisTab = screen.getByRole("tab", { name: "Memory Analysis" });
-    analysisTab.focus();
-    fireEvent.keyDown(analysisTab, { key: "Enter" });
-
-    await waitFor(() => {
-      expect(mocks.useDeepAnalysisReports).toHaveBeenCalledWith("space-1", true);
-    });
   });
 
   it("keeps all-range stats disabled until the export dialog is opened", async () => {

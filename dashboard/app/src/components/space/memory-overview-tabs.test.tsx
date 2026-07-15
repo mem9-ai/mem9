@@ -171,9 +171,9 @@ describe("MemoryOverviewTabs", () => {
       "Memory Profile",
       "Periodic Observation",
       "Report Manage",
+      "Memory Insight",
       "Memory List",
     ]);
-    expect(screen.queryByRole("tab", { name: "Memory Insight" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Memory Analysis" })).not.toBeInTheDocument();
 
     const listTab = screen.getByRole("tab", { name: "Memory List" });
@@ -209,11 +209,21 @@ describe("MemoryOverviewTabs", () => {
     expect(screen.getByTestId("memory-overview-tab-profile")).toHaveTextContent("Profile");
     expect(screen.getByTestId("memory-overview-tab-periodic")).toHaveTextContent("Observe");
     expect(screen.getByTestId("memory-overview-tab-reports")).toHaveTextContent("Reports");
+    expect(screen.getByTestId("memory-overview-tab-insight")).toHaveTextContent("Insight");
     expect(screen.getByTestId("memory-overview-tab-pulse")).toHaveTextContent("List");
-    expect(screen.queryByTestId("memory-overview-tab-insight")).not.toBeInTheDocument();
     expect(screen.queryByTestId("memory-overview-tab-analysis")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Profile",
+      "Observe",
+      "Reports",
+      "Insight",
+      "List",
+    ]);
     expect(screen.getByRole("tab", { name: "Memory List" })).toBe(
       screen.getByTestId("memory-overview-tab-pulse"),
+    );
+    expect(screen.getByRole("tab", { name: "Memory Insight" })).toBe(
+      screen.getByTestId("memory-overview-tab-insight"),
     );
   });
 

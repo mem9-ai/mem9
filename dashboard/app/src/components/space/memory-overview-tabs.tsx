@@ -21,10 +21,8 @@ import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 
 export type OverviewMemorySelectionSource = "list" | "insight";
 
-const TAB_VALUES = ["profile", "periodic", "reports", "pulse", "insight", "analysis"] as const;
-const VISIBLE_TAB_VALUES = TAB_VALUES.filter(
-  (value) => value !== "insight" && value !== "analysis",
-);
+const TAB_VALUES = ["profile", "periodic", "reports", "insight", "pulse", "analysis"] as const;
+const VISIBLE_TAB_VALUES = TAB_VALUES.filter((value) => value !== "analysis");
 
 export function MemoryOverviewTabs({
   spaceId,
