@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/go-sql-driver/mysql"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
@@ -384,6 +385,8 @@ func classifyRecallError(err error) recallErrorClassification {
 	}
 
 	message := strings.ToLower(err.Error())
+	var dbErr *mysql.MySQLError
+	errors.As(err, &dbErr)
 	switch {
 	case strings.Contains(message, "memory limit") && strings.Contains(message, "exceeded") &&
 		(strings.Contains(message, "tiflash") || strings.Contains(message, "[flash:")):
@@ -406,6 +409,13 @@ func classifyRecallError(err error) recallErrorClassification {
 		}
 	case errors.Is(err, sql.ErrConnDone) || strings.Contains(message, "database is closed"):
 		classification.class = "database_closed"
+		classification.source = "tenant_database"
+		classification.retryable = true
+	case dbErr != nil:
+		classification.class = "database_error"
+		classification.source = "tenant_database"
+	case strings.Contains(message, "operation was canceled"):
+		classification.class = "database_error"
 		classification.source = "tenant_database"
 		classification.retryable = true
 	}

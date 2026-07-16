@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
+
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/reqid"
 )
@@ -182,6 +184,19 @@ func TestClassifyRecallError(t *testing.T) {
 			name:          "database closed",
 			err:           errors.New("sql: database is closed"),
 			wantClass:     "database_closed",
+			wantSource:    "tenant_database",
+			wantRetryable: true,
+		},
+		{
+			name:       "database error",
+			err:        &mysql.MySQLError{Number: 1064, Message: "syntax error"},
+			wantClass:  "database_error",
+			wantSource: "tenant_database",
+		},
+		{
+			name:          "database operation canceled",
+			err:           errors.New("dial tcp 192.0.2.1:4000: operation was canceled"),
+			wantClass:     "database_error",
 			wantSource:    "tenant_database",
 			wantRetryable: true,
 		},
