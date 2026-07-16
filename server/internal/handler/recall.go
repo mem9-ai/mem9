@@ -2,9 +2,13 @@ package handler
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
+	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -88,6 +92,7 @@ var (
 	recallCoverageEnglishTokenRe = regexp.MustCompile(`\b[a-z][a-z0-9'-]{3,}\b`)
 	recallCoverageCJKTokenRe     = regexp.MustCompile(`[\p{Han}]{2,6}`)
 	recallCoverageSpaceRe        = regexp.MustCompile(`\s+`)
+	recallHTTPStatusRe           = regexp.MustCompile(`(?i)(?:status(?:\s+code)?|http(?:\s+status)?)\D{0,8}([1-5]\d{2})`)
 )
 
 type recallTemporalIntent int
@@ -135,6 +140,19 @@ type recallSelectionStats struct {
 	backfillCount          int
 }
 
+type recallBranchResult struct {
+	name     string
+	duration time.Duration
+	err      error
+}
+
+type recallErrorClassification struct {
+	class          string
+	source         string
+	retryable      bool
+	upstreamStatus int
+}
+
 func (s *Server) defaultConfidenceRecallSearch(
 	ctx context.Context,
 	auth *domain.AuthInfo,
@@ -163,16 +181,17 @@ func (s *Server) defaultConfidenceRecallSearch(
 		pinnedCandidates  []service.RecallCandidate
 		insightCandidates []service.RecallCandidate
 		sessionCandidates []service.RecallCandidate
-		pinnedDuration    time.Duration
-		insightDuration   time.Duration
-		sessionDuration   time.Duration
+		pinnedResult      = recallBranchResult{name: string(service.RecallSourcePinned)}
+		insightResult     = recallBranchResult{name: string(service.RecallSourceInsight)}
+		sessionResult     = recallBranchResult{name: string(service.RecallSourceSession)}
 	)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		branchStart := time.Now()
 		candidates, err := svc.memory.SearchCandidates(groupCtx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
-		pinnedDuration = time.Since(branchStart)
+		pinnedResult.duration = time.Since(branchStart)
+		pinnedResult.err = err
 		if err != nil {
 			return err
 		}
@@ -182,7 +201,8 @@ func (s *Server) defaultConfidenceRecallSearch(
 	group.Go(func() error {
 		branchStart := time.Now()
 		candidates, err := svc.memory.SearchCandidates(groupCtx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
-		insightDuration = time.Since(branchStart)
+		insightResult.duration = time.Since(branchStart)
+		insightResult.err = err
 		if err != nil {
 			return err
 		}
@@ -192,7 +212,8 @@ func (s *Server) defaultConfidenceRecallSearch(
 	group.Go(func() error {
 		branchStart := time.Now()
 		candidates, err := svc.session.SearchCandidates(groupCtx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
-		sessionDuration = time.Since(branchStart)
+		sessionResult.duration = time.Since(branchStart)
+		sessionResult.err = err
 		if err != nil {
 			return err
 		}
@@ -200,6 +221,11 @@ func (s *Server) defaultConfidenceRecallSearch(
 		return nil
 	})
 	if err := group.Wait(); err != nil {
+		s.logConfidenceRecallFailure(ctx, auth.ClusterID, start, err, [3]recallBranchResult{
+			pinnedResult,
+			insightResult,
+			sessionResult,
+		})
 		return nil, 0, err
 	}
 
@@ -231,13 +257,159 @@ func (s *Server) defaultConfidenceRecallSearch(
 		"backfill_selected", stats.backfillCount,
 		"returned", len(memories),
 		"cutoff_reason", cutoffReason,
-		"pinned_ms", pinnedDuration.Milliseconds(),
-		"insight_ms", insightDuration.Milliseconds(),
-		"session_ms", sessionDuration.Milliseconds(),
+		"pinned_ms", pinnedResult.duration.Milliseconds(),
+		"insight_ms", insightResult.duration.Milliseconds(),
+		"session_ms", sessionResult.duration.Milliseconds(),
 		"selection_ms", selectionDuration.Milliseconds(),
 		"total_ms", time.Since(start).Milliseconds(),
 	)
 	return memories, len(memories), nil
+}
+
+func (s *Server) logConfidenceRecallFailure(
+	ctx context.Context,
+	clusterID string,
+	start time.Time,
+	primaryErr error,
+	branches [3]recallBranchResult,
+) {
+	primaryBranch := recallPrimaryBranch(primaryErr, branches)
+	primaryCause := primaryErr
+	cancelOrigin := "none"
+	if ctxErr := ctx.Err(); ctxErr != nil && recallBranchCanceled(primaryErr) {
+		primaryBranch = "request"
+		primaryCause = ctxErr
+		switch {
+		case errors.Is(ctxErr, context.DeadlineExceeded):
+			cancelOrigin = "deadline"
+		case errors.Is(ctxErr, context.Canceled):
+			cancelOrigin = "client"
+		}
+	} else if recallHasCanceledSibling(primaryBranch, branches) {
+		cancelOrigin = "sibling_failure"
+	}
+	classification := classifyRecallError(primaryCause)
+
+	logger := s.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	attrs := []slog.Attr{
+		slog.String("error_role", "recall_summary"),
+		slog.String("cluster_id", clusterID),
+		slog.String("primary_branch", primaryBranch),
+		slog.String("primary_error_class", classification.class),
+		slog.String("primary_error_source", classification.source),
+		slog.Bool("primary_retryable", classification.retryable),
+		slog.Any("canceled_branches", recallCanceledBranches(primaryBranch, branches)),
+		slog.String("cancel_origin", cancelOrigin),
+		slog.String("pinned_outcome", recallBranchOutcome(branches[0].err)),
+		slog.Int64("pinned_ms", branches[0].duration.Milliseconds()),
+		slog.String("insight_outcome", recallBranchOutcome(branches[1].err)),
+		slog.Int64("insight_ms", branches[1].duration.Milliseconds()),
+		slog.String("session_outcome", recallBranchOutcome(branches[2].err)),
+		slog.Int64("session_ms", branches[2].duration.Milliseconds()),
+		slog.Int64("total_ms", time.Since(start).Milliseconds()),
+		slog.Any("err", primaryErr),
+	}
+	if classification.upstreamStatus != 0 {
+		attrs = append(attrs, slog.Int("primary_upstream_status", classification.upstreamStatus))
+	}
+	logger.LogAttrs(ctx, slog.LevelError, "confidence recall search failed", attrs...)
+}
+
+func recallPrimaryBranch(primaryErr error, branches [3]recallBranchResult) string {
+	for _, branch := range branches {
+		if branch.err != nil && errors.Is(primaryErr, branch.err) && errors.Is(branch.err, primaryErr) {
+			return branch.name
+		}
+	}
+	return "unknown"
+}
+
+func recallHasCanceledSibling(primaryBranch string, branches [3]recallBranchResult) bool {
+	for _, branch := range branches {
+		if branch.name != primaryBranch && recallBranchCanceled(branch.err) {
+			return true
+		}
+	}
+	return false
+}
+
+func recallCanceledBranches(primaryBranch string, branches [3]recallBranchResult) []string {
+	canceled := make([]string, 0, len(branches))
+	for _, branch := range branches {
+		if branch.name != primaryBranch && recallBranchCanceled(branch.err) {
+			canceled = append(canceled, branch.name)
+		}
+	}
+	return canceled
+}
+
+func recallBranchCanceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func recallBranchOutcome(err error) string {
+	switch {
+	case err == nil:
+		return "success"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	default:
+		return "failed"
+	}
+}
+
+func classifyRecallError(err error) recallErrorClassification {
+	classification := recallErrorClassification{
+		class:  "unknown",
+		source: "internal",
+	}
+
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		classification.class = "context_deadline_exceeded"
+		classification.source = "request_context"
+		classification.retryable = true
+		return classification
+	case errors.Is(err, context.Canceled):
+		classification.class = "context_canceled"
+		classification.source = "request_context"
+		return classification
+	case err == nil:
+		return classification
+	}
+
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "memory limit exceeded") &&
+		(strings.Contains(message, "tiflash") || strings.Contains(message, "[flash:")):
+		classification.class = "tiflash_memory_limit"
+		classification.source = "tiflash"
+		classification.retryable = true
+	case strings.Contains(message, "inference"):
+		classification.class = "inference_http_error"
+		classification.source = "inference"
+		if matches := recallHTTPStatusRe.FindStringSubmatch(message); len(matches) == 2 {
+			if status, parseErr := strconv.Atoi(matches[1]); parseErr == nil {
+				classification.upstreamStatus = status
+				if status >= http.StatusInternalServerError {
+					classification.class = "inference_upstream_5xx"
+					classification.retryable = true
+				} else if status == http.StatusTooManyRequests {
+					classification.retryable = true
+				}
+			}
+		}
+	case errors.Is(err, sql.ErrConnDone) || strings.Contains(message, "database is closed"):
+		classification.class = "database_closed"
+		classification.source = "tenant_database"
+		classification.retryable = true
+	}
+	return classification
 }
 
 func (s *Server) singlePoolConfidenceRecallSearch(
