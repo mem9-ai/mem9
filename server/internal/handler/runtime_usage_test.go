@@ -1,11 +1,18 @@
 package handler
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
 
@@ -209,37 +216,189 @@ func TestNormalizeRuntimeQuotaErrorBodyUsesStatusMessageFallbackWithDetails(t *t
 	}
 }
 
-func TestHandleRuntimeUsageErrorReturnsPostQuotaRateLimit(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	server := &Server{}
-	server.handleRuntimeUsageError(recorder, &runtimeusage.QuotaDeniedError{
-		StatusCode: http.StatusTooManyRequests,
-		RetryAfter: "20",
-		Body: []byte(`{
-			"code":"post_quota_rate_limited",
-			"message":"Post-quota rate limit exceeded.",
-			"details":{
-				"meter":"memory_recall_requests"
-			}
-		}`),
-	})
+func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
+	t.Parallel()
 
-	if recorder.Code != http.StatusTooManyRequests {
-		t.Fatalf("status = %d, want 429", recorder.Code)
+	tests := []struct {
+		name           string
+		err            error
+		details        runtimeUsageErrorDetails
+		wantStatus     int
+		wantClass      string
+		wantRetryable  bool
+		wantStage      string
+		wantClusterID  string
+		wantMeter      string
+		wantOperation  string
+		wantMessage    string
+		wantRetryAfter string
+	}{
+		{
+			name: "quota rate limit during reserve",
+			err: &runtimeusage.QuotaDeniedError{
+				StatusCode: http.StatusTooManyRequests,
+				RetryAfter: "20",
+				Body: []byte(`{
+					"code":"post_quota_rate_limited",
+					"message":"Post-quota rate limit exceeded.",
+					"details":{"meter":"memory_recall_requests"}
+				}`),
+			},
+			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
+				ClusterID:     "cluster-reserve",
+				APIKeySubject: "secret-api-key-subject",
+			}, runtimeusage.MeterMemoryRecallRequests),
+			wantStatus:     http.StatusTooManyRequests,
+			wantClass:      "quota_denied",
+			wantRetryable:  true,
+			wantStage:      runtimeUsageStageReserve,
+			wantClusterID:  "cluster-reserve",
+			wantMeter:      runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:    "Post-quota rate limit exceeded.",
+			wantRetryAfter: "20",
+		},
+		{
+			name: "quota denied during reserve",
+			err:  &runtimeusage.QuotaDeniedError{StatusCode: http.StatusPaymentRequired},
+			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
+				ClusterID: "cluster-denied",
+			}, runtimeusage.MeterMemoryWriteRequests),
+			wantStatus:    http.StatusPaymentRequired,
+			wantClass:     "quota_denied",
+			wantRetryable: false,
+			wantStage:     runtimeUsageStageReserve,
+			wantClusterID: "cluster-denied",
+			wantMeter:     runtimeusage.MeterMemoryWriteRequests,
+			wantMessage:   "Runtime access is blocked.",
+		},
+		{
+			name: "provider unavailable during finalize",
+			err:  &runtimeusage.UnavailableError{Err: errors.New("provider timeout")},
+			details: runtimeUsageFinalizeErrorDetails(&runtimeusage.OperationLease{
+				OperationID: "operation-unavailable",
+				Subject: runtimeusage.Subject{
+					ClusterID:     "cluster-finalize",
+					APIKeySubject: "secret-api-key-subject",
+				},
+				Meter: runtimeusage.MeterMemoryWriteRequests,
+			}),
+			wantStatus:    http.StatusServiceUnavailable,
+			wantClass:     "unavailable",
+			wantRetryable: true,
+			wantStage:     runtimeUsageStageFinalize,
+			wantClusterID: "cluster-finalize",
+			wantMeter:     runtimeusage.MeterMemoryWriteRequests,
+			wantOperation: "operation-unavailable",
+			wantMessage:   "runtime usage unavailable",
+		},
+		{
+			name: "operation conflict during finalize",
+			err:  &runtimeusage.ConflictError{StatusCode: http.StatusConflict},
+			details: runtimeUsageFinalizeErrorDetails(&runtimeusage.OperationLease{
+				OperationID: "operation-conflict",
+				Subject:     runtimeusage.Subject{ClusterID: "cluster-conflict"},
+				Meter:       runtimeusage.MeterMemoryWriteRequests,
+			}),
+			wantStatus:    http.StatusBadGateway,
+			wantClass:     "conflict",
+			wantRetryable: true,
+			wantStage:     runtimeUsageStageFinalize,
+			wantClusterID: "cluster-conflict",
+			wantMeter:     runtimeusage.MeterMemoryWriteRequests,
+			wantOperation: "operation-conflict",
+			wantMessage:   "runtime usage conflict",
+		},
 	}
-	if got := recorder.Header().Get("Retry-After"); got != "20" {
-		t.Fatalf("Retry-After = %q, want 20", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var logBuf bytes.Buffer
+			logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&logBuf, nil)))
+			server := &Server{logger: logger}
+			recorder := httptest.NewRecorder()
+			ctx := reqid.NewContext(context.Background(), "request-runtime-usage")
+
+			server.handleRuntimeUsageError(ctx, recorder, tt.err, tt.details)
+
+			if recorder.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
+			}
+			if got := recorder.Header().Get("Retry-After"); got != tt.wantRetryAfter {
+				t.Fatalf("Retry-After = %q, want %q", got, tt.wantRetryAfter)
+			}
+			body := decodeRuntimeQuotaErrorBody(t, recorder.Body.Bytes())
+			if body["error"] != tt.wantMessage {
+				t.Fatalf("response error = %v, want %q", body["error"], tt.wantMessage)
+			}
+
+			entry := decodeSingleRuntimeUsageLog(t, &logBuf)
+			assertRuntimeUsageLogField(t, entry, "msg", "runtime usage request failed")
+			assertRuntimeUsageLogField(t, entry, "request_id", "request-runtime-usage")
+			assertRuntimeUsageLogField(t, entry, "error_class", tt.wantClass)
+			assertRuntimeUsageLogField(t, entry, "error_source", "runtime_usage")
+			assertRuntimeUsageLogField(t, entry, "stage", tt.wantStage)
+			assertRuntimeUsageLogField(t, entry, "http_status", float64(tt.wantStatus))
+			assertRuntimeUsageLogField(t, entry, "retryable", tt.wantRetryable)
+			assertRuntimeUsageLogField(t, entry, "cluster_id", tt.wantClusterID)
+			assertRuntimeUsageLogField(t, entry, "meter", tt.wantMeter)
+			if tt.wantOperation == "" {
+				if _, ok := entry["operation_id"]; ok {
+					t.Fatalf("operation_id = %v, want field omitted", entry["operation_id"])
+				}
+			} else {
+				assertRuntimeUsageLogField(t, entry, "operation_id", tt.wantOperation)
+			}
+			if bytes.Contains(logBuf.Bytes(), []byte("secret-api-key-subject")) {
+				t.Fatal("API key subject leaked into runtime usage log")
+			}
+		})
 	}
-	got := decodeRuntimeQuotaErrorBody(t, recorder.Body.Bytes())
-	if got["error"] != "Post-quota rate limit exceeded." {
-		t.Fatalf("unexpected envelope: %#v", got)
+}
+
+func TestRuntimeUsagePostRequestContextPreservesValuesAndBoundsLifetime(t *testing.T) {
+	t.Parallel()
+
+	parent, cancelParent := context.WithCancel(reqid.NewContext(context.Background(), "request-detached"))
+	cancelParent()
+
+	ctx, cancel := runtimeUsagePostRequestContext(parent)
+	defer cancel()
+
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("detached context error = %v, want nil", err)
 	}
-	if quotaErrorCategory(t, got) != "runtime_quota_denied" {
-		t.Fatalf("details.errorCategory should include stable runtime quota category: %#v", got)
+	if got := reqid.FromContext(ctx); got != "request-detached" {
+		t.Fatalf("request_id = %q, want request-detached", got)
 	}
-	runtimeQuota := runtimeQuotaDetails(t, got)
-	if runtimeQuota["meter"] != "memory_recall_requests" {
-		t.Fatalf("unexpected runtime quota details: %#v", runtimeQuota)
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("detached context deadline is missing")
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 || remaining > runtimeUsagePostRequestTimeout {
+		t.Fatalf("detached context remaining timeout = %s", remaining)
+	}
+}
+
+func decodeSingleRuntimeUsageLog(t *testing.T, buf *bytes.Buffer) map[string]any {
+	t.Helper()
+	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+	if len(lines) != 1 {
+		t.Fatalf("log entry count = %d, want 1: %s", len(lines), buf.String())
+	}
+	var entry map[string]any
+	if err := json.Unmarshal(lines[0], &entry); err != nil {
+		t.Fatalf("decode runtime usage log: %v", err)
+	}
+	return entry
+}
+
+func assertRuntimeUsageLogField(t *testing.T, entry map[string]any, field string, want any) {
+	t.Helper()
+	if got := entry[field]; got != want {
+		t.Fatalf("%s = %v, want %v; log = %#v", field, got, want, entry)
 	}
 }
 

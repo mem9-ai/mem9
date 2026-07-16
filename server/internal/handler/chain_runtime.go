@@ -140,7 +140,7 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 			result, err := targetSvc.ingest.ReconcilePhase2(ctx, nodeAuth.AgentName, req.AgentID, req.AppID, req.SessionID, factsForTarget, req.ExternalProvenance)
 			if err != nil {
 				if s.runtimeUsageEnabled() && lease != nil {
-					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, err)
+					s.afterRuntimeUsageMemoryCreateFailure(ctx, lease, err)
 				}
 				logger.WarnContext(ctx, "space chain routed reconcile failed",
 					"chain_id", auth.Chain.ChainID,
@@ -158,7 +158,7 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 			}
 			if result.Status == "failed" {
 				if s.runtimeUsageEnabled() && lease != nil {
-					s.runtimeUsage.AfterMemoryCreateFailure(context.Background(), lease, errors.New("routed reconcile failed"))
+					s.afterRuntimeUsageMemoryCreateFailure(ctx, lease, errors.New("routed reconcile failed"))
 				}
 				logger.WarnContext(ctx, "space chain routed reconcile returned failed",
 					"chain_id", auth.Chain.ChainID,
@@ -172,7 +172,7 @@ func (s *Server) reconcileRoutedChainFacts(ctx context.Context, auth *domain.Aut
 				return
 			}
 			if s.runtimeUsageEnabled() && lease != nil {
-				if err := withRuntimeUsagePostSuccessContext(func(ctx context.Context) error {
+				if err := withRuntimeUsagePostSuccessContext(ctx, func(ctx context.Context) error {
 					return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
 						MemoryIDs:       result.InsightIDs,
 						AgentName:       nodeAuth.AgentName,

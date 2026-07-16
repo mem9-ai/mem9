@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -13,9 +14,18 @@ import (
 )
 
 const (
-	runtimeUsagePostSuccessTimeout  = 10 * time.Second
+	runtimeUsagePostRequestTimeout  = 10 * time.Second
 	runtimeQuotaPublicErrorCategory = "runtime_quota_denied"
+	runtimeUsageStageReserve        = "reserve"
+	runtimeUsageStageFinalize       = "finalize"
 )
+
+type runtimeUsageErrorDetails struct {
+	stage       string
+	clusterID   string
+	meter       string
+	operationID string
+}
 
 func (s *Server) runtimeUsageEnabled() bool {
 	return s != nil && s.runtimeUsage != nil && s.runtimeUsage.Enabled()
@@ -31,11 +41,45 @@ func memoryIDs(memories []domain.Memory) []string {
 	return ids
 }
 
-func withRuntimeUsagePostSuccessContext(run func(context.Context) error) error {
+func withRuntimeUsagePostSuccessContext(parent context.Context, run func(context.Context) error) error {
 	// Post-success finalization must survive request cancellation after tenant writes commit.
-	ctx, cancel := context.WithTimeout(context.Background(), runtimeUsagePostSuccessTimeout)
+	ctx, cancel := runtimeUsagePostRequestContext(parent)
 	defer cancel()
 	return run(ctx)
+}
+
+func withRuntimeUsagePostFailureContext(parent context.Context, run func(context.Context)) {
+	ctx, cancel := runtimeUsagePostRequestContext(parent)
+	defer cancel()
+	run(ctx)
+}
+
+func (s *Server) afterRuntimeUsageRecallFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
+	withRuntimeUsagePostFailureContext(parent, func(ctx context.Context) {
+		s.runtimeUsage.AfterRecallFailure(ctx, lease, cause)
+	})
+}
+
+func (s *Server) afterRuntimeUsageMemoryCreateFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
+	withRuntimeUsagePostFailureContext(parent, func(ctx context.Context) {
+		s.runtimeUsage.AfterMemoryCreateFailure(ctx, lease, cause)
+	})
+}
+
+func (s *Server) afterRuntimeUsageMemoryUpdateFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
+	withRuntimeUsagePostFailureContext(parent, func(ctx context.Context) {
+		s.runtimeUsage.AfterMemoryUpdateFailure(ctx, lease, cause)
+	})
+}
+
+func (s *Server) afterRuntimeUsageMemoryDeleteFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
+	withRuntimeUsagePostFailureContext(parent, func(ctx context.Context) {
+		s.runtimeUsage.AfterMemoryDeleteFailure(ctx, lease, cause)
+	})
+}
+
+func runtimeUsagePostRequestContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), runtimeUsagePostRequestTimeout)
 }
 
 func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {
@@ -57,7 +101,33 @@ func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {
 	}
 }
 
-func (s *Server) handleRuntimeUsageError(w http.ResponseWriter, err error) {
+func runtimeUsageReserveErrorDetails(auth *domain.AuthInfo, meter string) runtimeUsageErrorDetails {
+	return runtimeUsageErrorDetails{
+		stage:     runtimeUsageStageReserve,
+		clusterID: subjectFromAuth(auth).ClusterID,
+		meter:     meter,
+	}
+}
+
+func runtimeUsageFinalizeErrorDetails(lease *runtimeusage.OperationLease) runtimeUsageErrorDetails {
+	details := runtimeUsageErrorDetails{stage: runtimeUsageStageFinalize}
+	if lease == nil {
+		return details
+	}
+	details.clusterID = lease.Subject.ClusterID
+	details.meter = lease.Meter
+	details.operationID = lease.OperationID
+	return details
+}
+
+func (s *Server) handleRuntimeUsageError(
+	ctx context.Context,
+	w http.ResponseWriter,
+	err error,
+	details runtimeUsageErrorDetails,
+) {
+	s.logRuntimeUsageError(ctx, err, details)
+
 	var denied *runtimeusage.QuotaDeniedError
 	if errors.As(err, &denied) {
 		status := denied.Status()
@@ -76,6 +146,50 @@ func (s *Server) handleRuntimeUsageError(w http.ResponseWriter, err error) {
 		return
 	}
 	respondError(w, status, "runtime usage unavailable")
+}
+
+func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details runtimeUsageErrorDetails) {
+	errorClass, status, retryable := classifyRuntimeUsageError(err)
+	attrs := []any{
+		"error_class", errorClass,
+		"error_source", "runtime_usage",
+		"stage", details.stage,
+		"http_status", status,
+		"retryable", retryable,
+		"err", err,
+	}
+	if details.clusterID != "" {
+		attrs = append(attrs, "cluster_id", details.clusterID)
+	}
+	if details.meter != "" {
+		attrs = append(attrs, "meter", details.meter)
+	}
+	if details.operationID != "" {
+		attrs = append(attrs, "operation_id", details.operationID)
+	}
+
+	logger := s.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	level := slog.LevelError
+	if errorClass == "quota_denied" {
+		level = slog.LevelWarn
+	}
+	logger.Log(ctx, level, "runtime usage request failed", attrs...)
+}
+
+func classifyRuntimeUsageError(err error) (string, int, bool) {
+	status := runtimeusage.HTTPStatus(err)
+	var denied *runtimeusage.QuotaDeniedError
+	if errors.As(err, &denied) {
+		return "quota_denied", status, status == http.StatusTooManyRequests
+	}
+	var conflict *runtimeusage.ConflictError
+	if errors.As(err, &conflict) {
+		return "conflict", status, true
+	}
+	return "unavailable", status, true
 }
 
 func isRuntimeUsageError(err error) bool {
