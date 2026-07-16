@@ -165,6 +165,13 @@ func TestClassifyRecallError(t *testing.T) {
 			wantRetryable: true,
 		},
 		{
+			name:          "TiFlash flash error",
+			err:           errors.New("[FLASH:Coprocessor:Memory limit exceeded for instance]"),
+			wantClass:     "tiflash_memory_limit",
+			wantSource:    "tiflash",
+			wantRetryable: true,
+		},
+		{
 			name:               "inference upstream 503",
 			err:                errors.New("TiDB Cloud Inference: status code 503"),
 			wantClass:          "inference_upstream_5xx",
@@ -179,6 +186,14 @@ func TestClassifyRecallError(t *testing.T) {
 			wantSource:         "inference",
 			wantRetryable:      true,
 			wantUpstreamStatus: 429,
+		},
+		{
+			name:               "inference HTTP status 504",
+			err:                errors.New("TiDB Cloud Inference: HTTP status 504"),
+			wantClass:          "inference_upstream_5xx",
+			wantSource:         "inference",
+			wantRetryable:      true,
+			wantUpstreamStatus: 504,
 		},
 		{
 			name:          "database closed",

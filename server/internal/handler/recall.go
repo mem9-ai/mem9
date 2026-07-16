@@ -93,7 +93,7 @@ var (
 	recallCoverageEnglishTokenRe = regexp.MustCompile(`\b[a-z][a-z0-9'-]{3,}\b`)
 	recallCoverageCJKTokenRe     = regexp.MustCompile(`[\p{Han}]{2,6}`)
 	recallCoverageSpaceRe        = regexp.MustCompile(`\s+`)
-	recallHTTPStatusRe           = regexp.MustCompile(`(?i)(?:status(?:\s+code)?|http(?:\s+status)?)\D{0,8}([1-5]\d{2})`)
+	recallInferenceStatusRe      = regexp.MustCompile(`(?i)\btidb cloud inference:\s*(?:status code|status|http status|http)\s*:?\s*([1-5][0-9]{2})\b`)
 )
 
 type recallTemporalIntent int
@@ -393,10 +393,10 @@ func classifyRecallError(err error) recallErrorClassification {
 		classification.class = "tiflash_memory_limit"
 		classification.source = "tiflash"
 		classification.retryable = true
-	case strings.Contains(message, "inference"):
+	case strings.Contains(message, "tidb cloud inference"):
 		classification.class = "inference_http_error"
 		classification.source = "inference"
-		if matches := recallHTTPStatusRe.FindStringSubmatch(message); len(matches) == 2 {
+		if matches := recallInferenceStatusRe.FindStringSubmatch(message); len(matches) == 2 {
 			if status, parseErr := strconv.Atoi(matches[1]); parseErr == nil {
 				classification.upstreamStatus = status
 				if status >= http.StatusInternalServerError {
