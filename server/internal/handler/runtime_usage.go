@@ -18,6 +18,8 @@ const (
 	runtimeQuotaPublicErrorCategory = "runtime_quota_denied"
 	runtimeUsageStageReserve        = "reserve"
 	runtimeUsageStageFinalize       = "finalize"
+	runtimeUsageRoleClientResponse  = "client_response"
+	runtimeUsageRoleBackground      = "background_finalize"
 )
 
 type runtimeUsageErrorDetails struct {
@@ -126,7 +128,7 @@ func (s *Server) handleRuntimeUsageError(
 	err error,
 	details runtimeUsageErrorDetails,
 ) {
-	s.logRuntimeUsageError(ctx, err, details)
+	s.logRuntimeUsageError(ctx, err, details, runtimeUsageRoleClientResponse)
 
 	var denied *runtimeusage.QuotaDeniedError
 	if errors.As(err, &denied) {
@@ -148,13 +150,24 @@ func (s *Server) handleRuntimeUsageError(
 	respondError(w, status, "runtime usage unavailable")
 }
 
-func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details runtimeUsageErrorDetails) {
+func (s *Server) logRuntimeUsageBackgroundFinalizeError(ctx context.Context, err error, details runtimeUsageErrorDetails) {
+	s.logRuntimeUsageError(ctx, err, details, runtimeUsageRoleBackground)
+}
+
+func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details runtimeUsageErrorDetails, errorRole string) {
 	errorClass, status, retryable := classifyRuntimeUsageError(err)
+	statusField := "http_status"
+	message := "runtime usage request failed"
+	if errorRole == runtimeUsageRoleBackground {
+		statusField = "mapped_status"
+		message = "runtime usage background finalization failed"
+	}
 	attrs := []any{
 		"error_class", errorClass,
 		"error_source", "runtime_usage",
+		"error_role", errorRole,
 		"stage", details.stage,
-		"http_status", status,
+		statusField, status,
 		"retryable", retryable,
 		"err", err,
 	}
@@ -176,7 +189,7 @@ func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details ru
 	if errorClass == "quota_denied" {
 		level = slog.LevelWarn
 	}
-	logger.Log(ctx, level, "runtime usage request failed", attrs...)
+	logger.Log(ctx, level, message, attrs...)
 }
 
 func classifyRuntimeUsageError(err error) (string, int, bool) {

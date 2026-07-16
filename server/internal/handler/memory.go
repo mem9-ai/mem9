@@ -221,7 +221,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 							ObjectsAffected: written,
 						})
 					}); err != nil {
-						s.logRuntimeUsageError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
+						s.logRuntimeUsageBackgroundFinalizeError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
 						return
 					}
 				}
@@ -450,7 +450,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 							ObjectsAffected: written,
 						})
 					}); err != nil {
-						s.logRuntimeUsageError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
+						s.logRuntimeUsageBackgroundFinalizeError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
 						return
 					}
 				}
@@ -483,7 +483,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 						ObjectsAffected: int64(written),
 					})
 				}); err != nil {
-					s.logRuntimeUsageError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
+					s.logRuntimeUsageBackgroundFinalizeError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
 					return
 				}
 			}

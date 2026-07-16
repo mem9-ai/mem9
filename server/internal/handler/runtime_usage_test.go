@@ -338,8 +338,12 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			assertRuntimeUsageLogField(t, entry, "request_id", "request-runtime-usage")
 			assertRuntimeUsageLogField(t, entry, "error_class", tt.wantClass)
 			assertRuntimeUsageLogField(t, entry, "error_source", "runtime_usage")
+			assertRuntimeUsageLogField(t, entry, "error_role", runtimeUsageRoleClientResponse)
 			assertRuntimeUsageLogField(t, entry, "stage", tt.wantStage)
 			assertRuntimeUsageLogField(t, entry, "http_status", float64(tt.wantStatus))
+			if _, ok := entry["mapped_status"]; ok {
+				t.Fatalf("mapped_status = %v, want field omitted", entry["mapped_status"])
+			}
 			assertRuntimeUsageLogField(t, entry, "retryable", tt.wantRetryable)
 			assertRuntimeUsageLogField(t, entry, "cluster_id", tt.wantClusterID)
 			assertRuntimeUsageLogField(t, entry, "meter", tt.wantMeter)
@@ -354,6 +358,38 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 				t.Fatal("API key subject leaked into runtime usage log")
 			}
 		})
+	}
+}
+
+func TestLogRuntimeUsageBackgroundFinalizeError(t *testing.T) {
+	t.Parallel()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&logBuf, nil)))
+	server := &Server{logger: logger}
+	ctx := reqid.NewContext(context.Background(), "request-background-finalize")
+	details := runtimeUsageFinalizeErrorDetails(&runtimeusage.OperationLease{
+		OperationID: "operation-background",
+		Subject:     runtimeusage.Subject{ClusterID: "cluster-background"},
+		Meter:       runtimeusage.MeterMemoryWriteRequests,
+	})
+
+	server.logRuntimeUsageBackgroundFinalizeError(ctx, &runtimeusage.UnavailableError{Err: errors.New("provider timeout")}, details)
+
+	entry := decodeSingleRuntimeUsageLog(t, &logBuf)
+	assertRuntimeUsageLogField(t, entry, "msg", "runtime usage background finalization failed")
+	assertRuntimeUsageLogField(t, entry, "request_id", "request-background-finalize")
+	assertRuntimeUsageLogField(t, entry, "error_class", "unavailable")
+	assertRuntimeUsageLogField(t, entry, "error_source", "runtime_usage")
+	assertRuntimeUsageLogField(t, entry, "error_role", runtimeUsageRoleBackground)
+	assertRuntimeUsageLogField(t, entry, "stage", runtimeUsageStageFinalize)
+	assertRuntimeUsageLogField(t, entry, "mapped_status", float64(http.StatusServiceUnavailable))
+	assertRuntimeUsageLogField(t, entry, "retryable", true)
+	assertRuntimeUsageLogField(t, entry, "cluster_id", "cluster-background")
+	assertRuntimeUsageLogField(t, entry, "meter", runtimeusage.MeterMemoryWriteRequests)
+	assertRuntimeUsageLogField(t, entry, "operation_id", "operation-background")
+	if _, ok := entry["http_status"]; ok {
+		t.Fatalf("http_status = %v, want field omitted", entry["http_status"])
 	}
 }
 
