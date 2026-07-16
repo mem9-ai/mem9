@@ -32,7 +32,7 @@ func TestHandleError_LogsStructuredIncidentClassification(t *testing.T) {
 			name: "TiFlash memory limit",
 			err: &mysql.MySQLError{
 				Number:  1105,
-				Message: "[FLASH:Coprocessor:Memory limit exceeded for instance]",
+				Message: "TiFlashException: Memory limit (total) exceeded",
 			},
 			wantClass:       "tiflash_memory_limit",
 			wantSource:      "tiflash",
@@ -95,6 +95,13 @@ func TestHandleError_LogsStructuredIncidentClassification(t *testing.T) {
 			wantSource:      "tenant_database",
 			wantRetryable:   false,
 			wantDBErrorCode: 1064,
+		},
+		{
+			name:          "database network operation canceled",
+			err:           errors.New("dial tcp 192.0.2.1:4000: operation was canceled"),
+			wantClass:     "database_error",
+			wantSource:    "tenant_database",
+			wantRetryable: true,
 		},
 		{
 			name:          "unknown",

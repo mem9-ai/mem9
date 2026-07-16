@@ -45,9 +45,10 @@ func classifyInternalError(err error) internalErrorClassification {
 		isInferenceError = true
 		classification.upstreamStatus = status
 	}
+	message := strings.ToLower(err.Error())
 
 	switch {
-	case isTiFlashMemoryLimit(err):
+	case isTiFlashMemoryLimit(message):
 		classification.class = "tiflash_memory_limit"
 		classification.source = "tiflash"
 		classification.retryable = true
@@ -67,8 +68,12 @@ func classifyInternalError(err error) internalErrorClassification {
 		classification.class = "context_deadline_exceeded"
 		classification.source = "request_context"
 		classification.retryable = true
-	case errors.Is(err, sql.ErrConnDone) || strings.Contains(strings.ToLower(err.Error()), "database is closed"):
+	case errors.Is(err, sql.ErrConnDone) || strings.Contains(message, "database is closed"):
 		classification.class = "database_closed"
+		classification.source = "tenant_database"
+		classification.retryable = true
+	case strings.Contains(message, "operation was canceled"):
+		classification.class = "database_error"
 		classification.source = "tenant_database"
 		classification.retryable = true
 	case dbErr != nil:
@@ -91,8 +96,8 @@ func tidbCloudInferenceStatus(err error) (int, bool) {
 	return status, true
 }
 
-func isTiFlashMemoryLimit(err error) bool {
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "memory limit exceeded") &&
+func isTiFlashMemoryLimit(message string) bool {
+	return strings.Contains(message, "memory limit") &&
+		strings.Contains(message, "exceeded") &&
 		(strings.Contains(message, "tiflash") || strings.Contains(message, "[flash:"))
 }
