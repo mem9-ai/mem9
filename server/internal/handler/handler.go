@@ -331,7 +331,21 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 	case errors.Is(err, domain.ErrSchemaIncompatible):
 		respondError(w, http.StatusConflict, err.Error())
 	default:
-		s.logger.Error("internal error", "err", err, "request_id", reqid.FromContext(ctx))
+		classification := classifyInternalError(err)
+		attrs := []slog.Attr{
+			slog.String("error_role", "final"),
+			slog.String("error_class", classification.class),
+			slog.String("error_source", classification.source),
+			slog.Bool("retryable", classification.retryable),
+			slog.Any("err", err),
+		}
+		if classification.dbErrorCode != 0 {
+			attrs = append(attrs, slog.Uint64("db_error_code", uint64(classification.dbErrorCode)))
+		}
+		if classification.upstreamStatus != 0 {
+			attrs = append(attrs, slog.Int("upstream_status", classification.upstreamStatus))
+		}
+		s.logger.LogAttrs(ctx, slog.LevelError, "internal error", attrs...)
 		respondError(w, http.StatusInternalServerError, "internal server error")
 	}
 }
