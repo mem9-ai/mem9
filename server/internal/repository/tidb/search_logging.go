@@ -5,11 +5,16 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+)
+
+var searchInferenceStatusPattern = regexp.MustCompile(
+	`(?i)\btidb cloud inference:\s*(?:status code|status|http status|http)\s*:?\s*([1-5][0-9]{2})\b`,
 )
 
 const (
@@ -100,7 +105,7 @@ func classifySearchError(err error) searchErrorDetails {
 		message = strings.ToLower(mysqlErr.Message)
 	}
 	if strings.Contains(message, "memory limit") && strings.Contains(message, "exceeded") &&
-		(strings.Contains(message, "tiflashexception") || strings.Contains(message, "[flash:")) {
+		(strings.Contains(message, "tiflash") || strings.Contains(message, "[flash:")) {
 		details.class = searchErrorClassTiFlashMemoryLimit
 		details.source = searchErrorSourceTiFlash
 		details.retryable = true
@@ -129,15 +134,10 @@ func classifySearchError(err error) searchErrorDetails {
 }
 
 func inferenceStatus(message string) int {
-	const marker = "tidb cloud inference: status code "
-	index := strings.Index(message, marker)
-	if index < 0 {
+	match := searchInferenceStatusPattern.FindStringSubmatch(message)
+	if len(match) != 2 {
 		return 0
 	}
-	value := message[index+len(marker):]
-	if fields := strings.Fields(value); len(fields) > 0 {
-		status, _ := strconv.Atoi(strings.Trim(fields[0], ",.;:"))
-		return status
-	}
-	return 0
+	status, _ := strconv.Atoi(match[1])
+	return status
 }

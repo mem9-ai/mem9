@@ -60,6 +60,16 @@ func TestClassifySearchError(t *testing.T) {
 			},
 		},
 		{
+			name: "inference HTTP status error",
+			err:  errors.New("TiDB Cloud Inference: HTTP status 504"),
+			want: searchErrorDetails{
+				class:          searchErrorClassInferenceUpstream5xx,
+				source:         searchErrorSourceInference,
+				retryable:      true,
+				upstreamStatus: 504,
+			},
+		},
+		{
 			name: "inference request error",
 			err:  errors.New("TiDB Cloud Inference: status code 429: rate limited"),
 			want: searchErrorDetails{
