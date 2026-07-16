@@ -37,17 +37,31 @@ func classifyInternalError(err error) internalErrorClassification {
 		classification.dbErrorCode = dbErr.Number
 	}
 
-	var upstreamErr *llm.HTTPStatusError
-	isInferenceError := errors.As(err, &upstreamErr)
-	if isInferenceError {
-		classification.upstreamStatus = upstreamErr.Code
-	} else if status, ok := tidbCloudInferenceStatus(err); ok {
-		isInferenceError = true
-		classification.upstreamStatus = status
+	var llmErr *llm.HTTPStatusError
+	isLLMError := errors.As(err, &llmErr)
+	if isLLMError {
+		classification.upstreamStatus = llmErr.Code
+	}
+
+	isInferenceError := false
+	if !isLLMError {
+		if status, ok := tidbCloudInferenceStatus(err); ok {
+			isInferenceError = true
+			classification.upstreamStatus = status
+		}
 	}
 	message := strings.ToLower(err.Error())
 
 	switch {
+	case isLLMError && classification.upstreamStatus >= http.StatusInternalServerError &&
+		classification.upstreamStatus < 600:
+		classification.class = "llm_upstream_5xx"
+		classification.source = "llm_provider"
+		classification.retryable = true
+	case isLLMError:
+		classification.class = "llm_http_error"
+		classification.source = "llm_provider"
+		classification.retryable = classification.upstreamStatus == http.StatusTooManyRequests
 	case isTiFlashMemoryLimit(message):
 		classification.class = "tiflash_memory_limit"
 		classification.source = "tiflash"

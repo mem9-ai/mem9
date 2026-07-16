@@ -345,6 +345,9 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 		if classification.upstreamStatus != 0 {
 			attrs = append(attrs, slog.Int("upstream_status", classification.upstreamStatus))
 		}
+		if auth := middleware.AuthFromContext(ctx); auth != nil && auth.ClusterID != "" {
+			attrs = append(attrs, slog.String("cluster_id", auth.ClusterID))
+		}
 		s.logger.LogAttrs(ctx, slog.LevelError, "internal error", attrs...)
 		respondError(w, http.StatusInternalServerError, "internal server error")
 	}

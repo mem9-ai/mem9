@@ -12,7 +12,9 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 
+	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/reqid"
 )
 
@@ -40,6 +42,13 @@ func TestHandleError_LogsStructuredIncidentClassification(t *testing.T) {
 			wantDBErrorCode: 1105,
 		},
 		{
+			name:          "TiFlash flash error",
+			err:           errors.New("[FLASH:Coprocessor:Memory limit exceeded for instance]"),
+			wantClass:     "tiflash_memory_limit",
+			wantSource:    "tiflash",
+			wantRetryable: true,
+		},
+		{
 			name: "TiDB Cloud Inference through MySQL",
 			err: fmt.Errorf("auto vector search: %w", &mysql.MySQLError{
 				Number:  1105,
@@ -52,12 +61,20 @@ func TestHandleError_LogsStructuredIncidentClassification(t *testing.T) {
 			wantUpstreamStatus: http.StatusServiceUnavailable,
 		},
 		{
-			name:               "typed inference upstream unavailable",
+			name:               "typed LLM upstream unavailable",
 			err:                &llm.HTTPStatusError{Code: http.StatusServiceUnavailable, Body: "upstream unavailable"},
-			wantClass:          "inference_upstream_5xx",
-			wantSource:         "inference",
+			wantClass:          "llm_upstream_5xx",
+			wantSource:         "llm_provider",
 			wantRetryable:      true,
 			wantUpstreamStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:               "typed LLM rate limited",
+			err:                &llm.HTTPStatusError{Code: http.StatusTooManyRequests, Body: "rate limited"},
+			wantClass:          "llm_http_error",
+			wantSource:         "llm_provider",
+			wantRetryable:      true,
+			wantUpstreamStatus: http.StatusTooManyRequests,
 		},
 		{
 			name:               "inference rate limited",
@@ -119,7 +136,10 @@ func TestHandleError_LogsStructuredIncidentClassification(t *testing.T) {
 			var logBuf bytes.Buffer
 			logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&logBuf, nil)))
 			srv := &Server{logger: logger}
-			ctx := reqid.NewContext(context.Background(), "request-123")
+			ctx := middleware.WithAuthContext(
+				reqid.NewContext(context.Background(), "request-123"),
+				&domain.AuthInfo{ClusterID: "cluster-123"},
+			)
 			recorder := httptest.NewRecorder()
 			err := fmt.Errorf("recall failed: %w", tt.err)
 
@@ -134,6 +154,7 @@ func TestHandleError_LogsStructuredIncidentClassification(t *testing.T) {
 
 			entry := findHandlerLogEntry(t, decodeHandlerLogs(t, &logBuf), "internal error")
 			assertHandlerLogField(t, entry, "request_id", "request-123")
+			assertHandlerLogField(t, entry, "cluster_id", "cluster-123")
 			assertHandlerLogField(t, entry, "error_role", "final")
 			assertHandlerLogField(t, entry, "error_class", tt.wantClass)
 			assertHandlerLogField(t, entry, "error_source", tt.wantSource)
