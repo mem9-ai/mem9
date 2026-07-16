@@ -315,7 +315,7 @@ func sessionListOrderBy(f domain.MemoryFilter) string {
 	return column + " " + direction + ", id " + direction
 }
 
-func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) (_ []domain.Memory, resultErr error) {
 	conds, args := r.buildSessionFilterConds(f)
 	conds = append(conds, "embedding IS NOT NULL")
 	where := strings.Join(conds, " AND ")
@@ -342,6 +342,7 @@ func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f doma
 		return nil, fmt.Errorf("sessions auto vector search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
+	defer logSearchResultError(ctx, "sessions auto vector search failed", "session", "auto_vector", r.clusterID, start, &resultErr)
 	memories, err := scanSessionRowsWithDistance(rows)
 	if err != nil {
 		return nil, err
@@ -350,7 +351,7 @@ func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f doma
 	return memories, nil
 }
 
-func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f domain.MemoryFilter, limit int) (_ []domain.Memory, resultErr error) {
 	vecStr := vecToString(queryVec)
 	if vecStr == nil {
 		return nil, nil
@@ -382,6 +383,7 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 		return nil, fmt.Errorf("sessions vector search: %w", err)
 	}
 	defer rows.Close()
+	defer logSearchResultError(ctx, "sessions vector search failed", "session", "vector", r.clusterID, start, &resultErr)
 	memories, err := scanSessionRowsWithDistance(rows)
 	if err != nil {
 		return nil, err
@@ -533,7 +535,7 @@ func (r *SessionRepo) fetchFilteredFTSSessions(ctx context.Context, candidates [
 	return ordered, nil
 }
 
-func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) (_ []domain.Memory, resultErr error) {
 	conds, args := r.buildSessionFilterConds(f)
 	if query != "" {
 		conds = append(conds, "content LIKE CONCAT('%', ?, '%')")
@@ -558,6 +560,7 @@ func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.
 		return nil, fmt.Errorf("sessions keyword search: %w", err)
 	}
 	defer rows.Close()
+	defer logSearchResultError(ctx, "sessions keyword search failed", "session", "keyword", r.clusterID, start, &resultErr)
 	memories, err := scanSessionRows(rows)
 	if err != nil {
 		return nil, err

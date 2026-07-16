@@ -39,6 +39,17 @@ func logSearchError(ctx context.Context, message, resource, queryType, clusterID
 	slog.LogAttrs(ctx, slog.LevelError, message, searchErrorLogAttrs(resource, queryType, clusterID, duration, err)...)
 }
 
+func logSearchResultError(
+	ctx context.Context,
+	message, resource, queryType, clusterID string,
+	start time.Time,
+	resultErr *error,
+) {
+	if *resultErr != nil {
+		logSearchError(ctx, message, resource, queryType, clusterID, time.Since(start), *resultErr)
+	}
+}
+
 func searchErrorLogAttrs(resource, queryType, clusterID string, duration time.Duration, err error) []slog.Attr {
 	details := classifySearchError(err)
 	attrs := []slog.Attr{
@@ -88,7 +99,8 @@ func classifySearchError(err error) searchErrorDetails {
 		details.dbErrorCode = int(mysqlErr.Number)
 		message = strings.ToLower(mysqlErr.Message)
 	}
-	if strings.Contains(message, "tiflashexception") && strings.Contains(message, "memory limit") {
+	if strings.Contains(message, "memory limit") && strings.Contains(message, "exceeded") &&
+		(strings.Contains(message, "tiflashexception") || strings.Contains(message, "[flash:")) {
 		details.class = searchErrorClassTiFlashMemoryLimit
 		details.source = searchErrorSourceTiFlash
 		details.retryable = true
