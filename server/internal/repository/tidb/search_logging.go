@@ -17,7 +17,6 @@ const (
 	searchErrorClassDatabaseError        = "database_error"
 	searchErrorClassInferenceHTTPError   = "inference_http_error"
 	searchErrorClassInferenceUpstream5xx = "inference_upstream_5xx"
-	searchErrorClassOperationCanceled    = "operation_canceled"
 	searchErrorClassContextCanceled      = "context_canceled"
 	searchErrorClassContextDeadline      = "context_deadline_exceeded"
 	searchErrorClassTiFlashMemoryLimit   = "tiflash_memory_limit"
@@ -111,7 +110,7 @@ func classifySearchError(err error) searchErrorDetails {
 		return details
 	}
 	if strings.Contains(message, "operation was canceled") {
-		details.class = searchErrorClassOperationCanceled
+		details.retryable = true
 		return details
 	}
 	return details

@@ -22,7 +22,7 @@ func TestClassifySearchError(t *testing.T) {
 			name: "TiFlash memory limit",
 			err: &mysql.MySQLError{
 				Number:  1105,
-				Message: "TiFlashException: Memory limit exceeded for query",
+				Message: "TiFlashException: Memory limit (total) exceeded",
 			},
 			want: searchErrorDetails{
 				class:       searchErrorClassTiFlashMemoryLimit,
@@ -92,10 +92,11 @@ func TestClassifySearchError(t *testing.T) {
 		},
 		{
 			name: "operation canceled",
-			err:  errors.New("read tcp: operation was canceled"),
+			err:  errors.New("dial tcp 192.0.2.1:4000: operation was canceled"),
 			want: searchErrorDetails{
-				class:  searchErrorClassOperationCanceled,
-				source: searchErrorSourceTenantDatabase,
+				class:     searchErrorClassDatabaseError,
+				source:    searchErrorSourceTenantDatabase,
+				retryable: true,
 			},
 		},
 		{
