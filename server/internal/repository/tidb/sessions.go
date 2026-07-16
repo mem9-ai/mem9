@@ -338,7 +338,7 @@ func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f doma
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, domain.ErrAutoVectorSearchSkipped
 		}
-		slog.ErrorContext(ctx, "sessions auto vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
+		logSearchError(ctx, "sessions auto vector search failed", "session", "auto_vector", r.clusterID, time.Since(start), err)
 		return nil, fmt.Errorf("sessions auto vector search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	defer rows.Close()
@@ -378,7 +378,7 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
-		slog.ErrorContext(ctx, "sessions vector search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
+		logSearchError(ctx, "sessions vector search failed", "session", "vector", r.clusterID, time.Since(start), err)
 		return nil, fmt.Errorf("sessions vector search: %w", err)
 	}
 	defer rows.Close()
@@ -397,7 +397,7 @@ func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.Memo
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
-		slog.ErrorContext(ctx, "sessions fts search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
+		logSearchError(ctx, "sessions fts search failed", "session", "fts", r.clusterID, time.Since(start), err)
 		return nil, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
 	slog.DebugContext(ctx, "sessions fts search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
@@ -554,7 +554,7 @@ func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
-		slog.ErrorContext(ctx, "sessions keyword search failed", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "err", err)
+		logSearchError(ctx, "sessions keyword search failed", "session", "keyword", r.clusterID, time.Since(start), err)
 		return nil, fmt.Errorf("sessions keyword search: %w", err)
 	}
 	defer rows.Close()
