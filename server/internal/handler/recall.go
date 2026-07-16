@@ -385,7 +385,7 @@ func classifyRecallError(err error) recallErrorClassification {
 
 	message := strings.ToLower(err.Error())
 	switch {
-	case strings.Contains(message, "memory limit exceeded") &&
+	case strings.Contains(message, "memory limit") && strings.Contains(message, "exceeded") &&
 		(strings.Contains(message, "tiflash") || strings.Contains(message, "[flash:")):
 		classification.class = "tiflash_memory_limit"
 		classification.source = "tiflash"

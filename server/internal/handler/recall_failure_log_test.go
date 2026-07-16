@@ -16,7 +16,7 @@ import (
 )
 
 func TestDefaultConfidenceRecallSearch_LogsPrimaryFailureAndSiblingCancellation(t *testing.T) {
-	primaryErr := errors.New("[FLASH:Coprocessor:Memory limit exceeded for instance]")
+	primaryErr := errors.New("TiFlashException: Memory limit (total) exceeded")
 	allStarted := make(chan struct{})
 	var started atomic.Int32
 	startBranch := func() {
@@ -157,7 +157,7 @@ func TestClassifyRecallError(t *testing.T) {
 	}{
 		{
 			name:          "TiFlash memory limit",
-			err:           errors.New("[FLASH:Coprocessor:Memory limit exceeded for instance]"),
+			err:           errors.New("TiFlashException: Memory limit (total) exceeded"),
 			wantClass:     "tiflash_memory_limit",
 			wantSource:    "tiflash",
 			wantRetryable: true,
