@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"net/http"
+
+	"github.com/qiffang/mnemos/server/internal/reqid"
 )
 
 const corsMaxAge = "86400"
@@ -39,7 +41,8 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key, X-Mnemo-Agent-Id, Authorization, If-Match")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key, X-Mnemo-Agent-Id, Authorization, If-Match, "+reqid.Header)
+			w.Header().Set("Access-Control-Expose-Headers", reqid.Header)
 			w.Header().Set("Access-Control-Max-Age", corsMaxAge)
 
 			if r.Method == http.MethodOptions {

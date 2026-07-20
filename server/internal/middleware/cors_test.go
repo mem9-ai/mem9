@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/qiffang/mnemos/server/internal/reqid"
 )
 
 func TestCORS_AllowsPreflightBeforeNext(t *testing.T) {
@@ -16,7 +18,7 @@ func TestCORS_AllowsPreflightBeforeNext(t *testing.T) {
 	req := httptest.NewRequest(http.MethodOptions, "/v1alpha2/mem9s/memories", nil)
 	req.Header.Set("Origin", "http://localhost:4321")
 	req.Header.Set("Access-Control-Request-Method", "GET")
-	req.Header.Set("Access-Control-Request-Headers", "X-API-Key")
+	req.Header.Set("Access-Control-Request-Headers", "X-API-Key, "+reqid.Header)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -35,6 +37,9 @@ func TestCORS_AllowsPreflightBeforeNext(t *testing.T) {
 	}
 	if got := rr.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "If-Match") {
 		t.Fatalf("allow headers = %q, want If-Match", got)
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, reqid.Header) {
+		t.Fatalf("allow headers = %q, want %s", got, reqid.Header)
 	}
 }
 
@@ -73,5 +78,8 @@ func TestCORS_AddsHeadersForAllowedRequest(t *testing.T) {
 	}
 	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://mem9.ai" {
 		t.Fatalf("allow origin = %q", got)
+	}
+	if got := rr.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(got, reqid.Header) {
+		t.Fatalf("expose headers = %q, want %s", got, reqid.Header)
 	}
 }
