@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/reqid"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -50,6 +52,68 @@ func TestHTTPClientReserveAllowsNullRemainingIncludedUnits(t *testing.T) {
 	}
 	if reservation.RemainingIncludedUnits != nil {
 		t.Fatalf("RemainingIncludedUnits = %v, want nil", *reservation.RemainingIncludedUnits)
+	}
+}
+
+func TestHTTPClientPropagatesRequestID(t *testing.T) {
+	const requestID = "req_AAAAAAAAAAAAAAAAAAAAAA"
+	tests := []struct {
+		name     string
+		response string
+		call     func(context.Context, *HTTPClient) error
+	}{
+		{
+			name: "reserve",
+			response: `{
+				"operationId": "op-request-id",
+				"meter": "memory_write_requests",
+				"units": 1,
+				"status": "reserved",
+				"expiresAt": "2026-05-19T08:00:00Z",
+				"remainingIncludedUnits": 1,
+				"reservedUnits": 1,
+				"overageAllowed": false
+			}`,
+			call: func(ctx context.Context, client *HTTPClient) error {
+				_, err := client.Reserve(ctx, Subject{APIKeySubject: "api-key-subject"}, "op-request-id", Operation{
+					Meter: MeterMemoryWriteRequests,
+					Units: 1,
+				})
+				return err
+			},
+		},
+		{
+			name:     "finalize",
+			response: `{}`,
+			call: func(ctx context.Context, client *HTTPClient) error {
+				return client.FinalizeReservation(ctx, Subject{APIKeySubject: "api-key-subject"}, "op-request-id", ReservationStatusCommitted, reservationCommitReason)
+			},
+		},
+		{
+			name:     "runtime state",
+			response: `{"mem9ApiKey":{"status":"active"},"meters":[]}`,
+			call: func(ctx context.Context, client *HTTPClient) error {
+				_, err := client.RuntimeState(ctx, Subject{APIKeySubject: "api-key-subject"})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+			client.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if got := req.Header.Get("X-Request-Id"); got != requestID {
+					t.Fatalf("X-Request-Id = %q, want %q", got, requestID)
+				}
+				return jsonResponse(tt.response), nil
+			})}
+
+			ctx := reqid.NewContext(context.Background(), requestID)
+			if err := tt.call(ctx, client); err != nil {
+				t.Fatalf("call: %v", err)
+			}
+		})
 	}
 }
 

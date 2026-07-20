@@ -193,11 +193,10 @@ func (s *Server) Router(
 	r := chi.NewRouter()
 
 	// Global middleware.
+	r.Use(reqid.Middleware)
+	r.Use(requestLogger(s.logger))
 	r.Use(chimw.Recoverer)
 	r.Use(corsMW)
-	r.Use(chimw.RequestID)
-	r.Use(reqid.NewContextMiddleware)
-	r.Use(requestLogger(s.logger))
 	r.Use(rateLimitMW)
 	r.Use(metrics.Middleware)
 

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/reqid"
 )
 
 type HTTPClient struct {
@@ -77,6 +79,9 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 	}
 	req.Header.Set("Authorization", "Bearer "+c.internalSecret)
 	req.Header.Set("X-API-Key", subject.APIKeySubject)
+	if requestID := reqid.FromContext(ctx); requestID != "" {
+		req.Header.Set(reqid.Header, requestID)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
