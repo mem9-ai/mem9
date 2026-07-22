@@ -314,7 +314,13 @@ func respondError(w http.ResponseWriter, status int, msg string) {
 
 // handleError maps domain errors to HTTP status codes.
 func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err error) {
+	var budgetErr *memoryListBudgetExceededError
 	switch {
+	case errors.As(err, &budgetErr):
+		respond(w, http.StatusUnprocessableEntity, map[string]string{
+			"error": memoryListBudgetErrorMessage,
+			"code":  memoryListBudgetErrorCode,
+		})
 	case errors.Is(err, domain.ErrNotFound):
 		respondError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, domain.ErrWriteConflict):

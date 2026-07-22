@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/qiffang/mnemos/server/internal/reqid"
 )
 
 const (
@@ -39,6 +41,51 @@ func TestOpenAPIRuntimeQuotaResponses(t *testing.T) {
 	assertResponseRef(t, getByIDResponses, "429", genericRateLimitedRef)
 	assertNoResponseRef(t, operationResponses(t, openapi, "/v1alpha1/mem9s/{tenantID}/memories/{id}", "get"), "402", runtimeAccessBlockedRef)
 	assertNoResponseRef(t, operationResponses(t, openapi, "/v1alpha1/mem9s/{tenantID}/memories/{id}", "get"), "429", memoryRouteRateLimitedRef)
+}
+
+func TestOpenAPIMemoryListBudgetResponse(t *testing.T) {
+	openapi := loadOpenAPI(t)
+	for _, path := range []string{
+		"/v1alpha1/mem9s/{tenantID}/memories",
+		"/v1alpha2/mem9s/memories",
+	} {
+		responses := operationResponses(t, openapi, path, "get")
+		assertResponseRef(t, responses, "422", "#/components/responses/MemoryListBudgetExceeded")
+	}
+
+	components := objectValue(t, openapi, "components")
+	responses := objectValue(t, components, "responses")
+	schemas := objectValue(t, components, "schemas")
+	response := objectValue(t, responses, "MemoryListBudgetExceeded")
+	if _, ok := objectValue(t, response, "headers")[reqid.Header]; !ok {
+		t.Fatalf("MemoryListBudgetExceeded response missing %s header", reqid.Header)
+	}
+	content := objectValue(t, response, "content")
+	jsonContent := objectValue(t, content, "application/json")
+	schema := objectValue(t, jsonContent, "schema")
+	if schema["$ref"] != "#/components/schemas/MemoryListBudgetError" {
+		t.Fatalf("budget response schema = %#v, want MemoryListBudgetError", schema["$ref"])
+	}
+
+	budgetError := objectValue(t, schemas, "MemoryListBudgetError")
+	allOf := objectSlice(t, budgetError["allOf"])
+	if !containsRef(allOf, "#/components/schemas/ErrorResponse") || !allOfRequiresProperty(allOf, "code") {
+		t.Fatalf("MemoryListBudgetError contract = %#v", allOf)
+	}
+	codeEnumFound := false
+	for _, part := range allOf {
+		properties, ok := part["properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		code, ok := properties["code"].(map[string]any)
+		if ok && reflect.DeepEqual(stringSlice(t, code["enum"]), []string{memoryListBudgetErrorCode}) {
+			codeEnumFound = true
+		}
+	}
+	if !codeEnumFound {
+		t.Fatalf("MemoryListBudgetError.code = %#v, want %q", allOf, memoryListBudgetErrorCode)
+	}
 }
 
 func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {

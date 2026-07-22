@@ -162,7 +162,7 @@ func (o *memoryListObservation) recordDirectList(auth *domain.AuthInfo, filter d
 
 func (o *memoryListObservation) finish(ctx context.Context, err error, returned, total int) {
 	duration := time.Since(o.startedAt)
-	status := memoryRecallStatus(ctx, err)
+	status := memoryListStatus(ctx, err)
 	metrics.MemoryListRequestsTotal.WithLabelValues(o.mode, status).Inc()
 	metrics.MemoryListDuration.WithLabelValues(o.mode, status).Observe(duration.Seconds())
 
@@ -203,7 +203,16 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		slog.String("outcome", status),
 		slog.String("cancel_origin", memoryListCancelOrigin(ctx, err)),
 	}
-	if status != "ok" {
+	var budgetErr *memoryListBudgetExceededError
+	if errors.As(err, &budgetErr) {
+		attrs = append(attrs,
+			slog.String("budget_dimension", budgetErr.dimension),
+			slog.String("budget_source", budgetErr.source),
+			slog.String("error_class", "budget_exceeded"),
+			slog.String("error_source", "server_budget"),
+			slog.Bool("retryable", false),
+		)
+	} else if status != "ok" {
 		cause := err
 		if cause == nil && ctx != nil {
 			cause = ctx.Err()
@@ -223,6 +232,14 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		level = slog.LevelError
 	}
 	o.logger.LogAttrs(ctx, level, message, attrs...)
+}
+
+func memoryListStatus(ctx context.Context, err error) string {
+	var budgetErr *memoryListBudgetExceededError
+	if errors.As(err, &budgetErr) {
+		return "budget_exceeded"
+	}
+	return memoryRecallStatus(ctx, err)
 }
 
 func memoryListCancelOrigin(ctx context.Context, err error) string {

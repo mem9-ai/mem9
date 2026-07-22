@@ -1068,11 +1068,13 @@ func (s *Server) listLocalMemoriesContentKeyword(ctx context.Context, svc resolv
 }
 
 func (s *Server) listLocalAllTypeMemoriesContentKeyword(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
-	memoryPages, err := collectLocalListPages(ctx, filter, "memory", svc.memory.ContentKeywordSearch)
+	budgetCtx, budget, cancel := newLocalListBudget(ctx, defaultLocalListBudgetLimits())
+	defer cancel()
+	memoryPages, err := collectLocalListPages(budgetCtx, filter, "memory", budget, svc.memory.ContentKeywordSearch)
 	if err != nil {
 		return nil, 0, err
 	}
-	sessionPages, err := collectLocalListPages(ctx, filter, "session", svc.session.ContentKeywordSearch)
+	sessionPages, err := collectLocalListPages(budgetCtx, filter, "session", budget, svc.session.ContentKeywordSearch)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1092,11 +1094,13 @@ func (s *Server) listLocalAllTypeMemoriesContentKeyword(ctx context.Context, svc
 }
 
 func (s *Server) listLocalAllTypeMemoriesScanAll(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
-	memoryPages, err := collectLocalListPages(ctx, filter, "memory", svc.memory.List)
+	budgetCtx, budget, cancel := newLocalListBudget(ctx, defaultLocalListBudgetLimits())
+	defer cancel()
+	memoryPages, err := collectLocalListPages(budgetCtx, filter, "memory", budget, svc.memory.List)
 	if err != nil {
 		return nil, 0, err
 	}
-	sessionPages, err := collectLocalListPages(ctx, filter, "session", svc.session.List)
+	sessionPages, err := collectLocalListPages(budgetCtx, filter, "session", budget, svc.session.List)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1119,21 +1123,25 @@ func collectLocalListPages(
 	ctx context.Context,
 	filter domain.MemoryFilter,
 	resource string,
+	budget *localListBudget,
 	list func(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error),
 ) ([]domain.Memory, error) {
 	pageFilter := filter
-	pageFilter.Limit = 200
 	pageFilter.Offset = 0
 
 	var all []domain.Memory
 	for {
+		if err := budget.preparePage(ctx, resource, &pageFilter); err != nil {
+			return nil, err
+		}
 		pageStartedAt := time.Now()
 		page, pageTotal, err := list(ctx, pageFilter)
+		budget.recordPage(len(page))
 		if observation := memoryListObservationFromContext(ctx); observation != nil {
 			observation.recordPage(resource, len(page), time.Since(pageStartedAt))
 		}
-		if err != nil {
-			return nil, err
+		if resultErr := budget.pageResultError(ctx, resource, err); resultErr != nil {
+			return nil, resultErr
 		}
 		all = append(all, page...)
 		if len(page) == 0 || pageFilter.Offset+pageFilter.Limit >= pageTotal {

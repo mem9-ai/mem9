@@ -338,6 +338,9 @@
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
+          "422": {
+            "$ref": "#/components/responses/MemoryListBudgetExceeded"
+          },
           "429": {
             "$ref": "#/components/responses/MemoryRouteRateLimited"
           },
@@ -803,6 +806,9 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/MemoryListBudgetExceeded"
           },
           "429": {
             "$ref": "#/components/responses/MemoryRouteRateLimited"
@@ -2629,6 +2635,28 @@
           }
         }
       },
+      "MemoryListBudgetExceeded": {
+        "description": "The explicit all-types memory scan exceeded its server-owned page, row, or elapsed-time budget.",
+        "headers": {
+          "X-Request-Id": {
+            "description": "Canonical request ID for correlating the budget error with server logs.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MemoryListBudgetError"
+            },
+            "example": {
+              "error": "all-types memory list budget exceeded",
+              "code": "memory_list_budget_exceeded"
+            }
+          }
+        }
+      },
       "MemoryRouteRateLimited": {
         "description": "Memory route rate limit. The response can be a generic API rate-limit envelope from global middleware or a runtime quota rate-limit envelope from the runtime usage provider.",
         "headers": {
@@ -3020,6 +3048,27 @@
                 "type": "string",
                 "enum": [
                   "local_rate_limited"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "MemoryListBudgetError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "memory_list_budget_exceeded"
                 ]
               }
             }

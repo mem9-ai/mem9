@@ -178,7 +178,8 @@ var (
 	)
 
 	// MemoryListRequestsTotal counts all GET /memories operations.
-	// mode and status values are bounded in handler.memoryListMode and memoryRecallStatus.
+	// mode and status values are bounded in handler.memoryListMode and memoryListStatus.
+	// status labels: ok, error, timeout, canceled, budget_exceeded
 	// PromQL: sum by (mode, status) (rate(mnemo_memory_list_requests_total[5m]))
 	MemoryListRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
