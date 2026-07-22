@@ -35,6 +35,17 @@ var (
 		[]string{"method", "route"},
 	)
 
+	// LocalRateLimitDenialsTotal counts denials from the in-process IP and API-key limiters.
+	// PromQL: sum by (scope) (rate(mnemo_local_rate_limit_denials_total[5m]))
+	LocalRateLimitDenialsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "local_rate_limit_denials_total",
+			Help:      "Total local rate-limit denials, split by bounded scope.",
+		},
+		[]string{"scope"},
+	)
+
 	// ProvisionStepDuration observes the duration of each step in the provision flow.
 	// step labels: tidb_zero_create_instance, create_tenant_record,
 	//              init_schema_create_table, init_schema_vector_index,

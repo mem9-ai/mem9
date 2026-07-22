@@ -197,8 +197,8 @@ func (s *Server) Router(
 	r.Use(requestLogger(s.logger))
 	r.Use(chimw.Recoverer)
 	r.Use(corsMW)
-	r.Use(rateLimitMW)
 	r.Use(metrics.Middleware)
+	r.Use(rateLimitMW)
 
 	// Health check.
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {

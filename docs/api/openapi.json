@@ -2491,10 +2491,25 @@
       },
       "RateLimited": {
         "description": "Rate limit exceeded.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds after which the client can retry.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/ErrorResponse"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LocalRateLimitError"
+                },
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              ]
             }
           }
         }
@@ -2632,6 +2647,9 @@
                   "$ref": "#/components/schemas/RuntimeQuotaError"
                 },
                 {
+                  "$ref": "#/components/schemas/LocalRateLimitError"
+                },
+                {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
               ]
@@ -2667,7 +2685,8 @@
               },
               "genericApiRateLimited": {
                 "value": {
-                  "error": "rate limit exceeded"
+                  "error": "rate limit exceeded",
+                  "code": "local_rate_limited"
                 }
               }
             }
@@ -2985,6 +3004,27 @@
             "type": "string"
           }
         }
+      },
+      "LocalRateLimitError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "local_rate_limited"
+                ]
+              }
+            }
+          }
+        ]
       },
       "CreateMemoryRequest": {
         "type": "object",

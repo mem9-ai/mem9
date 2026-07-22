@@ -65,8 +65,36 @@ func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	if !containsRef(anyOf, "#/components/schemas/RuntimeQuotaError") {
 		t.Fatalf("MemoryRouteRateLimited should include RuntimeQuotaError in anyOf: %#v", anyOf)
 	}
+	if !containsRef(anyOf, "#/components/schemas/LocalRateLimitError") {
+		t.Fatalf("MemoryRouteRateLimited should include LocalRateLimitError in anyOf: %#v", anyOf)
+	}
 	if !containsRef(anyOf, "#/components/schemas/ErrorResponse") {
-		t.Fatalf("MemoryRouteRateLimited should include generic ErrorResponse in anyOf: %#v", anyOf)
+		t.Fatalf("MemoryRouteRateLimited should preserve generic quota errors in anyOf: %#v", anyOf)
+	}
+
+	localRateLimitError := objectValue(t, schemas, "LocalRateLimitError")
+	localRateLimitAllOf := objectSlice(t, localRateLimitError["allOf"])
+	if !containsRef(localRateLimitAllOf, "#/components/schemas/ErrorResponse") {
+		t.Fatalf("LocalRateLimitError should extend ErrorResponse: %#v", localRateLimitAllOf)
+	}
+	if !allOfRequiresProperty(localRateLimitAllOf, "code") {
+		t.Fatalf("LocalRateLimitError.code should be required: %#v", localRateLimitAllOf)
+	}
+	if !allOfHasPropertyEnum(localRateLimitAllOf, "code", []string{"local_rate_limited"}) {
+		t.Fatalf("LocalRateLimitError.code should identify local limiter denials: %#v", localRateLimitAllOf)
+	}
+	genericRateLimited := objectValue(t, responses, "RateLimited")
+	if _, ok := objectValue(t, genericRateLimited, "headers")["Retry-After"]; !ok {
+		t.Fatal("RateLimited response missing Retry-After header")
+	}
+	genericRateLimitedContent := objectValue(t, genericRateLimited, "content")
+	genericRateLimitedJSON := objectValue(t, genericRateLimitedContent, "application/json")
+	genericRateLimitedSchema := objectValue(t, genericRateLimitedJSON, "schema")
+	genericRateLimitedAnyOf := objectSlice(t, genericRateLimitedSchema["anyOf"])
+	for _, ref := range []string{"#/components/schemas/LocalRateLimitError", "#/components/schemas/ErrorResponse"} {
+		if !containsRef(genericRateLimitedAnyOf, ref) {
+			t.Fatalf("RateLimited schema missing %s: %#v", ref, genericRateLimitedAnyOf)
+		}
 	}
 
 	runtimeQuotaError := objectValue(t, schemas, "RuntimeQuotaError")
@@ -537,6 +565,33 @@ func allOfRequiresProperty(values []map[string]any, target string) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+func allOfHasPropertyEnum(values []map[string]any, property string, want []string) bool {
+	for _, value := range values {
+		properties, ok := value["properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		definition, ok := properties[property].(map[string]any)
+		if !ok {
+			continue
+		}
+		enum, ok := definition["enum"].([]any)
+		if !ok {
+			continue
+		}
+		got := make([]string, 0, len(enum))
+		for _, item := range enum {
+			text, ok := item.(string)
+			if !ok {
+				return false
+			}
+			got = append(got, text)
+		}
+		return reflect.DeepEqual(got, want)
 	}
 	return false
 }
