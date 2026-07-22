@@ -3,9 +3,12 @@ package tidb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/go-sql-driver/mysql"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
@@ -204,6 +207,10 @@ func (r *SpaceChainRepoImpl) CreateBinding(ctx context.Context, binding *domain.
 		binding.ID, binding.ChainID, binding.ChainAPIKey, nullString(binding.CreatedByUserID),
 	)
 	if err != nil {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return fmt.Errorf("create space chain binding: %w", domain.ErrDuplicateKey)
+		}
 		return fmt.Errorf("create space chain binding: %w", err)
 	}
 	return nil
