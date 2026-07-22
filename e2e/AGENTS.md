@@ -132,7 +132,7 @@ confirms the deleted chain key is no longer active.
 Regression tests for raw session storage (PR #103). Provisions a fresh tenant,
 ingests messages, and verifies session-specific behavior: unified recall inclusion,
 `memory_type` filtering, metadata projection, no-query session listing, per-ID
-get/delete fallback, batch delete, no-query unified-list exclusion, and deduplication.
+get/delete fallback, batch delete, no-query unified-list inclusion, and deduplication.
 Supports both v1alpha1 and v1alpha2 via `MNEMO_API_VERSION`.
 
 | #   | Case                                    | What is verified                                                                                     |
@@ -144,7 +144,7 @@ Supports both v1alpha1 and v1alpha2 via `MNEMO_API_VERSION`.
 | 5   | `memory_type=session` filter            | All results have `memory_type=session`; no other types                                               |
 | 6   | `memory_type=insight` excludes sessions | No `memory_type=session` rows when insight filter applied                                            |
 | 7   | Session metadata projection             | First session result has `role`, `seq`, `content_type` in `metadata`                                 |
-| 8   | No-query list excludes sessions         | `GET /memories` (no `?q=`) returns no `memory_type=session` rows                                     |
+| 8   | No-query list includes sessions         | `GET /memories` (no `?q=`) returns `memory_type=session` rows in the unified all-types list           |
 | 9   | `session_id` scoped filter              | All results belong to the expected `session_id`                                                      |
 | 10  | Deduplication                           | Re-sending identical messages does not increase row count                                            |
 | 11  | No-query session listing                | `GET /memories?session_id=...&memory_type=session` returns raw session rows without `q`              |

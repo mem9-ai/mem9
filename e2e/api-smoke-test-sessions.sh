@@ -11,7 +11,7 @@
 #   5. memory_type=session filter returns only sessions
 #   6. memory_type=insight filter excludes sessions
 #   7. Session metadata projection (role, seq, content_type in metadata field)
-#   8. No-query list excludes sessions
+#   8. No-query list includes sessions
 #   9. session_id scoped filter
 #  10. Deduplication — same messages sent twice produce no extra rows
 #  11. No-query memory_type=session list returns raw sessions
@@ -291,9 +291,9 @@ print('missing:' + ','.join(missing) if missing else 'ok')
 check "first session has role, seq, content_type in metadata" "$META_CHECK" "ok"
 
 # ============================================================================
-# TEST 8 — No-query list excludes sessions
+# TEST 8 — No-query list includes sessions
 # ============================================================================
-step "8" "No-query list (GET /memories) excludes sessions"
+step "8" "No-query list (GET /memories) includes sessions"
 resp=$(curl_mem_json "$MEM_BASE?limit=50")
 code=$(http_code "$resp")
 bdy=$(body "$resp")
@@ -304,7 +304,7 @@ import sys, json
 mems = json.load(sys.stdin).get('memories', [])
 print('yes' if any(m.get('memory_type') == 'session' for m in mems) else 'no')
 " 2>/dev/null || true)
-check "list without query has no memory_type=session rows" "$HAS_SESSION_IN_LIST" "no"
+check "list without query has memory_type=session rows" "$HAS_SESSION_IN_LIST" "yes"
 
 # ============================================================================
 # TEST 9 — session_id scoped filter
