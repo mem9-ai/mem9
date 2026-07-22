@@ -31,7 +31,8 @@ const TenantMemorySchemaBase = `CREATE TABLE IF NOT EXISTS memories (
     INDEX idx_agent               (agent_id),
     INDEX idx_session             (session_id),
     INDEX idx_app                 (app_id),
-    INDEX idx_updated             (updated_at)
+    INDEX idx_updated             (updated_at),
+    INDEX idx_state_updated_id    (state, updated_at, id)
 )`
 
 // TenantMemorySchemaPostgres is the PostgreSQL schema with pgvector support.
@@ -155,6 +156,7 @@ const TenantSessionsSchemaBase = `CREATE TABLE IF NOT EXISTS sessions (
     INDEX        idx_sess_app     (app_id),
     INDEX        idx_sess_state   (state),
     INDEX        idx_sess_created (created_at),
+    INDEX        idx_sess_state_created_id (state, created_at, id),
     UNIQUE INDEX idx_sess_dedup   (app_id, session_id, content_hash)
 )`
 
@@ -212,10 +214,10 @@ func InitTiDBTenantSchema(ctx context.Context, db *sql.DB, autoModel string, aut
 	return nil
 }
 
-// EnsureTiDBTenantRuntimeSchema creates missing tenant tables and search indexes,
+// EnsureTiDBTenantRuntimeSchema creates missing tenant tables and runtime indexes,
 // then validates the offline-migrated app-scoped schema without mutating it.
 func EnsureTiDBTenantRuntimeSchema(ctx context.Context, db *sql.DB, autoModel string, autoDims int, clientDims int, ftsEnabled bool) error {
-	if err := ensureTiDBTenantTablesAndSearchIndexes(ctx, db, autoModel, autoDims, clientDims, ftsEnabled); err != nil {
+	if err := ensureTiDBTenantTablesAndIndexes(ctx, db, autoModel, autoDims, clientDims, ftsEnabled); err != nil {
 		return err
 	}
 	if err := ValidateTiDBTenantRuntimeSchema(ctx, db, autoModel, ftsEnabled); err != nil {
@@ -224,7 +226,7 @@ func EnsureTiDBTenantRuntimeSchema(ctx context.Context, db *sql.DB, autoModel st
 	return nil
 }
 
-func ensureTiDBTenantTablesAndSearchIndexes(ctx context.Context, db *sql.DB, autoModel string, autoDims int, clientDims int, ftsEnabled bool) error {
+func ensureTiDBTenantTablesAndIndexes(ctx context.Context, db *sql.DB, autoModel string, autoDims int, clientDims int, ftsEnabled bool) error {
 	if db == nil {
 		return fmt.Errorf("db connection is nil")
 	}
@@ -235,6 +237,9 @@ func ensureTiDBTenantTablesAndSearchIndexes(ctx context.Context, db *sql.DB, aut
 
 	if err := ensureTable(ctx, db, "memories", BuildMemorySchema(autoModel, autoDims, clientDims)); err != nil {
 		return fmt.Errorf("memories table: %w", err)
+	}
+	if err := ensureBTreeIndex(ctx, db, "memories", "idx_state_updated_id", "state, updated_at, id"); err != nil {
+		return fmt.Errorf("memories list index: %w", err)
 	}
 	if err := ensureVectorIndex(ctx, db, "memories", "idx_cosine"); err != nil {
 		return fmt.Errorf("memories vector index: %w", err)
@@ -247,6 +252,9 @@ func ensureTiDBTenantTablesAndSearchIndexes(ctx context.Context, db *sql.DB, aut
 
 	if err := ensureTable(ctx, db, "sessions", BuildSessionsSchema(autoModel, autoDims, clientDims)); err != nil {
 		return fmt.Errorf("sessions table: %w", err)
+	}
+	if err := ensureBTreeIndex(ctx, db, "sessions", "idx_sess_state_created_id", "state, created_at, id"); err != nil {
+		return fmt.Errorf("sessions list index: %w", err)
 	}
 	if err := ensureVectorIndex(ctx, db, "sessions", "idx_sess_cosine"); err != nil {
 		return fmt.Errorf("sessions vector index: %w", err)
@@ -284,6 +292,9 @@ func ValidateTiDBTenantRuntimeSchema(ctx context.Context, db *sql.DB, autoModel 
 	if err := requireIndex(ctx, db, "memories", "idx_app"); err != nil {
 		return fmt.Errorf("validate schema: memories app_id index: %w", err)
 	}
+	if err := requireIndexColumns(ctx, db, "memories", "idx_state_updated_id", []string{"state", "updated_at", "id"}); err != nil {
+		return fmt.Errorf("validate schema: memories list index: %w", err)
+	}
 	if err := requireIndex(ctx, db, "memories", "idx_cosine"); err != nil {
 		return fmt.Errorf("validate schema: memories vector index: %w", err)
 	}
@@ -301,6 +312,9 @@ func ValidateTiDBTenantRuntimeSchema(ctx context.Context, db *sql.DB, autoModel 
 	}
 	if err := requireIndex(ctx, db, "sessions", "idx_sess_app"); err != nil {
 		return fmt.Errorf("validate schema: sessions app_id index: %w", err)
+	}
+	if err := requireIndexColumns(ctx, db, "sessions", "idx_sess_state_created_id", []string{"state", "created_at", "id"}); err != nil {
+		return fmt.Errorf("validate schema: sessions list index: %w", err)
 	}
 	if err := requireUniqueIndexColumns(ctx, db, "sessions", "idx_sess_dedup", []string{"app_id", "session_id", "content_hash"}); err != nil {
 		return fmt.Errorf("validate schema: sessions dedup index: %w", err)
@@ -444,6 +458,17 @@ func requireUniqueIndexColumns(ctx context.Context, db *sql.DB, table, indexName
 	return nil
 }
 
+func requireIndexColumns(ctx context.Context, db *sql.DB, table, indexName string, want []string) error {
+	columns, _, err := indexDefinition(ctx, db, table, indexName)
+	if err != nil {
+		return fmt.Errorf("check index columns: %w", err)
+	}
+	if strings.Join(columns, ",") != strings.Join(want, ",") {
+		return fmt.Errorf("%s.%s columns = %q, want %q", table, indexName, strings.Join(columns, ","), strings.Join(want, ","))
+	}
+	return nil
+}
+
 func indexDefinition(ctx context.Context, db *sql.DB, table, indexName string) ([]string, bool, error) {
 	rows, err := db.QueryContext(ctx,
 		`SELECT COLUMN_NAME, NON_UNIQUE
@@ -485,6 +510,25 @@ func ensureTable(ctx context.Context, db *sql.DB, table, createSQL string) error
 	}
 	if _, err := db.ExecContext(ctx, createSQL); err != nil {
 		return fmt.Errorf("create: %w", err)
+	}
+	return nil
+}
+
+func ensureBTreeIndex(ctx context.Context, db *sql.DB, table, indexName, columns string) error {
+	exists, err := IndexExists(ctx, db, table, indexName)
+	if err != nil {
+		return fmt.Errorf("check index: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		`ALTER TABLE %s ADD INDEX %s (%s)`,
+		table,
+		indexName,
+		columns,
+	)); err != nil && !IsIndexExistsError(err) {
+		return err
 	}
 	return nil
 }

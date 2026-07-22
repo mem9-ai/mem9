@@ -31,6 +31,8 @@ type memoryListObservation struct {
 	mergeDuration        time.Duration
 	memoryQueryDuration  time.Duration
 	sessionQueryDuration time.Duration
+	memoryCountDuration  time.Duration
+	sessionCountDuration time.Duration
 	memoryPages          int
 	memoryRows           int
 	sessionPages         int
@@ -88,6 +90,9 @@ func memoryListMode(auth *domain.AuthInfo, filter domain.MemoryFilter, contentKe
 	if filter.MemoryType == string(domain.TypeSession) {
 		return "session_list"
 	}
+	if filter.MemoryType == "" {
+		return "all_types_list"
+	}
 	return "durable_list"
 }
 
@@ -135,6 +140,18 @@ func (o *memoryListObservation) recordPage(resource string, rows int, duration t
 	}
 }
 
+func (o *memoryListObservation) recordCount(resource string, duration time.Duration) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	switch resource {
+	case "memory":
+		o.memoryCountDuration += duration
+	case "session":
+		o.sessionCountDuration += duration
+	}
+}
+
 func (o *memoryListObservation) recordMerge(duration time.Duration) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -151,6 +168,9 @@ func (o *memoryListObservation) recordDirectList(auth *domain.AuthInfo, filter d
 	if filter.Query != "" && filter.MemoryType == "" {
 		return
 	}
+	if filter.Query == "" && filter.MemoryType == "" {
+		return
+	}
 	if filter.MemoryType == string(domain.TypeSession) {
 		o.sessionPages = 1
 		o.sessionRows = rows
@@ -165,6 +185,17 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 	status := memoryListStatus(ctx, err)
 	metrics.MemoryListRequestsTotal.WithLabelValues(o.mode, status).Inc()
 	metrics.MemoryListDuration.WithLabelValues(o.mode, status).Observe(duration.Seconds())
+	countDuration := o.memoryCountDuration + o.sessionCountDuration
+	pageDuration := o.memoryQueryDuration + o.sessionQueryDuration
+	if countDuration > 0 {
+		metrics.MemoryListPhaseDuration.WithLabelValues(o.mode, "count").Observe(countDuration.Seconds())
+	}
+	if pageDuration > 0 {
+		metrics.MemoryListPhaseDuration.WithLabelValues(o.mode, "page_read").Observe(pageDuration.Seconds())
+	}
+	if o.mergeDuration > 0 {
+		metrics.MemoryListPhaseDuration.WithLabelValues(o.mode, "merge").Observe(o.mergeDuration.Seconds())
+	}
 
 	if status == "ok" && duration < memoryListSlowRequestThreshold {
 		return
@@ -191,6 +222,8 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		slog.Int("memory_rows", o.memoryRows),
 		slog.Int("session_pages", o.sessionPages),
 		slog.Int("session_rows", o.sessionRows),
+		slog.Int64("memory_count_ms", o.memoryCountDuration.Milliseconds()),
+		slog.Int64("session_count_ms", o.sessionCountDuration.Milliseconds()),
 		slog.Int("chain_pages", o.chainPages),
 		slog.Int("chain_rows", o.chainRows),
 		slog.Int64("memory_query_ms", o.memoryQueryDuration.Milliseconds()),

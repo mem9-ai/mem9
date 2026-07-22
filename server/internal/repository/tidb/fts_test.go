@@ -135,6 +135,34 @@ func TestMemoryListSelectsSearchColumnsWithoutEmbedding(t *testing.T) {
 	}
 }
 
+func TestMemoryListPageUsesBoundedIndexedOrderWithoutCount(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{{
+		mustContain: []string{
+			"SELECT " + searchColumns + " FROM memories",
+			"WHERE state = 'active'",
+			"ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
+		},
+		wantArgs: []any{1, 0},
+		rows: &scriptedRows{
+			columns: memorySearchColumns(),
+			values: [][]driver.Value{
+				memorySearchRow("m-page-1", "bounded page", "agent-1", "session-1", "active", []byte(`[]`), now),
+			},
+		},
+	}})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	results, err := repo.ListPage(context.Background(), domain.MemoryFilter{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListPage: %v", err)
+	}
+	if len(results) != 1 || results[0].ID != "m-page-1" {
+		t.Fatalf("ListPage results = %+v, want m-page-1", results)
+	}
+}
+
 func TestMemoryListBootstrapSelectsSearchColumnsWithoutEmbedding(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	db := newScriptedTestDB(t, []*queryExpectation{{

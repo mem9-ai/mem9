@@ -107,6 +107,55 @@ func TestSessionRepoListSortsByContent(t *testing.T) {
 	}
 }
 
+func TestSessionRepoListPageUsesBoundedMergedOrderWithoutCount(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	tests := []struct {
+		name      string
+		filter    domain.MemoryFilter
+		wantOrder string
+	}{
+		{
+			name:      "updated projection uses created index",
+			filter:    domain.MemoryFilter{AllTypes: true, Limit: 1},
+			wantOrder: "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+		},
+		{
+			name:      "memory type ties use id",
+			filter:    domain.MemoryFilter{AllTypes: true, SortBy: "memory_type", SortDir: "asc", Limit: 1},
+			wantOrder: "ORDER BY id ASC LIMIT ? OFFSET ?",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newScriptedTestDB(t, []*queryExpectation{{
+				mustContain: []string{
+					"SELECT id, session_id, agent_id, app_id, source, seq, role, content, content_type, tags, state, created_at",
+					"FROM sessions WHERE state = 'active'",
+					tt.wantOrder,
+				},
+				wantArgs: []any{int64(1), int64(0)},
+				rows: &scriptedRows{
+					columns: sessionColumns(),
+					values: [][]driver.Value{
+						sessionRow("s-page-1", "sess-1", "agent-1", "chat", 1, "assistant", "bounded page", []byte(`[]`), "active", now),
+					},
+				},
+			}})
+			defer db.Close()
+
+			repo := NewSessionRepo(db, "", false, "cluster-1")
+			results, err := repo.ListPage(context.Background(), tt.filter)
+			if err != nil {
+				t.Fatalf("ListPage: %v", err)
+			}
+			if len(results) != 1 || results[0].ID != "s-page-1" {
+				t.Fatalf("ListPage results = %+v, want s-page-1", results)
+			}
+		})
+	}
+}
+
 func TestSessionRepoGetByIDMissingTableReturnsNotFound(t *testing.T) {
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{

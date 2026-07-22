@@ -211,17 +211,31 @@ func (r *MemoryRepo) SetState(ctx context.Context, id string, state domain.Memor
 }
 
 func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	total, err := r.CountList(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	memories, err := r.ListPage(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	return memories, total, nil
+}
+
+func (r *MemoryRepo) CountList(ctx context.Context, f domain.MemoryFilter) (int, error) {
 	where, args := r.buildWhere(f)
 
-	// Count total matches.
 	var total int
 	countQuery := "SELECT COUNT(*) FROM memories WHERE " + where
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		slog.ErrorContext(ctx, "list memories: count failed", "cluster_id", r.clusterID, "err", err)
-		return nil, 0, fmt.Errorf("count memories: %w", err)
+		return 0, fmt.Errorf("count memories: %w", err)
 	}
+	return total, nil
+}
 
-	// Fetch page.
+func (r *MemoryRepo) ListPage(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {
+	where, args := r.buildWhere(f)
 	limit := f.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -241,7 +255,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
 	if err != nil {
 		slog.ErrorContext(ctx, "list memories: query failed", "cluster_id", r.clusterID, "err", err)
-		return nil, 0, fmt.Errorf("list memories: %w", err)
+		return nil, fmt.Errorf("list memories: %w", err)
 	}
 	defer rows.Close()
 
@@ -249,11 +263,11 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	for rows.Next() {
 		m, err := scanMemoryRows(rows)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		memories = append(memories, *m)
 	}
-	return memories, total, rows.Err()
+	return memories, rows.Err()
 }
 
 func memoryListOrderBy(f domain.MemoryFilter) string {

@@ -1824,6 +1824,14 @@ func (m *memoryRepoMock) List(ctx context.Context, f domain.MemoryFilter) ([]dom
 	return nil, 0, nil
 }
 
+func (m *memoryRepoMock) CountList(context.Context, domain.MemoryFilter) (int, error) {
+	return len(m.listResults), nil
+}
+
+func (m *memoryRepoMock) ListPage(context.Context, domain.MemoryFilter) ([]domain.Memory, error) {
+	return append([]domain.Memory(nil), m.listResults...), nil
+}
+
 func (m *memoryRepoMock) Count(ctx context.Context) (int, error) {
 	return 0, nil
 }

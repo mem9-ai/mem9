@@ -139,6 +139,7 @@ func (c *schemaInitConnector) recordDDL(query string) {
 		c.existingTables["memories"] = true
 		c.existingCols["memories.app_id"] = true
 		c.indexColumns["idx_app"] = []string{"app_id"}
+		c.indexColumns["idx_state_updated_id"] = []string{"state", "updated_at", "id"}
 	case strings.Contains(lowerQuery, "create table if not exists session_edits"):
 		c.existingTables["session_edits"] = true
 		c.existingCols["session_edits.edited_content"] = true
@@ -146,14 +147,19 @@ func (c *schemaInitConnector) recordDDL(query string) {
 		c.existingTables["sessions"] = true
 		c.existingCols["sessions.app_id"] = true
 		c.indexColumns["idx_sess_app"] = []string{"app_id"}
+		c.indexColumns["idx_sess_state_created_id"] = []string{"state", "created_at", "id"}
 		c.indexColumns["idx_sess_dedup"] = []string{"app_id", "session_id", "content_hash"}
 		c.nonUniqueIndexes["idx_sess_dedup"] = false
 	case strings.Contains(lowerQuery, "alter table memories add vector index idx_cosine"):
 		c.indexColumns["idx_cosine"] = []string{"embedding"}
+	case strings.Contains(lowerQuery, "alter table memories add index idx_state_updated_id"):
+		c.indexColumns["idx_state_updated_id"] = []string{"state", "updated_at", "id"}
 	case strings.Contains(lowerQuery, "alter table memories add fulltext index idx_fts_content"):
 		c.indexColumns["idx_fts_content"] = []string{"content"}
 	case strings.Contains(lowerQuery, "alter table sessions add vector index idx_sess_cosine"):
 		c.indexColumns["idx_sess_cosine"] = []string{"embedding"}
+	case strings.Contains(lowerQuery, "alter table sessions add index idx_sess_state_created_id"):
+		c.indexColumns["idx_sess_state_created_id"] = []string{"state", "created_at", "id"}
 	case strings.Contains(lowerQuery, "alter table sessions add fulltext index idx_sess_fts"):
 		c.indexColumns["idx_sess_fts"] = []string{"content"}
 	}
@@ -544,7 +550,9 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesSkipsCreate(t *testing.T)
 		t.Fatalf("existing tables should skip CREATE TABLE:\n%s", executed)
 	}
 	wantSubstrings := []string{
+		"ALTER TABLE memories ADD INDEX idx_state_updated_id (state, updated_at, id)",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
+		"ALTER TABLE sessions ADD INDEX idx_sess_state_created_id (state, created_at, id)",
 		"ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine",
 	}
 	for _, want := range wantSubstrings {
@@ -605,7 +613,7 @@ func TestTiDBCloudProvisioner_InitSchema_ExistingTablesRejectsStaleAppSchema(t *
 	}
 }
 
-func TestEnsureTiDBTenantRuntimeSchema_CreatesSearchIndexesOnly(t *testing.T) {
+func TestEnsureTiDBTenantRuntimeSchema_CreatesRuntimeIndexesOnly(t *testing.T) {
 	recorder := &schemaInitConnector{
 		existingTables: map[string]bool{
 			"memories":      true,
@@ -631,8 +639,10 @@ func TestEnsureTiDBTenantRuntimeSchema_CreatesSearchIndexesOnly(t *testing.T) {
 	}
 	executed := strings.Join(recorder.execs, "\n")
 	wantSubstrings := []string{
+		"ALTER TABLE memories ADD INDEX idx_state_updated_id (state, updated_at, id)",
 		"ALTER TABLE memories ADD VECTOR INDEX idx_cosine",
 		"ALTER TABLE memories ADD FULLTEXT INDEX idx_fts_content",
+		"ALTER TABLE sessions ADD INDEX idx_sess_state_created_id (state, created_at, id)",
 		"ALTER TABLE sessions ADD VECTOR INDEX idx_sess_cosine",
 		"ALTER TABLE sessions ADD FULLTEXT INDEX idx_sess_fts",
 	}
@@ -653,6 +663,13 @@ func TestEnsureTiDBTenantRuntimeSchema_CreatesSearchIndexesOnly(t *testing.T) {
 			t.Fatalf("runtime ensure should not run app schema migration %q\n%s", unwanted, executed)
 		}
 	}
+	recorder.execs = nil
+	if err := EnsureTiDBTenantRuntimeSchema(context.Background(), db, "", 1024, 1536, true); err != nil {
+		t.Fatalf("second EnsureTiDBTenantRuntimeSchema failed: %v", err)
+	}
+	if len(recorder.execs) != 0 {
+		t.Fatalf("second runtime ensure should be idempotent, got DDL %v", recorder.execs)
+	}
 }
 
 func TestValidateTiDBTenantRuntimeSchema_SuccessDoesNotMutate(t *testing.T) {
@@ -668,13 +685,15 @@ func TestValidateTiDBTenantRuntimeSchema_SuccessDoesNotMutate(t *testing.T) {
 			"session_edits.edited_content": true,
 		},
 		indexColumns: map[string][]string{
-			"idx_app":         {"app_id"},
-			"idx_cosine":      {"embedding"},
-			"idx_fts_content": {"content"},
-			"idx_sess_app":    {"app_id"},
-			"idx_sess_dedup":  {"app_id", "session_id", "content_hash"},
-			"idx_sess_cosine": {"embedding"},
-			"idx_sess_fts":    {"content"},
+			"idx_app":                   {"app_id"},
+			"idx_state_updated_id":      {"state", "updated_at", "id"},
+			"idx_cosine":                {"embedding"},
+			"idx_fts_content":           {"content"},
+			"idx_sess_app":              {"app_id"},
+			"idx_sess_state_created_id": {"state", "created_at", "id"},
+			"idx_sess_dedup":            {"app_id", "session_id", "content_hash"},
+			"idx_sess_cosine":           {"embedding"},
+			"idx_sess_fts":              {"content"},
 		},
 	}
 	db := sql.OpenDB(recorder)
@@ -700,11 +719,13 @@ func TestValidateTiDBTenantRuntimeSchema_RejectsOldSessionsDedupIndex(t *testing
 			"sessions.app_id": true,
 		},
 		indexColumns: map[string][]string{
-			"idx_app":         {"app_id"},
-			"idx_cosine":      {"embedding"},
-			"idx_sess_app":    {"app_id"},
-			"idx_sess_dedup":  {"session_id", "content_hash"},
-			"idx_sess_cosine": {"embedding"},
+			"idx_app":                   {"app_id"},
+			"idx_state_updated_id":      {"state", "updated_at", "id"},
+			"idx_cosine":                {"embedding"},
+			"idx_sess_app":              {"app_id"},
+			"idx_sess_state_created_id": {"state", "created_at", "id"},
+			"idx_sess_dedup":            {"session_id", "content_hash"},
+			"idx_sess_cosine":           {"embedding"},
 		},
 	}
 	db := sql.OpenDB(recorder)
@@ -734,11 +755,13 @@ func TestValidateTiDBTenantRuntimeSchema_RejectsNonUniqueSessionsDedupIndex(t *t
 			"sessions.app_id": true,
 		},
 		indexColumns: map[string][]string{
-			"idx_app":         {"app_id"},
-			"idx_cosine":      {"embedding"},
-			"idx_sess_app":    {"app_id"},
-			"idx_sess_dedup":  {"app_id", "session_id", "content_hash"},
-			"idx_sess_cosine": {"embedding"},
+			"idx_app":                   {"app_id"},
+			"idx_state_updated_id":      {"state", "updated_at", "id"},
+			"idx_cosine":                {"embedding"},
+			"idx_sess_app":              {"app_id"},
+			"idx_sess_state_created_id": {"state", "created_at", "id"},
+			"idx_sess_dedup":            {"app_id", "session_id", "content_hash"},
+			"idx_sess_cosine":           {"embedding"},
 		},
 		nonUniqueIndexes: map[string]bool{
 			"idx_sess_dedup": true,

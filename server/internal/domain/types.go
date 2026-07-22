@@ -159,6 +159,7 @@ type MemoryFilter struct {
 	Limit      int
 	Offset     int
 	ScanAll    bool
+	AllTypes   bool    // internal list hint: align session ordering with the merged all-types projection
 	MinScore   float64 // minimum cosine similarity for vector results; 0 = use default (0.3); -1 = disabled (return all)
 	// CreatedAfter / CreatedBefore bound results to a created_at window
 	// (closed interval). nil = unbounded on that side. Currently consumed

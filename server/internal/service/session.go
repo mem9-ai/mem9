@@ -80,6 +80,14 @@ func (s *SessionService) List(ctx context.Context, f domain.MemoryFilter) ([]dom
 	return s.sessions.List(ctx, f)
 }
 
+func (s *SessionService) CountList(ctx context.Context, f domain.MemoryFilter) (int, error) {
+	return s.sessions.CountList(ctx, f)
+}
+
+func (s *SessionService) ListPage(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {
+	return s.sessions.ListPage(ctx, f)
+}
+
 func (s *SessionService) Delete(ctx context.Context, id, agentName string) (int64, error) {
 	return s.sessions.SoftDelete(ctx, id, agentName)
 }

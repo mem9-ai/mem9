@@ -182,6 +182,18 @@ func (s *MemoryService) List(ctx context.Context, filter domain.MemoryFilter) ([
 	return finalizeSearchResults(mems, filter.Query), total, nil
 }
 
+func (s *MemoryService) CountList(ctx context.Context, filter domain.MemoryFilter) (int, error) {
+	return s.memories.CountList(ctx, filter)
+}
+
+func (s *MemoryService) ListPage(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, error) {
+	memories, err := s.memories.ListPage(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return finalizeSearchResults(memories, filter.Query), nil
+}
+
 func (s *MemoryService) Search(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
 	if filter.Query == "" {
 		return s.List(ctx, filter)

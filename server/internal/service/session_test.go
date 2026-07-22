@@ -83,6 +83,15 @@ func (s *stubSessionRepo) List(_ context.Context, f domain.MemoryFilter) ([]doma
 	return append([]domain.Memory(nil), s.listResults...), s.listTotal, nil
 }
 
+func (s *stubSessionRepo) CountList(_ context.Context, _ domain.MemoryFilter) (int, error) {
+	return s.listTotal, nil
+}
+
+func (s *stubSessionRepo) ListPage(_ context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {
+	s.listFilter = f
+	return append([]domain.Memory(nil), s.listResults...), nil
+}
+
 func (s *stubSessionRepo) SoftDelete(_ context.Context, id, _ string) (int64, error) {
 	s.softDeleteID = id
 	return 1, nil
@@ -622,6 +631,12 @@ func (c *capturingSessionRepo) GetByID(ctx context.Context, id string) (*domain.
 }
 func (c *capturingSessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
 	return c.stub.List(ctx, f)
+}
+func (c *capturingSessionRepo) CountList(ctx context.Context, f domain.MemoryFilter) (int, error) {
+	return c.stub.CountList(ctx, f)
+}
+func (c *capturingSessionRepo) ListPage(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {
+	return c.stub.ListPage(ctx, f)
 }
 func (c *capturingSessionRepo) SoftDelete(ctx context.Context, id, agentName string) (int64, error) {
 	return c.stub.SoftDelete(ctx, id, agentName)
