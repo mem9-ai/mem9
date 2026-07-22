@@ -260,7 +260,7 @@ func (r *SessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, 0, nil
 		}
-		slog.Error("list session memories: count failed", "cluster_id", r.clusterID, "err", err)
+		slog.ErrorContext(ctx, "list session memories: count failed", "cluster_id", r.clusterID, "err", err)
 		return nil, 0, fmt.Errorf("count session memories: %w", err)
 	}
 
@@ -284,7 +284,7 @@ func (r *SessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, 0, nil
 		}
-		slog.Error("list session memories: query failed", "cluster_id", r.clusterID, "err", err)
+		slog.ErrorContext(ctx, "list session memories: query failed", "cluster_id", r.clusterID, "err", err)
 		return nil, 0, fmt.Errorf("list session memories: %w", err)
 	}
 	defer rows.Close()

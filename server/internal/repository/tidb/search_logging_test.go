@@ -15,6 +15,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/reqid"
 )
 
 func TestClassifySearchError(t *testing.T) {
@@ -236,6 +237,54 @@ func TestSearchMethodsLogRowIterationErrors(t *testing.T) {
 			}
 			if got := entry["error_class"]; got != searchErrorClassInferenceUpstream5xx {
 				t.Fatalf("error_class = %v, want %q", got, searchErrorClassInferenceUpstream5xx)
+			}
+		})
+	}
+}
+
+func TestListMethodsPreserveRequestIDInFailureLogs(t *testing.T) {
+	previousLogger := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	tests := []struct {
+		name string
+		run  func(context.Context, *sql.DB) error
+	}{
+		{
+			name: "memory list",
+			run: func(ctx context.Context, db *sql.DB) error {
+				_, _, err := NewMemoryRepo(db, "", false, "cluster-list").List(ctx, domain.MemoryFilter{})
+				return err
+			},
+		},
+		{
+			name: "session list",
+			run: func(ctx context.Context, db *sql.DB) error {
+				_, _, err := NewSessionRepo(db, "", false, "cluster-list").List(ctx, domain.MemoryFilter{})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dbErr := errors.New("count unavailable")
+			db := newScriptedTestDB(t, []*queryExpectation{{err: dbErr}})
+			defer db.Close()
+
+			var logBuf bytes.Buffer
+			slog.SetDefault(slog.New(reqid.NewHandler(slog.NewJSONHandler(&logBuf, nil))))
+			ctx := reqid.NewContext(context.Background(), "request-list-repository")
+			if err := tt.run(ctx, db); !errors.Is(err, dbErr) {
+				t.Fatalf("list error = %v, want %v", err, dbErr)
+			}
+
+			var entry map[string]any
+			if err := json.Unmarshal(bytes.TrimSpace(logBuf.Bytes()), &entry); err != nil {
+				t.Fatalf("decode list log: %v; log = %s", err, logBuf.String())
+			}
+			if got := entry["request_id"]; got != "request-list-repository" {
+				t.Fatalf("request_id = %v, want request-list-repository", got)
 			}
 		})
 	}

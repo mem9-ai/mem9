@@ -217,7 +217,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	var total int
 	countQuery := "SELECT COUNT(*) FROM memories WHERE " + where
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		slog.Error("list memories: count failed", "cluster_id", r.clusterID, "err", err)
+		slog.ErrorContext(ctx, "list memories: count failed", "cluster_id", r.clusterID, "err", err)
 		return nil, 0, fmt.Errorf("count memories: %w", err)
 	}
 
@@ -240,7 +240,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 
 	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
 	if err != nil {
-		slog.Error("list memories: query failed", "cluster_id", r.clusterID, "err", err)
+		slog.ErrorContext(ctx, "list memories: query failed", "cluster_id", r.clusterID, "err", err)
 		return nil, 0, fmt.Errorf("list memories: %w", err)
 	}
 	defer rows.Close()

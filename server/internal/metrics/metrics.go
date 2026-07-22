@@ -166,6 +166,30 @@ var (
 		[]string{"mode"},
 	)
 
+	// MemoryListRequestsTotal counts all GET /memories operations.
+	// mode and status values are bounded in handler.memoryListMode and memoryRecallStatus.
+	// PromQL: sum by (mode, status) (rate(mnemo_memory_list_requests_total[5m]))
+	MemoryListRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "memory_list_requests_total",
+			Help:      "Total memory list requests, split by bounded mode and outcome.",
+		},
+		[]string{"mode", "status"},
+	)
+
+	// MemoryListDuration observes all GET /memories operations end to end.
+	// PromQL: histogram_quantile(0.95, sum by (le, mode) (rate(mnemo_memory_list_duration_seconds_bucket[5m])))
+	MemoryListDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "mnemo",
+			Name:      "memory_list_duration_seconds",
+			Help:      "End-to-end memory list request duration in seconds.",
+			Buckets:   []float64{0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120},
+		},
+		[]string{"mode", "status"},
+	)
+
 	// ActiveMemoryTotal is the current server-level total number of active memories.
 	ActiveMemoryTotal = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "mnemo",

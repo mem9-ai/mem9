@@ -774,6 +774,7 @@ func memoryRecallStatus(ctx context.Context, err error) string {
 }
 
 func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
+	requestStartedAt := time.Now()
 	auth := authInfo(r)
 	q := r.URL.Query()
 	rawQuery := q.Get("q")
@@ -850,6 +851,12 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 
 	var memories []domain.Memory
 	var total int
+	listObservation := newMemoryListObservation(s.logger, auth, filter, contentKeywordSearch)
+	listObservation.startedAt = requestStartedAt
+	listCtx := withMemoryListObservation(r.Context(), listObservation)
+	defer func() {
+		listObservation.finish(r.Context(), err, len(memories), total)
+	}()
 	var recallLease *runtimeusage.OperationLease
 	recallFinalized := false
 	recallSearch := filter.Query != "" && !contentKeywordSearch
@@ -875,31 +882,34 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
+	queryStartedAt := time.Now()
 	if auth.IsChain() {
 		if filter.Query != "" && contentKeywordSearch {
-			memories, total, err = s.listChainMemoriesContentKeyword(r.Context(), auth, filter)
+			memories, total, err = s.listChainMemoriesContentKeyword(listCtx, auth, filter)
 		} else {
-			memories, total, err = s.listChainMemories(r.Context(), auth, filter)
+			memories, total, err = s.listChainMemories(listCtx, auth, filter)
 		}
 	} else {
 		svc := s.resolveServices(auth)
 		switch {
 		case filter.Query != "" && contentKeywordSearch:
-			memories, total, err = s.listLocalMemoriesContentKeyword(r.Context(), svc, filter)
+			memories, total, err = s.listLocalMemoriesContentKeyword(listCtx, svc, filter)
 		case filter.Query != "" && filter.ScanAll:
-			memories, total, err = s.listLocalMemoriesScanAll(r.Context(), svc, filter)
+			memories, total, err = s.listLocalMemoriesScanAll(listCtx, svc, filter)
 		case filter.Query != "" && filter.MemoryType == "":
-			memories, total, err = s.defaultConfidenceRecallSearch(r.Context(), auth, svc, filter)
+			memories, total, err = s.defaultConfidenceRecallSearch(listCtx, auth, svc, filter)
 		case filter.Query != "" && (filter.MemoryType == string(domain.TypeSession) ||
 			filter.MemoryType == string(domain.TypePinned) ||
 			filter.MemoryType == string(domain.TypeInsight)):
-			memories, total, err = s.singlePoolConfidenceRecallSearch(r.Context(), auth, svc, filter)
+			memories, total, err = s.singlePoolConfidenceRecallSearch(listCtx, auth, svc, filter)
 		case onlySession:
-			memories, total, err = svc.session.List(r.Context(), filter)
+			memories, total, err = svc.session.List(listCtx, filter)
 		case !onlySession:
-			memories, total, err = svc.memory.Search(r.Context(), filter)
+			memories, total, err = svc.memory.Search(listCtx, filter)
 		}
 	}
+	listObservation.queryDuration = time.Since(queryStartedAt)
+	listObservation.recordDirectList(auth, filter, contentKeywordSearch, len(memories))
 
 	if err != nil {
 		if s.runtimeUsageEnabled() && recallLease != nil {
@@ -918,7 +928,9 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	// aggregation is out of scope for v0. Non-session memories are left
 	// untouched, so memory/fact recall is unaffected.
 	if !auth.IsChain() {
-		memories = s.resolveServices(auth).session.ApplySessionOverlay(r.Context(), memories)
+		overlayStartedAt := time.Now()
+		memories = s.resolveServices(auth).session.ApplySessionOverlay(listCtx, memories)
+		listObservation.overlayDuration = time.Since(overlayStartedAt)
 	}
 	if !contentKeywordSearch && rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
 		for i := range memories {
@@ -1053,46 +1065,57 @@ func (s *Server) listLocalMemoriesContentKeyword(ctx context.Context, svc resolv
 }
 
 func (s *Server) listLocalAllTypeMemoriesContentKeyword(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
-	memoryPages, err := collectLocalListPages(ctx, filter, svc.memory.ContentKeywordSearch)
+	memoryPages, err := collectLocalListPages(ctx, filter, "memory", svc.memory.ContentKeywordSearch)
 	if err != nil {
 		return nil, 0, err
 	}
-	sessionPages, err := collectLocalListPages(ctx, filter, svc.session.ContentKeywordSearch)
+	sessionPages, err := collectLocalListPages(ctx, filter, "session", svc.session.ContentKeywordSearch)
 	if err != nil {
 		return nil, 0, err
 	}
 
+	mergeStartedAt := time.Now()
 	combined := make([]domain.Memory, 0, len(memoryPages)+len(sessionPages))
 	combined = append(combined, memoryPages...)
 	combined = append(combined, sessionPages...)
 	combined = uniqueChainMemories(combined)
 
 	total := len(combined)
-	return finalizeChainMemories(combined, filter, filter.Limit, filter.Offset, false), total, nil
+	memories := finalizeChainMemories(combined, filter, filter.Limit, filter.Offset, false)
+	if observation := memoryListObservationFromContext(ctx); observation != nil {
+		observation.recordMerge(time.Since(mergeStartedAt))
+	}
+	return memories, total, nil
 }
 
 func (s *Server) listLocalAllTypeMemoriesScanAll(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
-	memoryPages, err := collectLocalListPages(ctx, filter, svc.memory.List)
+	memoryPages, err := collectLocalListPages(ctx, filter, "memory", svc.memory.List)
 	if err != nil {
 		return nil, 0, err
 	}
-	sessionPages, err := collectLocalListPages(ctx, filter, svc.session.List)
+	sessionPages, err := collectLocalListPages(ctx, filter, "session", svc.session.List)
 	if err != nil {
 		return nil, 0, err
 	}
 
+	mergeStartedAt := time.Now()
 	combined := make([]domain.Memory, 0, len(memoryPages)+len(sessionPages))
 	combined = append(combined, memoryPages...)
 	combined = append(combined, sessionPages...)
 	combined = uniqueChainMemories(combined)
 
 	total := len(combined)
-	return finalizeChainMemories(combined, filter, filter.Limit, filter.Offset, false), total, nil
+	memories := finalizeChainMemories(combined, filter, filter.Limit, filter.Offset, false)
+	if observation := memoryListObservationFromContext(ctx); observation != nil {
+		observation.recordMerge(time.Since(mergeStartedAt))
+	}
+	return memories, total, nil
 }
 
 func collectLocalListPages(
 	ctx context.Context,
 	filter domain.MemoryFilter,
+	resource string,
 	list func(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error),
 ) ([]domain.Memory, error) {
 	pageFilter := filter
@@ -1101,7 +1124,11 @@ func collectLocalListPages(
 
 	var all []domain.Memory
 	for {
+		pageStartedAt := time.Now()
 		page, pageTotal, err := list(ctx, pageFilter)
+		if observation := memoryListObservationFromContext(ctx); observation != nil {
+			observation.recordPage(resource, len(page), time.Since(pageStartedAt))
+		}
 		if err != nil {
 			return nil, err
 		}
