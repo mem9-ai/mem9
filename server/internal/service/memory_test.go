@@ -680,6 +680,9 @@ func TestCreatePinnedUsesBulkCreateSemantics(t *testing.T) {
 	if created.Source != "agent-1" {
 		t.Fatalf("expected source agent-1, got %q", created.Source)
 	}
+	if created.AgentID != "agent-1" {
+		t.Fatalf("expected agent_id agent-1, got %q", created.AgentID)
+	}
 	if created.UpdatedBy != "agent-1" {
 		t.Fatalf("expected updated_by agent-1, got %q", created.UpdatedBy)
 	}
@@ -697,6 +700,9 @@ func TestCreatePinnedUsesBulkCreateSemantics(t *testing.T) {
 	}
 	if mem.MemoryType != domain.TypePinned {
 		t.Fatalf("expected returned memory type pinned, got %s", mem.MemoryType)
+	}
+	if mem.AgentID != "agent-1" {
+		t.Fatalf("expected returned agent_id agent-1, got %q", mem.AgentID)
 	}
 }
 

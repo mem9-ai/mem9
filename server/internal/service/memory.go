@@ -1135,6 +1135,7 @@ func (s *MemoryService) BulkCreate(ctx context.Context, agentName string, items 
 			ID:         uuid.New().String(),
 			Content:    item.Content,
 			Source:     agentName,
+			AgentID:    agentName,
 			Tags:       item.Tags,
 			Metadata:   item.Metadata,
 			Embedding:  embedding,
