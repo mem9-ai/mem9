@@ -228,7 +228,7 @@ func TestGetKeyStatus(t *testing.T) {
 		{
 			name:      "active key",
 			apiKey:    "key-active",
-			tenant:    &domain.Tenant{Status: domain.TenantActive},
+			tenant:    &domain.Tenant{Status: domain.TenantActive, ClusterID: "cluster-active"},
 			wantCode:  http.StatusOK,
 			wantField: "status",
 			wantValue: string(domain.KeyStatusActive),
@@ -236,7 +236,7 @@ func TestGetKeyStatus(t *testing.T) {
 		{
 			name:      "inactive key",
 			apiKey:    "key-provisioning",
-			tenant:    &domain.Tenant{Status: domain.TenantProvisioning},
+			tenant:    &domain.Tenant{Status: domain.TenantProvisioning, ClusterID: "cluster-inactive"},
 			wantCode:  http.StatusOK,
 			wantField: "status",
 			wantValue: string(domain.KeyStatusInactive),
@@ -308,6 +308,17 @@ func TestGetKeyStatus(t *testing.T) {
 			}
 			if body[tt.wantField] != tt.wantValue {
 				t.Fatalf("response %s = %q, want %q; body = %#v", tt.wantField, body[tt.wantField], tt.wantValue, body)
+			}
+			if tt.wantCode == http.StatusOK {
+				for _, field := range []string{
+					`"msg":"api key status resolved"`,
+					`"cluster_id":"` + tt.tenant.ClusterID + `"`,
+					`"api_key_status":"` + tt.wantValue + `"`,
+				} {
+					if !strings.Contains(logBuf.String(), field) {
+						t.Fatalf("status resolution log missing %s: %s", field, logBuf.String())
+					}
+				}
 			}
 			if strings.Contains(logBuf.String(), tt.apiKey) && tt.apiKey != "" {
 				t.Fatalf("logs leaked API key: %s", logBuf.String())

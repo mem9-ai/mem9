@@ -143,6 +143,15 @@ func (s *Server) resolveAPIKeyStatus(w http.ResponseWriter, r *http.Request) (ap
 		APIKeySubject: apiKey,
 		AgentName:     r.Header.Get(middleware.AgentIDHeader),
 	}
+	logger := s.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.InfoContext(r.Context(), "api key status resolved",
+		"auth_mode", "api_key",
+		"cluster_id", statusResult.ClusterID,
+		"api_key_status", statusResult.Status,
+	)
 	return apiKeyStatusResolution{Status: statusResult.Status, Auth: auth}, true
 }
 
