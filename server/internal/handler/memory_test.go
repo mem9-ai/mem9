@@ -1172,7 +1172,7 @@ func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
 	}
 }
 
-func TestListMemories_DefaultAllTypesIncludesSessions(t *testing.T) {
+func TestListMemories_DefaultListUsesDurableMemoryPage(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
 		listResults: []domain.Memory{
@@ -1185,7 +1185,7 @@ func TestListMemories_DefaultAllTypesIncludesSessions(t *testing.T) {
 				UpdatedAt:  now.Add(-time.Hour),
 			},
 		},
-		listTotal: 1,
+		listTotal: 1000,
 	}
 	sessionRepo := &testSessionRepo{
 		listResults: []domain.Memory{
@@ -1198,10 +1198,10 @@ func TestListMemories_DefaultAllTypesIncludesSessions(t *testing.T) {
 				UpdatedAt:  now,
 			},
 		},
-		listTotal: 1,
+		listTotal: 1000,
 	}
 	srv := newTestServer(memRepo, sessionRepo)
-	req := makeRequest(t, http.MethodGet, "/memories?limit=10&offset=0&state=active", nil)
+	req := makeRequest(t, http.MethodGet, "/memories?limit=1", nil)
 	rr := httptest.NewRecorder()
 
 	srv.listMemories(rr, req)
@@ -1213,17 +1213,17 @@ func TestListMemories_DefaultAllTypesIncludesSessions(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Total != 2 || resp.Limit != 10 || resp.Offset != 0 {
-		t.Fatalf("page = total:%d limit:%d offset:%d, want 2/10/0", resp.Total, resp.Limit, resp.Offset)
+	if resp.Total != 1000 || resp.Limit != 1 || resp.Offset != 0 {
+		t.Fatalf("page = total:%d limit:%d offset:%d, want 1000/1/0", resp.Total, resp.Limit, resp.Offset)
 	}
-	if len(resp.Memories) != 2 {
-		t.Fatalf("len(memories) = %d, want 2", len(resp.Memories))
+	if len(resp.Memories) != 1 || resp.Memories[0].ID != "insight-1" {
+		t.Fatalf("memories = %+v, want durable memory page", resp.Memories)
 	}
-	if resp.Memories[0].ID != "session-1" || resp.Memories[1].ID != "insight-1" {
-		t.Fatalf("memory order = [%s %s], want [session-1 insight-1]", resp.Memories[0].ID, resp.Memories[1].ID)
+	if memRepo.listCalls != 1 || sessionRepo.listCalls != 0 {
+		t.Fatalf("list calls = memory:%d session:%d, want 1/0", memRepo.listCalls, sessionRepo.listCalls)
 	}
-	if memRepo.listCalls != 1 || sessionRepo.listCalls != 1 {
-		t.Fatalf("list calls = memory:%d session:%d, want 1/1", memRepo.listCalls, sessionRepo.listCalls)
+	if memRepo.lastListFilter.Limit != 1 || memRepo.lastListFilter.Offset != 0 {
+		t.Fatalf("memory filter = %+v, want limit=1 offset=0", memRepo.lastListFilter)
 	}
 }
 

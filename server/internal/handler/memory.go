@@ -884,8 +884,6 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	} else {
 		svc := s.resolveServices(auth)
 		switch {
-		case filter.Query == "" && filter.MemoryType == "":
-			memories, total, err = s.listLocalAllTypeMemoriesScanAll(r.Context(), svc, filter)
 		case filter.Query != "" && contentKeywordSearch:
 			memories, total, err = s.listLocalMemoriesContentKeyword(r.Context(), svc, filter)
 		case filter.Query != "" && filter.ScanAll:
