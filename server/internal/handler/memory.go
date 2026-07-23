@@ -792,16 +792,42 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	if offset < 0 {
 		offset = 0
 	}
+	var tags []string
+	if t := q.Get("tags"); t != "" {
+		tags = strings.Split(t, ",")
+	}
+	filter := domain.MemoryFilter{
+		Query:      query,
+		Tags:       tags,
+		Source:     q.Get("source"),
+		State:      q.Get("state"),
+		MemoryType: q.Get("memory_type"),
+		AgentID:    q.Get("agent_id"),
+		SessionID:  q.Get("session_id"),
+		SortBy:     q.Get("sort_by"),
+		SortDir:    q.Get("sort_dir"),
+		Limit:      limit,
+		Offset:     offset,
+		ScanAll:    parseBoolQuery(q.Get("scanAll")),
+	}
+	var (
+		memories []domain.Memory
+		total    int
+		err      error
+	)
+	listObservation := newMemoryListObservation(s.logger, auth, filter, contentKeywordSearch)
+	listObservation.startedAt = requestStartedAt
+	listCtx := withMemoryListObservation(r.Context(), listObservation)
+	defer func() {
+		listObservation.finish(r.Context(), err, len(memories), total)
+	}()
+
 	appIDFilter, err := parseAppIDFilter(q)
 	if err != nil {
 		s.handleError(r.Context(), w, err)
 		return
 	}
-
-	var tags []string
-	if t := q.Get("tags"); t != "" {
-		tags = strings.Split(t, ",")
-	}
+	filter.AppID = appIDFilter
 
 	createdAfter, err := parseTimeParam(q.Get("created_after"), "created_after")
 	if err != nil {
@@ -814,9 +840,10 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if createdAfter != nil && createdBefore != nil && createdAfter.After(*createdBefore) {
-		s.handleError(r.Context(), w, &domain.ValidationError{
+		err = &domain.ValidationError{
 			Field: "created_after", Message: "must not be after created_before",
-		})
+		}
+		s.handleError(r.Context(), w, err)
 		return
 	}
 	// The created_at window is consumed only by the session pool. Reject
@@ -824,39 +851,15 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	// (session filtered, pinned/insight not) — same "explicit 400, never
 	// silent" stance as the RFC3339 parse above.
 	if (createdAfter != nil || createdBefore != nil) && q.Get("memory_type") != string(domain.TypeSession) {
-		s.handleError(r.Context(), w, &domain.ValidationError{
+		err = &domain.ValidationError{
 			Field: "created_after", Message: "time-range filter requires memory_type=session",
-		})
+		}
+		s.handleError(r.Context(), w, err)
 		return
 	}
-
-	filter := domain.MemoryFilter{
-		Query:         query,
-		Tags:          tags,
-		Source:        q.Get("source"),
-		State:         q.Get("state"),
-		MemoryType:    q.Get("memory_type"),
-		AgentID:       q.Get("agent_id"),
-		SessionID:     q.Get("session_id"),
-		AppID:         appIDFilter,
-		SortBy:        q.Get("sort_by"),
-		SortDir:       q.Get("sort_dir"),
-		Limit:         limit,
-		Offset:        offset,
-		ScanAll:       parseBoolQuery(q.Get("scanAll")),
-		CreatedAfter:  createdAfter,
-		CreatedBefore: createdBefore,
-	}
+	filter.CreatedAfter = createdAfter
+	filter.CreatedBefore = createdBefore
 	onlySession := filter.MemoryType == string(domain.TypeSession)
-
-	var memories []domain.Memory
-	var total int
-	listObservation := newMemoryListObservation(s.logger, auth, filter, contentKeywordSearch)
-	listObservation.startedAt = requestStartedAt
-	listCtx := withMemoryListObservation(r.Context(), listObservation)
-	defer func() {
-		listObservation.finish(r.Context(), err, len(memories), total)
-	}()
 	var recallLease *runtimeusage.OperationLease
 	recallFinalized := false
 	recallSearch := filter.Query != "" && !contentKeywordSearch

@@ -35,6 +35,9 @@ type memoryListObservation struct {
 	memoryRows           int
 	sessionPages         int
 	sessionRows          int
+	chainPages           int
+	chainRows            int
+	chainQueryDuration   time.Duration
 }
 
 func newMemoryListObservation(
@@ -125,6 +128,10 @@ func (o *memoryListObservation) recordPage(resource string, rows int, duration t
 		o.sessionPages++
 		o.sessionRows += rows
 		o.sessionQueryDuration += duration
+	case "chain":
+		o.chainPages++
+		o.chainRows += rows
+		o.chainQueryDuration += duration
 	}
 }
 
@@ -163,6 +170,12 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		return
 	}
 
+	pages := o.memoryPages + o.sessionPages
+	rows := o.memoryRows + o.sessionRows
+	if pages == 0 && o.chainPages > 0 {
+		pages = o.chainPages
+		rows = o.chainRows
+	}
 	attrs := []slog.Attr{
 		slog.String("cluster_id", o.clusterID),
 		slog.String("mode", o.mode),
@@ -172,14 +185,17 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		slog.Int("offset", o.offset),
 		slog.Int("returned", returned),
 		slog.Int("total", total),
-		slog.Int("pages", o.memoryPages+o.sessionPages),
-		slog.Int("rows", o.memoryRows+o.sessionRows),
+		slog.Int("pages", pages),
+		slog.Int("rows", rows),
 		slog.Int("memory_pages", o.memoryPages),
 		slog.Int("memory_rows", o.memoryRows),
 		slog.Int("session_pages", o.sessionPages),
 		slog.Int("session_rows", o.sessionRows),
+		slog.Int("chain_pages", o.chainPages),
+		slog.Int("chain_rows", o.chainRows),
 		slog.Int64("memory_query_ms", o.memoryQueryDuration.Milliseconds()),
 		slog.Int64("session_query_ms", o.sessionQueryDuration.Milliseconds()),
+		slog.Int64("chain_query_ms", o.chainQueryDuration.Milliseconds()),
 		slog.Int64("query_ms", o.queryDuration.Milliseconds()),
 		slog.Int64("merge_ms", o.mergeDuration.Milliseconds()),
 		slog.Int64("overlay_ms", o.overlayDuration.Milliseconds()),

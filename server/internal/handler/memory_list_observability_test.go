@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -83,6 +84,56 @@ func TestListMemories_RecordsMemoryListMetrics(t *testing.T) {
 	}
 }
 
+func TestListMemories_RecordsValidationMetrics(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		mode string
+	}{
+		{
+			name: "oversized app ID",
+			path: "/memories?appId=" + strings.Repeat("a", maxAppIDLen+1),
+			mode: "durable_list",
+		},
+		{
+			name: "malformed timestamp",
+			path: "/memories?created_after=not-a-time",
+			mode: "durable_list",
+		},
+		{
+			name: "inverted session range",
+			path: "/memories?memory_type=session&created_after=2026-07-23T02:00:00Z&created_before=2026-07-23T01:00:00Z",
+			mode: "session_list",
+		},
+		{
+			name: "range on durable pool",
+			path: "/memories?created_after=2026-07-23T01:00:00Z",
+			mode: "durable_list",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetMemoryListMetrics()
+			srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+			req := makeRequest(t, http.MethodGet, tt.path, nil)
+			rr := httptest.NewRecorder()
+
+			srv.listMemories(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+			}
+			if got := memoryListRequestCount(t, tt.mode, "error"); got != 1 {
+				t.Fatalf("memory list request count = %v, want 1", got)
+			}
+			if got := memoryListDurationCount(t, tt.mode, "error"); got != 1 {
+				t.Fatalf("memory list duration count = %d, want 1", got)
+			}
+		})
+	}
+}
+
 func TestMemoryListObservation_LogsSlowSummary(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&logBuf, nil)))
@@ -136,7 +187,7 @@ func TestMemoryListObservation_RecordsConcurrentChainWork(t *testing.T) {
 
 	var group sync.WaitGroup
 	for range 10 {
-		group.Add(2)
+		group.Add(3)
 		go func() {
 			defer group.Done()
 			observation.recordPage("memory", 2, time.Millisecond)
@@ -145,6 +196,10 @@ func TestMemoryListObservation_RecordsConcurrentChainWork(t *testing.T) {
 		go func() {
 			defer group.Done()
 			observation.recordPage("session", 3, time.Millisecond)
+		}()
+		go func() {
+			defer group.Done()
+			observation.recordPage("chain", 4, time.Millisecond)
 		}()
 	}
 	group.Wait()
@@ -155,8 +210,43 @@ func TestMemoryListObservation_RecordsConcurrentChainWork(t *testing.T) {
 	if observation.sessionPages != 10 || observation.sessionRows != 30 {
 		t.Fatalf("session work = %d pages/%d rows, want 10/30", observation.sessionPages, observation.sessionRows)
 	}
+	if observation.chainPages != 10 || observation.chainRows != 40 {
+		t.Fatalf("chain work = %d pages/%d rows, want 10/40", observation.chainPages, observation.chainRows)
+	}
+	if observation.chainQueryDuration != 10*time.Millisecond {
+		t.Fatalf("chain query duration = %s, want 10ms", observation.chainQueryDuration)
+	}
 	if observation.mergeDuration != 10*time.Millisecond {
 		t.Fatalf("merge duration = %s, want 10ms", observation.mergeDuration)
+	}
+}
+
+func TestListChainMemories_RecordsNodeWork(t *testing.T) {
+	sessionRepo := &testSessionRepo{
+		listResults: []domain.Memory{{ID: "session-1", MemoryType: domain.TypeSession}},
+		listTotal:   1,
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+	req := makeChainRequestWithNodes(t, http.MethodGet, "/memories", nil, 2)
+	auth := authInfo(req)
+	observation := newMemoryListObservation(slog.Default(), auth, domain.MemoryFilter{
+		MemoryType: string(domain.TypeSession),
+		Limit:      10,
+	}, false)
+	ctx := withMemoryListObservation(req.Context(), observation)
+
+	memories, total, err := srv.listChainMemories(ctx, auth, domain.MemoryFilter{
+		MemoryType: string(domain.TypeSession),
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("list chain memories: %v", err)
+	}
+	if len(memories) != 1 || total != 1 {
+		t.Fatalf("result = %d memories/%d total, want 1/1", len(memories), total)
+	}
+	if observation.chainPages != 2 || observation.chainRows != 2 {
+		t.Fatalf("chain work = %d pages/%d rows, want 2/2", observation.chainPages, observation.chainRows)
 	}
 }
 

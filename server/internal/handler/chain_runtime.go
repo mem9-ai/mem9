@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -436,9 +437,13 @@ func (s *Server) listChainMemoriesContentKeyword(ctx context.Context, auth *doma
 	for i, node := range auth.Chain.Nodes {
 		i, node := i, node
 		group.Go(func() error {
+			nodeStartedAt := time.Now()
 			nodeAuth := chainNodeAuth(auth, node)
 			svc := s.resolveServices(nodeAuth)
 			memories, _, err := s.listLocalMemoriesContentKeyword(groupCtx, svc, perNodeFilter)
+			if observation := memoryListObservationFromContext(groupCtx); observation != nil {
+				observation.recordPage("chain", len(memories), time.Since(nodeStartedAt))
+			}
 			if err != nil {
 				return err
 			}
@@ -500,6 +505,7 @@ func (s *Server) listChainNodeMemories(
 	profile recallQueryProfile,
 	queryMode bool,
 ) (chainNodeMemoryResult, error) {
+	nodeStartedAt := time.Now()
 	nodeAuth := chainNodeAuth(auth, node)
 	svc := s.resolveServices(nodeAuth)
 
@@ -518,6 +524,9 @@ func (s *Server) listChainNodeMemories(
 		memories, _, err = svc.session.List(ctx, filter)
 	case filter.MemoryType != string(domain.TypeSession):
 		memories, _, err = svc.memory.Search(ctx, filter)
+	}
+	if observation := memoryListObservationFromContext(ctx); observation != nil {
+		observation.recordPage("chain", len(memories), time.Since(nodeStartedAt))
 	}
 	if err != nil {
 		return chainNodeMemoryResult{}, err
