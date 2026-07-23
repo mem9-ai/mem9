@@ -1144,6 +1144,9 @@ func collectLocalListPages(
 			return nil, resultErr
 		}
 		all = append(all, page...)
+		if budget.rows == budget.limits.maxRows && pageFilter.Offset+len(page) < pageTotal {
+			return nil, &memoryListBudgetExceededError{dimension: "rows", source: resource}
+		}
 		if len(page) == 0 || pageFilter.Offset+pageFilter.Limit >= pageTotal {
 			return all, nil
 		}

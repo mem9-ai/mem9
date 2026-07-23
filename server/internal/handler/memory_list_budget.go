@@ -66,8 +66,12 @@ func (b *localListBudget) preparePage(ctx context.Context, source string, filter
 		return &memoryListBudgetExceededError{dimension: "pages", source: source}
 	}
 	remainingRows := b.limits.maxRows - b.rows
-	if remainingRows <= 0 {
+	if remainingRows < 0 {
 		return &memoryListBudgetExceededError{dimension: "rows", source: source}
+	}
+	if remainingRows == 0 {
+		filter.Limit = 1
+		return nil
 	}
 	filter.Limit = min(b.limits.pageSize, remainingRows)
 	return nil

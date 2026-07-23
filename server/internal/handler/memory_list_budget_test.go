@@ -46,6 +46,62 @@ func TestCollectLocalListPagesStopsAtMemoryRowBudget(t *testing.T) {
 	}
 }
 
+func TestCollectLocalListPagesAllowsEmptySecondSourceAtExactRowBudget(t *testing.T) {
+	ctx, budget, cancel := newLocalListBudget(context.Background(), localListBudgetLimits{
+		maxPages:   3,
+		maxRows:    3,
+		maxElapsed: time.Second,
+		pageSize:   3,
+	})
+	defer cancel()
+
+	memoryRows, err := collectLocalListPages(ctx, domain.MemoryFilter{}, "memory", budget, func(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+		if filter.Limit != 3 {
+			t.Fatalf("memory limit = %d, want 3", filter.Limit)
+		}
+		return makeBudgetTestMemories(3), 3, nil
+	})
+	if err != nil {
+		t.Fatalf("memory collection: %v", err)
+	}
+	sessionCalls := 0
+	sessionRows, err := collectLocalListPages(ctx, domain.MemoryFilter{}, "session", budget, func(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+		sessionCalls++
+		if filter.Limit != 1 {
+			t.Fatalf("session probe limit = %d, want 1", filter.Limit)
+		}
+		return nil, 0, nil
+	})
+	if err != nil {
+		t.Fatalf("empty session collection: %v", err)
+	}
+	if len(memoryRows) != 3 || len(sessionRows) != 0 || sessionCalls != 1 {
+		t.Fatalf("results = memory:%d session:%d calls:%d, want 3/0/1", len(memoryRows), len(sessionRows), sessionCalls)
+	}
+}
+
+func TestCollectLocalListPagesRejectsNonemptySecondSourceAtExactRowBudget(t *testing.T) {
+	ctx, budget, cancel := newLocalListBudget(context.Background(), localListBudgetLimits{
+		maxPages:   3,
+		maxRows:    3,
+		maxElapsed: time.Second,
+		pageSize:   3,
+	})
+	defer cancel()
+
+	_, err := collectLocalListPages(ctx, domain.MemoryFilter{}, "memory", budget, func(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error) {
+		return makeBudgetTestMemories(3), 3, nil
+	})
+	if err != nil {
+		t.Fatalf("memory collection: %v", err)
+	}
+	_, err = collectLocalListPages(ctx, domain.MemoryFilter{}, "session", budget, func(context.Context, domain.MemoryFilter) ([]domain.Memory, int, error) {
+		return makeBudgetTestMemories(1), 1, nil
+	})
+
+	assertMemoryListBudgetError(t, err, "rows", "session")
+}
+
 func TestCollectLocalListPagesStopsAtSessionPageBudget(t *testing.T) {
 	ctx, budget, cancel := newLocalListBudget(context.Background(), localListBudgetLimits{
 		maxPages:   2,
