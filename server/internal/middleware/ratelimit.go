@@ -22,6 +22,7 @@ import (
 )
 
 type visitor struct {
+	mu       sync.Mutex
 	limiter  *rate.Limiter
 	lastSeen time.Time
 }
@@ -89,9 +90,15 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	}
 }
 
-func allowRateLimit(limiter *rate.Limiter) (bool, time.Duration) {
-	now := time.Now()
-	reservation := limiter.ReserveN(now, 1)
+func allowRateLimit(visitor *visitor) (bool, time.Duration) {
+	return allowRateLimitAt(visitor, time.Now())
+}
+
+func allowRateLimitAt(visitor *visitor, now time.Time) (bool, time.Duration) {
+	visitor.mu.Lock()
+	defer visitor.mu.Unlock()
+
+	reservation := visitor.limiter.ReserveN(now, 1)
 	if !reservation.OK() {
 		return false, rate.InfDuration
 	}
@@ -152,18 +159,18 @@ func (rl *RateLimiter) apiKeyFingerprint(apiKey string) string {
 	return hex.EncodeToString(mac.Sum(nil)[:12])
 }
 
-func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
+func (rl *RateLimiter) getLimiter(key string) *visitor {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
 	v, ok := rl.visitors[key]
 	if !ok {
-		limiter := rate.NewLimiter(rl.limit, rl.burst)
-		rl.visitors[key] = &visitor{limiter: limiter, lastSeen: time.Now()}
-		return limiter
+		v = &visitor{limiter: rate.NewLimiter(rl.limit, rl.burst), lastSeen: time.Now()}
+		rl.visitors[key] = v
+		return v
 	}
 	v.lastSeen = time.Now()
-	return v.limiter
+	return v
 }
 
 // cleanup removes stale entries every 3 minutes until stopped.

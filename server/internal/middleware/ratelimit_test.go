@@ -10,10 +10,13 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	dto "github.com/prometheus/client_model/go"
+	"golang.org/x/time/rate"
 
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/reqid"
@@ -141,6 +144,40 @@ func TestRateLimiterAPIKeyFingerprintIsStableAndKeyed(t *testing.T) {
 	plain := sha256.Sum256([]byte("mem9_customer_key"))
 	if fingerprint == hex.EncodeToString(plain[:12]) {
 		t.Fatal("fingerprint equals the unkeyed SHA-256 digest")
+	}
+}
+
+func TestAllowRateLimitConcurrentDenialsPreserveCapacity(t *testing.T) {
+	const deniedRequests = 100
+	now := time.Now()
+	visitor := &visitor{limiter: rate.NewLimiter(10, 1)}
+	if !visitor.limiter.AllowN(now, 1) {
+		t.Fatal("initial request was denied")
+	}
+
+	start := make(chan struct{})
+	results := make(chan bool, deniedRequests)
+	var group sync.WaitGroup
+	for range deniedRequests {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			<-start
+			allowed, _ := allowRateLimitAt(visitor, now)
+			results <- allowed
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(results)
+
+	for allowed := range results {
+		if allowed {
+			t.Fatal("concurrent request was unexpectedly allowed")
+		}
+	}
+	if !visitor.limiter.AllowN(now.Add(101*time.Millisecond), 1) {
+		t.Fatal("concurrent denials consumed future limiter capacity")
 	}
 }
 
