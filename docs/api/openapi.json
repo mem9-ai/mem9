@@ -2053,7 +2053,7 @@
         "name": "sort_by",
         "in": "query",
         "required": false,
-        "description": "Sort field used when listing memories.",
+        "description": "Sort field used when listing memories. All-types lists support updated_at and memory_type; content and tags require an explicit memory_type.",
         "schema": {
           "type": "string",
           "enum": [

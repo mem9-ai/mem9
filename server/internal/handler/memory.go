@@ -1070,7 +1070,10 @@ func (s *Server) listLocalMemoriesContentKeyword(ctx context.Context, svc resolv
 	}
 }
 
-const localMemoryListPageSize = 200
+const (
+	localMemoryListPageSize         = 200
+	localAllTypeMemoryListMaxWindow = 3000
+)
 
 type localMemoryListSource struct {
 	name     string
@@ -1085,7 +1088,10 @@ type localMemoryListPrefix struct {
 }
 
 func (s *Server) listLocalAllTypeMemoriesPage(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
-	window := mergedMemoryWindow(filter.Offset, filter.Limit)
+	window, err := localAllTypeMemoryListWindow(filter)
+	if err != nil {
+		return nil, 0, err
+	}
 	memorySource := localMemoryListSource{
 		name:     "memory",
 		filter:   filter,
@@ -1171,6 +1177,24 @@ func loadLocalMemoryListPrefix(ctx context.Context, source localMemoryListSource
 	return localMemoryListPrefix{memories: memories, total: total}, nil
 }
 
+func localAllTypeMemoryListWindow(filter domain.MemoryFilter) (int, error) {
+	window := mergedMemoryWindow(filter.Offset, filter.Limit)
+	if window > localAllTypeMemoryListMaxWindow {
+		return 0, &domain.ValidationError{
+			Field:   "offset",
+			Message: fmt.Sprintf("offset plus limit exceeds the all-types maximum of %d", localAllTypeMemoryListMaxWindow),
+		}
+	}
+	switch strings.TrimSpace(filter.SortBy) {
+	case "content", "tags":
+		return 0, &domain.ValidationError{
+			Field:   "sort_by",
+			Message: "content and tags sorting require an explicit memory_type",
+		}
+	}
+	return window, nil
+}
+
 func mergedMemoryWindow(offset, limit int) int {
 	maxInt := int(^uint(0) >> 1)
 	if limit > maxInt-offset {
@@ -1218,15 +1242,8 @@ func mergeLocalMemoryListPrefixes(left, right []domain.Memory, filter domain.Mem
 func localMemoryListCompare(left, right domain.Memory, filter domain.MemoryFilter) int {
 	comparison := 0
 	switch strings.TrimSpace(filter.SortBy) {
-	case "content":
-		comparison = strings.Compare(strings.ToLower(left.Content), strings.ToLower(right.Content))
 	case "memory_type":
 		comparison = strings.Compare(string(left.MemoryType), string(right.MemoryType))
-	case "tags":
-		comparison = strings.Compare(
-			strings.ToLower(strings.Join(left.Tags, ",")),
-			strings.ToLower(strings.Join(right.Tags, ",")),
-		)
 	case "updated_at", "":
 		comparison = left.UpdatedAt.Compare(right.UpdatedAt)
 	default:

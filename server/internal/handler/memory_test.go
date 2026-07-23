@@ -1338,6 +1338,61 @@ func TestListMemories_DefaultListUsesConstantFirstPageWorkForLargeTotals(t *test
 	}
 }
 
+func TestListMemories_DefaultListRejectsDeepPaginationBeforeRepositoryWork(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	sessionRepo := &testSessionRepo{}
+	srv := newTestServer(memRepo, sessionRepo)
+	req := makeRequest(t, http.MethodGet, "/memories?limit=1&offset=3000", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+	}
+	if memRepo.countListCalls != 0 || sessionRepo.countListCalls != 0 ||
+		memRepo.listPageCalls != 0 || sessionRepo.listPageCalls != 0 {
+		t.Fatalf("repository calls = memory count/page %d/%d, session count/page %d/%d, want 0/0 each",
+			memRepo.countListCalls, memRepo.listPageCalls, sessionRepo.countListCalls, sessionRepo.listPageCalls)
+	}
+}
+
+func TestListMemories_DefaultListRejectsSourceSpecificSortsBeforeRepositoryWork(t *testing.T) {
+	for _, sortBy := range []string{"content", "tags"} {
+		t.Run(sortBy, func(t *testing.T) {
+			memRepo := &testMemoryRepo{}
+			sessionRepo := &testSessionRepo{}
+			srv := newTestServer(memRepo, sessionRepo)
+			req := makeRequest(t, http.MethodGet, "/memories?sort_by="+sortBy, nil)
+			rr := httptest.NewRecorder()
+
+			srv.listMemories(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+			}
+			if memRepo.countListCalls != 0 || sessionRepo.countListCalls != 0 ||
+				memRepo.listPageCalls != 0 || sessionRepo.listPageCalls != 0 {
+				t.Fatalf("repository calls = memory count/page %d/%d, session count/page %d/%d, want 0/0 each",
+					memRepo.countListCalls, memRepo.listPageCalls, sessionRepo.countListCalls, sessionRepo.listPageCalls)
+			}
+		})
+	}
+}
+
+func TestLocalAllTypeMemoryListWindowAllowsMaximum(t *testing.T) {
+	window, err := localAllTypeMemoryListWindow(domain.MemoryFilter{
+		Offset: localAllTypeMemoryListMaxWindow - 1,
+		Limit:  1,
+	})
+	if err != nil {
+		t.Fatalf("localAllTypeMemoryListWindow: %v", err)
+	}
+	if window != localAllTypeMemoryListMaxWindow {
+		t.Fatalf("window = %d, want %d", window, localAllTypeMemoryListMaxWindow)
+	}
+}
+
 func TestListMemories_DefaultListPaginatesMergedOrderAndPreservesFilters(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
@@ -1426,16 +1481,6 @@ func TestMergeLocalMemoryListPrefixesOrdersAndDeduplicates(t *testing.T) {
 			right:  []domain.Memory{{ID: "c", MemoryType: domain.TypeSession}},
 			filter: domain.MemoryFilter{SortBy: "memory_type", SortDir: "asc"},
 			want:   []string{"a", "b", "c"},
-		},
-		{
-			name: "content ascending",
-			left: []domain.Memory{
-				{ID: "a", Content: "apple"},
-				{ID: "z", Content: "zebra"},
-			},
-			right:  []domain.Memory{{ID: "m", Content: "Mango"}},
-			filter: domain.MemoryFilter{SortBy: "content", SortDir: "asc"},
-			want:   []string{"a", "m", "z"},
 		},
 		{
 			name: "duplicate id",
