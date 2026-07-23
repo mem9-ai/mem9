@@ -136,21 +136,7 @@ func (s *SpaceChainService) Authorize(ctx context.Context, chainID, key string) 
 }
 
 func (s *SpaceChainService) AuthorizeManagement(ctx context.Context, chainID, key string) (*domain.SpaceChain, error) {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return nil, &domain.ValidationError{Field: "X-API-Key", Message: "missing or malformed X-API-Key"}
-	}
-	if !strings.HasPrefix(key, domain.ChainKeyPrefix) {
-		return nil, &domain.ValidationError{Field: "X-API-Key", Message: "not a chain key"}
-	}
-	chain, err := s.chains.GetByKeyIncludingDisabled(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	if chain.ID != chainID {
-		return nil, domain.ErrNotFound
-	}
-	return chain, nil
+	return s.Authorize(ctx, chainID, key)
 }
 
 func (s *SpaceChainService) Update(ctx context.Context, chainID string, req UpdateSpaceChainRequest) (*domain.SpaceChain, error) {

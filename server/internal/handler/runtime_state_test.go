@@ -336,9 +336,6 @@ func (r *runtimeStateSpaceChainRepo) GetByKey(context.Context, string) (*domain.
 	r.getByKeyCalls++
 	return nil, domain.ErrNotFound
 }
-func (r *runtimeStateSpaceChainRepo) GetByKeyIncludingDisabled(context.Context, string) (*domain.SpaceChain, error) {
-	return nil, domain.ErrNotFound
-}
 func (r *runtimeStateSpaceChainRepo) Update(context.Context, *domain.SpaceChain) error { return nil }
 func (r *runtimeStateSpaceChainRepo) SoftDelete(context.Context, string, string) error { return nil }
 func (r *runtimeStateSpaceChainRepo) CreateBinding(context.Context, *domain.SpaceChainBinding) error {

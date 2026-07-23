@@ -182,10 +182,34 @@ func TestSpaceChainDisableBindingRejectsLastActiveKey(t *testing.T) {
 	}
 }
 
+func TestSpaceChainAuthorizeManagementRejectsDisabledKey(t *testing.T) {
+	repo := &fakeSpaceChainRepo{
+		chain: &domain.SpaceChain{
+			ID: "chain-1",
+			Bindings: []domain.SpaceChainBinding{
+				{
+					ID:          "binding-1",
+					ChainID:     "chain-1",
+					ChainAPIKey: "chain_disabled",
+					Disabled:    true,
+				},
+			},
+		},
+		getByKeyErr: domain.ErrNotFound,
+	}
+	svc := NewSpaceChainService(repo)
+
+	_, err := svc.AuthorizeManagement(context.Background(), "chain-1", "chain_disabled")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("expected disabled key to be rejected, got %T: %v", err, err)
+	}
+}
+
 type fakeSpaceChainRepo struct {
 	chain             *domain.SpaceChain
 	nodes             []domain.SpaceChainNode
 	disabledBindingID string
+	getByKeyErr       error
 }
 
 func (r *fakeSpaceChainRepo) Create(_ context.Context, chain *domain.SpaceChain, binding *domain.SpaceChainBinding) error {
@@ -207,13 +231,9 @@ func (r *fakeSpaceChainRepo) GetByID(_ context.Context, id string) (*domain.Spac
 }
 
 func (r *fakeSpaceChainRepo) GetByKey(_ context.Context, _ string) (*domain.SpaceChain, error) {
-	if r.chain == nil {
-		return nil, domain.ErrNotFound
+	if r.getByKeyErr != nil {
+		return nil, r.getByKeyErr
 	}
-	return r.chain, nil
-}
-
-func (r *fakeSpaceChainRepo) GetByKeyIncludingDisabled(_ context.Context, _ string) (*domain.SpaceChain, error) {
 	if r.chain == nil {
 		return nil, domain.ErrNotFound
 	}

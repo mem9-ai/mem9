@@ -751,13 +751,6 @@ func (r *stubSpaceChainRepo) GetByKey(context.Context, string) (*domain.SpaceCha
 	return r.chain, nil
 }
 
-func (r *stubSpaceChainRepo) GetByKeyIncludingDisabled(context.Context, string) (*domain.SpaceChain, error) {
-	if r.err != nil {
-		return nil, r.err
-	}
-	return r.chain, nil
-}
-
 func (r *stubSpaceChainRepo) Update(context.Context, *domain.SpaceChain) error { return nil }
 
 func (r *stubSpaceChainRepo) SoftDelete(context.Context, string, string) error { return nil }
