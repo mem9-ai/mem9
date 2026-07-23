@@ -94,12 +94,12 @@ func TestListMemories_RecordsValidationMetrics(t *testing.T) {
 		{
 			name: "oversized app ID",
 			path: "/memories?appId=" + strings.Repeat("a", maxAppIDLen+1),
-			mode: "durable_list",
+			mode: "all_types_list",
 		},
 		{
 			name: "malformed timestamp",
 			path: "/memories?created_after=not-a-time",
-			mode: "durable_list",
+			mode: "all_types_list",
 		},
 		{
 			name: "inverted session range",
@@ -109,7 +109,7 @@ func TestListMemories_RecordsValidationMetrics(t *testing.T) {
 		{
 			name: "range on durable pool",
 			path: "/memories?created_after=2026-07-23T01:00:00Z",
-			mode: "durable_list",
+			mode: "all_types_list",
 		},
 	}
 
