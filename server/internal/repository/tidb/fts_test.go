@@ -137,14 +137,12 @@ func TestMemoryListSelectsSearchColumnsWithoutEmbedding(t *testing.T) {
 	}
 }
 
-func TestMemoryListAllTypesUsesBoundedUnionPage(t *testing.T) {
+func TestMemoryListAllTypesMergesBoundedTimeOrderedPages(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	appID := "app-1"
 	filterArgs := []any{"active", "agent-1", "sess-1", appID, "chat", `"tag-a"`}
 	countArgs := append(append([]any(nil), filterArgs...), filterArgs...)
 	pageArgs := append(append([]any(nil), filterArgs...), 5)
-	pageArgs = append(pageArgs, filterArgs...)
-	pageArgs = append(pageArgs, 5, 2, 3)
 
 	db := newScriptedTestDB(t, []*queryExpectation{
 		{
@@ -161,30 +159,55 @@ func TestMemoryListAllTypesUsesBoundedUnionPage(t *testing.T) {
 		},
 		{
 			mustContain: []string{
-				"WITH memory_page AS",
-				"SELECT " + searchColumns + ", updated_at AS sort_value",
+				"SELECT " + searchColumns,
 				"FROM memories",
-				"ORDER BY updated_at DESC, id DESC LIMIT ?",
-				"session_page AS",
+				"ORDER BY updated_at DESC LIMIT ?",
+			},
+			mustNotContain: []string{
+				"embedding", "ALTER TABLE", "CREATE INDEX", "UNION ALL", ", id DESC",
+			},
+			wantArgs: pageArgs,
+			rows: &scriptedRows{
+				columns: memorySearchColumns(),
+				values: [][]driver.Value{
+					memorySearchRow("memory-1", "new durable memory", "agent-1", "sess-1", "active", []byte(`["tag-a"]`), now.Add(-time.Minute)),
+					memorySearchRow("memory-2", "older durable memory", "agent-1", "sess-1", "active", []byte(`["tag-a"]`), now.Add(-4*time.Minute)),
+					memorySearchRow("memory-3", "oldest durable memory", "agent-1", "sess-1", "active", []byte(`["tag-a"]`), now.Add(-6*time.Minute)),
+				},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT id, content, source, tags",
 				"JSON_OBJECT('role', COALESCE(role, ''), 'seq', seq, 'content_type', COALESCE(content_type, '')) AS metadata",
 				"'session' AS memory_type",
 				"FROM sessions",
-				"ORDER BY created_at DESC, id DESC LIMIT ?",
-				"UNION ALL",
-				"ORDER BY sort_value DESC, id DESC",
-				"LIMIT ? OFFSET ?",
+				"ORDER BY created_at DESC LIMIT ?",
 			},
-			mustNotContain: []string{"embedding", "ALTER TABLE", "CREATE INDEX"},
-			wantArgs:       pageArgs,
+			mustNotContain: []string{
+				"embedding", "ALTER TABLE", "CREATE INDEX", "UNION ALL", ", id DESC",
+			},
+			wantArgs: pageArgs,
 			rows: &scriptedRows{
 				columns: memorySearchColumns(),
 				values: [][]driver.Value{
 					{
-						"session-1", "raw turn", "chat", []byte(`["tag-a"]`),
-						[]byte(`{"role":"user","seq":2,"content_type":"text"}`), string(domain.TypeSession),
+						"session-1", "newest raw turn", "chat", []byte(`["tag-a"]`),
+						[]byte(`{"role":"assistant","seq":1,"content_type":"text"}`), string(domain.TypeSession),
 						"agent-1", "sess-1", appID, "active", int64(0), nil, now, now, nil,
 					},
-					memorySearchRow("memory-1", "durable memory", "agent-1", "sess-1", "active", []byte(`["tag-a"]`), now.Add(-time.Minute)),
+					{
+						"session-2", "middle raw turn", "chat", []byte(`["tag-a"]`),
+						[]byte(`{"role":"assistant","seq":2,"content_type":"text"}`), string(domain.TypeSession),
+						"agent-1", "sess-1", appID, "active", int64(0), nil,
+						now.Add(-2 * time.Minute), now.Add(-2 * time.Minute), nil,
+					},
+					{
+						"session-3", "older raw turn", "chat", []byte(`["tag-a"]`),
+						[]byte(`{"role":"user","seq":3,"content_type":"text"}`), string(domain.TypeSession),
+						"agent-1", "sess-1", appID, "active", int64(0), nil,
+						now.Add(-3 * time.Minute), now.Add(-3 * time.Minute), nil,
+					},
 				},
 			},
 		},
@@ -208,15 +231,90 @@ func TestMemoryListAllTypesUsesBoundedUnionPage(t *testing.T) {
 	if total != 6 || len(memories) != 2 {
 		t.Fatalf("page = total:%d memories:%+v, want 6/2", total, memories)
 	}
-	if memories[0].ID != "session-1" || memories[0].MemoryType != domain.TypeSession {
-		t.Fatalf("first memory = %+v, want session-1", memories[0])
+	if memories[0].ID != "session-3" || memories[0].MemoryType != domain.TypeSession {
+		t.Fatalf("first memory = %+v, want session-3", memories[0])
+	}
+	if memories[1].ID != "memory-2" {
+		t.Fatalf("second memory = %+v, want memory-2", memories[1])
 	}
 	var metadata map[string]any
 	if err := json.Unmarshal(memories[0].Metadata, &metadata); err != nil {
 		t.Fatalf("decode session metadata: %v", err)
 	}
-	if metadata["role"] != "user" || metadata["seq"] != float64(2) || metadata["content_type"] != "text" {
+	if metadata["role"] != "user" || metadata["seq"] != float64(3) || metadata["content_type"] != "text" {
 		t.Fatalf("session metadata = %#v", metadata)
+	}
+}
+
+func TestMemoryListAllTypesMergesAscendingPages(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"(SELECT COUNT(*) FROM memories WHERE state = 'active')",
+				"(SELECT COUNT(*) FROM sessions WHERE state = 'active')",
+			},
+			rows: &scriptedRows{
+				columns: []string{"total"},
+				values:  [][]driver.Value{{int64(4)}},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT " + searchColumns,
+				"FROM memories",
+				"ORDER BY updated_at ASC LIMIT ?",
+			},
+			mustNotContain: []string{", id ASC"},
+			wantArgs:       []any{3},
+			rows: &scriptedRows{
+				columns: memorySearchColumns(),
+				values: [][]driver.Value{
+					memorySearchRow("memory-1", "oldest durable", "", "", "active", []byte(`[]`), now.Add(-4*time.Minute)),
+					memorySearchRow("memory-2", "new durable", "", "", "active", []byte(`[]`), now.Add(-time.Minute)),
+				},
+			},
+		},
+		{
+			mustContain: []string{
+				"FROM sessions",
+				"ORDER BY created_at ASC LIMIT ?",
+			},
+			mustNotContain: []string{", id ASC"},
+			wantArgs:       []any{3},
+			rows: &scriptedRows{
+				columns: memorySearchColumns(),
+				values: [][]driver.Value{
+					{
+						"session-1", "older raw turn", "", []byte(`[]`), []byte(`{}`), string(domain.TypeSession),
+						"", "", "", "active", int64(0), nil,
+						now.Add(-3 * time.Minute), now.Add(-3 * time.Minute), nil,
+					},
+					{
+						"session-2", "newer raw turn", "", []byte(`[]`), []byte(`{}`), string(domain.TypeSession),
+						"", "", "", "active", int64(0), nil,
+						now.Add(-2 * time.Minute), now.Add(-2 * time.Minute), nil,
+					},
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	memories, total, err := repo.ListAllTypes(context.Background(), domain.MemoryFilter{
+		Limit:   2,
+		Offset:  1,
+		SortDir: "asc",
+	})
+	if err != nil {
+		t.Fatalf("ListAllTypes: %v", err)
+	}
+	if total != 4 || len(memories) != 2 {
+		t.Fatalf("page = total:%d memories:%+v, want 4/2", total, memories)
+	}
+	if memories[0].ID != "session-1" || memories[1].ID != "session-2" {
+		t.Fatalf("memories = %+v, want session-1/session-2", memories)
 	}
 }
 

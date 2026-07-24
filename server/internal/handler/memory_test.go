@@ -1276,12 +1276,18 @@ func TestListMemories_DefaultListRejectsDeepPagination(t *testing.T) {
 	}
 }
 
-func TestListMemories_DefaultListRejectsUnboundedSorts(t *testing.T) {
-	for _, sortBy := range []string{"content", "tags"} {
-		t.Run(sortBy, func(t *testing.T) {
+func TestListMemories_DefaultListRejectsUnsupportedSortOptions(t *testing.T) {
+	for _, query := range []string{
+		"sort_by=content",
+		"sort_by=memory_type",
+		"sort_by=tags",
+		"sort_by=unknown",
+		"sort_dir=sideways",
+	} {
+		t.Run(query, func(t *testing.T) {
 			memRepo := &testMemoryRepo{}
 			srv := newTestServer(memRepo, &testSessionRepo{})
-			req := makeRequest(t, http.MethodGet, "/memories?sort_by="+sortBy, nil)
+			req := makeRequest(t, http.MethodGet, "/memories?"+query, nil)
 			rr := httptest.NewRecorder()
 
 			srv.listMemories(rr, req)

@@ -197,10 +197,19 @@ func (s *MemoryService) ListAllTypes(ctx context.Context, filter domain.MemoryFi
 		}
 	}
 	switch strings.TrimSpace(filter.SortBy) {
-	case "content", "tags":
+	case "", "updated_at":
+	default:
 		return nil, 0, &domain.ValidationError{
 			Field:   "sort_by",
-			Message: "content and tags sorting require an explicit memory_type",
+			Message: "all-types lists only support updated_at sorting",
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(filter.SortDir)) {
+	case "", "asc", "desc":
+	default:
+		return nil, 0, &domain.ValidationError{
+			Field:   "sort_dir",
+			Message: "must be asc or desc",
 		}
 	}
 

@@ -347,6 +347,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
 	startedAt := time.Now()
 	var countDuration, pageDuration time.Duration
+	var memoryPageDuration, sessionPageDuration, mergeDuration time.Duration
 	total := 0
 	returned := 0
 	fallback := false
@@ -358,6 +359,9 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 			"cluster_id", r.clusterID,
 			"count_ms", countDuration.Milliseconds(),
 			"page_ms", pageDuration.Milliseconds(),
+			"memory_page_ms", memoryPageDuration.Milliseconds(),
+			"session_page_ms", sessionPageDuration.Milliseconds(),
+			"merge_ms", mergeDuration.Milliseconds(),
 			"fallback", fallback,
 			"total", total,
 			"returned", returned,
@@ -416,42 +420,34 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 		return []domain.Memory{}, total, nil
 	}
 	window := offset + limit
-	memorySort, sessionSort, direction := allTypeMemoryListOrder(f)
+	direction := "DESC"
+	if strings.EqualFold(strings.TrimSpace(f.SortDir), "asc") {
+		direction = "ASC"
+	}
 
-	dataQuery := `WITH memory_page AS (
-		SELECT ` + searchColumns + `, ` + memorySort + ` AS sort_value
+	memoryQuery := `SELECT ` + searchColumns + `
 		FROM memories
 		WHERE ` + memoryWhere + `
-		ORDER BY ` + memorySort + ` ` + direction + `, id ` + direction + ` LIMIT ?
-	),
-	session_page AS (
-		SELECT id, content, source, tags,
+		ORDER BY updated_at ` + direction + ` LIMIT ?`
+	memoryPageArgs := make([]any, len(memoryArgs), len(memoryArgs)+1)
+	copy(memoryPageArgs, memoryArgs)
+	memoryPageArgs = append(memoryPageArgs, window)
+
+	sessionQuery := `SELECT id, content, source, tags,
 			JSON_OBJECT('role', COALESCE(role, ''), 'seq', seq, 'content_type', COALESCE(content_type, '')) AS metadata,
 			'session' AS memory_type, agent_id, session_id, app_id, state, 0 AS version,
-			NULL AS updated_by, created_at, created_at AS updated_at, NULL AS superseded_by,
-			` + sessionSort + ` AS sort_value
+			NULL AS updated_by, created_at, created_at AS updated_at, NULL AS superseded_by
 		FROM sessions
 		WHERE ` + sessionWhere + `
-		ORDER BY ` + sessionSort + ` ` + direction + `, id ` + direction + ` LIMIT ?
-	),
-	all_type_rows AS (
-		SELECT * FROM memory_page
-		UNION ALL
-		SELECT * FROM session_page
-	)
-	SELECT ` + searchColumns + `
-	FROM all_type_rows
-	ORDER BY sort_value ` + direction + `, id ` + direction + `
-	LIMIT ? OFFSET ?`
-
-	dataArgs := make([]any, 0, len(memoryArgs)+len(sessionArgs)+4)
-	dataArgs = append(dataArgs, memoryArgs...)
-	dataArgs = append(dataArgs, window)
-	dataArgs = append(dataArgs, sessionArgs...)
-	dataArgs = append(dataArgs, window, limit, offset)
+		ORDER BY created_at ` + direction + ` LIMIT ?`
+	sessionPageArgs := make([]any, len(sessionArgs), len(sessionArgs)+1)
+	copy(sessionPageArgs, sessionArgs)
+	sessionPageArgs = append(sessionPageArgs, window)
 
 	pageStartedAt := time.Now()
-	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
+	memoryPageStartedAt := time.Now()
+	memoryPage, err := r.queryAllTypeMemoryPage(ctx, memoryQuery, memoryPageArgs)
+	memoryPageDuration = time.Since(memoryPageStartedAt)
 	if err != nil {
 		pageDuration = time.Since(pageStartedAt)
 		if internaltenant.IsTableNotFoundError(err) {
@@ -472,37 +468,91 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 			"duration_ms", pageDuration.Milliseconds(),
 			"err", err,
 		)
-		return nil, 0, fmt.Errorf("list all-types memories: %w", err)
+		return nil, 0, fmt.Errorf("list all-types memory page: %w", err)
 	}
-	defer rows.Close()
 
-	memories := make([]domain.Memory, 0, limit)
-	for rows.Next() {
-		memory, scanErr := scanSearchMemoryRows(rows)
-		if scanErr != nil {
-			pageDuration = time.Since(pageStartedAt)
-			return nil, 0, scanErr
+	sessionPageStartedAt := time.Now()
+	sessionPage, err := r.queryAllTypeMemoryPage(ctx, sessionQuery, sessionPageArgs)
+	sessionPageDuration = time.Since(sessionPageStartedAt)
+	if err != nil {
+		pageDuration = time.Since(pageStartedAt)
+		if internaltenant.IsTableNotFoundError(err) {
+			fallback = true
+			slog.InfoContext(ctx, "all-types memory list using durable fallback",
+				"cluster_id", r.clusterID,
+				"phase", "page",
+			)
+			fallbackStartedAt := time.Now()
+			memories, fallbackTotal, fallbackErr := r.List(ctx, f)
+			pageDuration += time.Since(fallbackStartedAt)
+			total = fallbackTotal
+			returned = len(memories)
+			return memories, fallbackTotal, fallbackErr
 		}
-		memories = append(memories, *memory)
+		slog.ErrorContext(ctx, "list all-types memories: session page query failed",
+			"cluster_id", r.clusterID,
+			"duration_ms", pageDuration.Milliseconds(),
+			"err", err,
+		)
+		return nil, 0, fmt.Errorf("list all-types session page: %w", err)
 	}
+
+	mergeStartedAt := time.Now()
+	memories := mergeAllTypeMemoryPages(memoryPage, sessionPage, offset, limit, direction == "ASC")
+	mergeDuration = time.Since(mergeStartedAt)
 	pageDuration = time.Since(pageStartedAt)
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate all-types memories: %w", err)
-	}
 	returned = len(memories)
 	return memories, total, nil
 }
 
-func allTypeMemoryListOrder(f domain.MemoryFilter) (memoryColumn, sessionColumn, direction string) {
-	memoryColumn, direction = memoryListSort(f)
-	sessionColumn = memoryColumn
-	switch memoryColumn {
-	case "memory_type":
-		sessionColumn = "'session'"
-	case "updated_at":
-		sessionColumn = "created_at"
+func (r *MemoryRepo) queryAllTypeMemoryPage(ctx context.Context, query string, args []any) ([]domain.Memory, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
 	}
-	return memoryColumn, sessionColumn, direction
+	defer rows.Close()
+
+	var memories []domain.Memory
+	for rows.Next() {
+		memory, err := scanSearchMemoryRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		memories = append(memories, *memory)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate all-types memory page: %w", err)
+	}
+	return memories, nil
+}
+
+func mergeAllTypeMemoryPages(memoryPage, sessionPage []domain.Memory, offset, limit int, ascending bool) []domain.Memory {
+	memories := make([]domain.Memory, 0, limit)
+	memoryIndex, sessionIndex, position := 0, 0, 0
+	for len(memories) < limit && (memoryIndex < len(memoryPage) || sessionIndex < len(sessionPage)) {
+		takeMemory := sessionIndex >= len(sessionPage)
+		if memoryIndex < len(memoryPage) && sessionIndex < len(sessionPage) {
+			if ascending {
+				takeMemory = !memoryPage[memoryIndex].UpdatedAt.After(sessionPage[sessionIndex].UpdatedAt)
+			} else {
+				takeMemory = !memoryPage[memoryIndex].UpdatedAt.Before(sessionPage[sessionIndex].UpdatedAt)
+			}
+		}
+
+		var memory domain.Memory
+		if takeMemory {
+			memory = memoryPage[memoryIndex]
+			memoryIndex++
+		} else {
+			memory = sessionPage[sessionIndex]
+			sessionIndex++
+		}
+		if position >= offset {
+			memories = append(memories, memory)
+		}
+		position++
+	}
+	return memories
 }
 
 func memoryListSort(f domain.MemoryFilter) (column, direction string) {
