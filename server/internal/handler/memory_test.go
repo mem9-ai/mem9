@@ -1290,27 +1290,29 @@ func TestListMemories_DefaultListMergesAllTypes(t *testing.T) {
 	if len(resp.Memories) != 2 || resp.Memories[0].ID != "session-1" || resp.Memories[1].ID != "insight-1" {
 		t.Fatalf("memories = %+v, want session then insight", resp.Memories)
 	}
-	if memRepo.countListCalls != 1 || sessionRepo.countListCalls != 1 || memRepo.listPageCalls != 1 || sessionRepo.listPageCalls != 1 {
-		t.Fatalf("bounded calls = memory count/page %d/%d, session count/page %d/%d, want 1/1 each",
+	if memRepo.countListCalls != 0 || sessionRepo.countListCalls != 0 || memRepo.listPageCalls != 1 || sessionRepo.listPageCalls != 1 {
+		t.Fatalf("bounded calls = memory count/page %d/%d, session count/page %d/%d, want 0/1 each",
 			memRepo.countListCalls, memRepo.listPageCalls, sessionRepo.countListCalls, sessionRepo.listPageCalls)
 	}
-	if memRepo.lastListFilter.Limit != 1 || memRepo.lastListFilter.Offset != 0 {
-		t.Fatalf("memory filter = %+v, want one-row bounded prefix", memRepo.lastListFilter)
+	if memRepo.lastListFilter.Limit != 11 || memRepo.lastListFilter.Offset != 0 {
+		t.Fatalf("memory filter = %+v, want eleven-row bounded lookahead", memRepo.lastListFilter)
 	}
 }
 
-func TestListMemories_DefaultListUsesConstantFirstPageWorkForLargeTotals(t *testing.T) {
+func TestListMemories_DefaultListUsesBoundedLookaheadForLargeTotals(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
-		listResults: []domain.Memory{{
-			ID: "insight-1", MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-time.Minute),
-		}},
+		listResults: []domain.Memory{
+			{ID: "insight-1", MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-time.Minute)},
+			{ID: "insight-2", MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-2 * time.Minute)},
+		},
 		listTotal: 1_000_000,
 	}
 	sessionRepo := &testSessionRepo{
-		listResults: []domain.Memory{{
-			ID: "session-1", MemoryType: domain.TypeSession, UpdatedAt: now,
-		}},
+		listResults: []domain.Memory{
+			{ID: "session-1", MemoryType: domain.TypeSession, UpdatedAt: now},
+			{ID: "session-2", MemoryType: domain.TypeSession, UpdatedAt: now.Add(-3 * time.Minute)},
+		},
 		listTotal: 1_000_000,
 	}
 	srv := newTestServer(memRepo, sessionRepo)
@@ -1326,15 +1328,15 @@ func TestListMemories_DefaultListUsesConstantFirstPageWorkForLargeTotals(t *test
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Total != 2_000_000 || len(resp.Memories) != 1 || resp.Memories[0].ID != "session-1" {
-		t.Fatalf("response = total:%d memories:%+v, want newest row from 2,000,000", resp.Total, resp.Memories)
+	if resp.Total != 2 || len(resp.Memories) != 1 || resp.Memories[0].ID != "session-1" {
+		t.Fatalf("response = total:%d memories:%+v, want newest row with next-page lookahead", resp.Total, resp.Memories)
 	}
-	if memRepo.countListCalls != 1 || sessionRepo.countListCalls != 1 || memRepo.listPageCalls != 1 || sessionRepo.listPageCalls != 1 {
-		t.Fatalf("bounded calls = memory count/page %d/%d, session count/page %d/%d, want 1/1 each",
+	if memRepo.countListCalls != 0 || sessionRepo.countListCalls != 0 || memRepo.listPageCalls != 1 || sessionRepo.listPageCalls != 1 {
+		t.Fatalf("bounded calls = memory count/page %d/%d, session count/page %d/%d, want 0/1 each",
 			memRepo.countListCalls, memRepo.listPageCalls, sessionRepo.countListCalls, sessionRepo.listPageCalls)
 	}
-	if memRepo.listPageRows != 1 || sessionRepo.listPageRows != 1 {
-		t.Fatalf("materialized rows = memory:%d session:%d, want 1/1", memRepo.listPageRows, sessionRepo.listPageRows)
+	if memRepo.listPageRows != 2 || sessionRepo.listPageRows != 2 {
+		t.Fatalf("materialized rows = memory:%d session:%d, want 2/2", memRepo.listPageRows, sessionRepo.listPageRows)
 	}
 }
 
@@ -1425,15 +1427,13 @@ func TestListMemories_DefaultListPaginatesMergedOrderAndPreservesFilters(t *test
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Total != 6 || len(resp.Memories) != 2 || resp.Memories[0].ID != "session-3" || resp.Memories[1].ID != "memory-2" {
-		t.Fatalf("response = total:%d memories:%+v, want merged page [session-3 memory-2]", resp.Total, resp.Memories)
+	if resp.Total != 5 || len(resp.Memories) != 2 || resp.Memories[0].ID != "session-3" || resp.Memories[1].ID != "memory-2" {
+		t.Fatalf("response = total:%d memories:%+v, want bounded total 5 and merged page [session-3 memory-2]", resp.Total, resp.Memories)
 	}
 
 	for name, filters := range map[string][]domain.MemoryFilter{
-		"memory count":  memRepo.countListFilters,
-		"memory page":   memRepo.listPageFilters,
-		"session count": sessionRepo.countListFilters,
-		"session page":  sessionRepo.listPageFilters,
+		"memory page":  memRepo.listPageFilters,
+		"session page": sessionRepo.listPageFilters,
 	} {
 		if len(filters) != 1 {
 			t.Fatalf("%s filters = %d, want 1", name, len(filters))
@@ -1445,9 +1445,9 @@ func TestListMemories_DefaultListPaginatesMergedOrderAndPreservesFilters(t *test
 			t.Fatalf("%s filter = %+v, want shared list filters", name, filter)
 		}
 	}
-	if memRepo.listPageFilters[0].Limit != 3 || memRepo.listPageFilters[0].Offset != 0 ||
-		sessionRepo.listPageFilters[0].Limit != 3 || sessionRepo.listPageFilters[0].Offset != 0 {
-		t.Fatalf("page filters = memory:%+v session:%+v, want three-row prefixes", memRepo.listPageFilters[0], sessionRepo.listPageFilters[0])
+	if memRepo.listPageFilters[0].Limit != 5 || memRepo.listPageFilters[0].Offset != 0 ||
+		sessionRepo.listPageFilters[0].Limit != 5 || sessionRepo.listPageFilters[0].Offset != 0 {
+		t.Fatalf("page filters = memory:%+v session:%+v, want five-row lookahead prefixes", memRepo.listPageFilters[0], sessionRepo.listPageFilters[0])
 	}
 }
 

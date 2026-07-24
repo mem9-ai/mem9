@@ -1078,13 +1078,7 @@ const (
 type localMemoryListSource struct {
 	name     string
 	filter   domain.MemoryFilter
-	count    func(context.Context, domain.MemoryFilter) (int, error)
 	listPage func(context.Context, domain.MemoryFilter) ([]domain.Memory, error)
-}
-
-type localMemoryListPrefix struct {
-	memories []domain.Memory
-	total    int
 }
 
 func (s *Server) listLocalAllTypeMemoriesPage(ctx context.Context, svc resolvedSvc, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
@@ -1092,10 +1086,10 @@ func (s *Server) listLocalAllTypeMemoriesPage(ctx context.Context, svc resolvedS
 	if err != nil {
 		return nil, 0, err
 	}
+	prefixWindow := window + 1
 	memorySource := localMemoryListSource{
 		name:     "memory",
 		filter:   filter,
-		count:    svc.memory.CountList,
 		listPage: svc.memory.ListPage,
 	}
 	sessionFilter := filter
@@ -1103,20 +1097,19 @@ func (s *Server) listLocalAllTypeMemoriesPage(ctx context.Context, svc resolvedS
 	sessionSource := localMemoryListSource{
 		name:     "session",
 		filter:   sessionFilter,
-		count:    svc.session.CountList,
 		listPage: svc.session.ListPage,
 	}
 
-	var memoryPrefix, sessionPrefix localMemoryListPrefix
+	var memoryPrefix, sessionPrefix []domain.Memory
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		var err error
-		memoryPrefix, err = loadLocalMemoryListPrefix(groupCtx, memorySource, window)
+		memoryPrefix, err = loadLocalMemoryListPrefix(groupCtx, memorySource, prefixWindow)
 		return err
 	})
 	group.Go(func() error {
 		var err error
-		sessionPrefix, err = loadLocalMemoryListPrefix(groupCtx, sessionSource, window)
+		sessionPrefix, err = loadLocalMemoryListPrefix(groupCtx, sessionSource, prefixWindow)
 		return err
 	})
 	if err := group.Wait(); err != nil {
@@ -1124,47 +1117,38 @@ func (s *Server) listLocalAllTypeMemoriesPage(ctx context.Context, svc resolvedS
 	}
 
 	mergeStartedAt := time.Now()
-	merged := mergeLocalMemoryListPrefixes(memoryPrefix.memories, sessionPrefix.memories, filter, window)
+	merged := mergeLocalMemoryListPrefixes(memoryPrefix, sessionPrefix, filter, prefixWindow)
 	memories := pageLocalMemoryList(merged, filter.Offset, filter.Limit)
 	if observation := memoryListObservationFromContext(ctx); observation != nil {
 		observation.recordMerge(time.Since(mergeStartedAt))
 	}
-	// IDs are generated as UUIDs across both tables, and Get already relies on
-	// that cross-table uniqueness. The merged total can therefore sum both counts.
-	return memories, saturatingListTotal(memoryPrefix.total, sessionPrefix.total), nil
+	// Keep total bounded to the requested window plus one. This preserves
+	// next-page detection without an unbounded COUNT over large tenant tables.
+	return memories, len(merged), nil
 }
 
-func loadLocalMemoryListPrefix(ctx context.Context, source localMemoryListSource, window int) (localMemoryListPrefix, error) {
-	countStartedAt := time.Now()
-	total, err := source.count(ctx, source.filter)
-	if observation := memoryListObservationFromContext(ctx); observation != nil {
-		observation.recordCount(source.name, time.Since(countStartedAt))
-	}
-	if err != nil {
-		return localMemoryListPrefix{}, fmt.Errorf("count %s list: %w", source.name, err)
-	}
-	if total <= 0 || window <= 0 {
-		return localMemoryListPrefix{total: total}, nil
+func loadLocalMemoryListPrefix(ctx context.Context, source localMemoryListSource, window int) ([]domain.Memory, error) {
+	if window <= 0 {
+		return nil, nil
 	}
 
-	needed := min(total, window)
-	memories := make([]domain.Memory, 0, needed)
+	memories := make([]domain.Memory, 0, window)
 	pageFilter := source.filter
 	pageFilter.Offset = 0
-	for len(memories) < needed {
-		pageFilter.Limit = min(localMemoryListPageSize, needed-len(memories))
+	for len(memories) < window {
+		pageFilter.Limit = min(localMemoryListPageSize, window-len(memories))
 		pageStartedAt := time.Now()
 		page, err := source.listPage(ctx, pageFilter)
 		if observation := memoryListObservationFromContext(ctx); observation != nil {
 			observation.recordPage(source.name, len(page), time.Since(pageStartedAt))
 		}
 		if err != nil {
-			return localMemoryListPrefix{}, fmt.Errorf("read %s list page: %w", source.name, err)
+			return nil, fmt.Errorf("read %s list page: %w", source.name, err)
 		}
 		if len(page) == 0 {
 			break
 		}
-		remaining := needed - len(memories)
+		remaining := window - len(memories)
 		if len(page) > remaining {
 			page = page[:remaining]
 		}
@@ -1174,7 +1158,7 @@ func loadLocalMemoryListPrefix(ctx context.Context, source localMemoryListSource
 		}
 		pageFilter.Offset += pageFilter.Limit
 	}
-	return localMemoryListPrefix{memories: memories, total: total}, nil
+	return memories, nil
 }
 
 func localAllTypeMemoryListWindow(filter domain.MemoryFilter) (int, error) {
@@ -1201,14 +1185,6 @@ func mergedMemoryWindow(offset, limit int) int {
 		return maxInt
 	}
 	return offset + limit
-}
-
-func saturatingListTotal(left, right int) int {
-	maxInt := int(^uint(0) >> 1)
-	if right > maxInt-left {
-		return maxInt
-	}
-	return left + right
 }
 
 func mergeLocalMemoryListPrefixes(left, right []domain.Memory, filter domain.MemoryFilter, limit int) []domain.Memory {
