@@ -50,11 +50,6 @@ type testMemoryRepo struct {
 	listErr              error
 	lastListFilter       domain.MemoryFilter
 	listCalls            int
-	countListCalls       int
-	countListFilters     []domain.MemoryFilter
-	listPageCalls        int
-	listPageRows         int
-	listPageFilters      []domain.MemoryFilter
 	softDeleteCalls      []string
 	softDeleteResult     int64
 	softDeleteErr        error
@@ -134,29 +129,6 @@ func (m *testMemoryRepo) List(_ context.Context, filter domain.MemoryFilter) ([]
 	}
 	return append([]domain.Memory(nil), m.listResults...), m.listTotal, nil
 }
-func (m *testMemoryRepo) CountList(_ context.Context, filter domain.MemoryFilter) (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.countListCalls++
-	m.countListFilters = append(m.countListFilters, filter)
-	if m.listErr != nil {
-		return 0, m.listErr
-	}
-	return m.listTotal, nil
-}
-func (m *testMemoryRepo) ListPage(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.listPageCalls++
-	m.lastListFilter = filter
-	m.listPageFilters = append(m.listPageFilters, filter)
-	if m.listErr != nil {
-		return nil, m.listErr
-	}
-	page := testMemoryPage(m.listResults, filter)
-	m.listPageRows += len(page)
-	return page, nil
-}
 func (m *testMemoryRepo) Count(context.Context) (int, error) { return 0, nil }
 func (m *testMemoryRepo) BulkCreate(ctx context.Context, _ []*domain.Memory) error {
 	m.mu.Lock()
@@ -232,11 +204,6 @@ type testSessionRepo struct {
 	listTotal            int
 	lastListFilter       domain.MemoryFilter
 	listCalls            int
-	countListCalls       int
-	countListFilters     []domain.MemoryFilter
-	listPageCalls        int
-	listPageRows         int
-	listPageFilters      []domain.MemoryFilter
 	softDeleteCalls      []string
 	softDeleteErr        error
 	bulkSoftDeleteCalls  [][]string
@@ -282,44 +249,6 @@ func (s *testSessionRepo) List(_ context.Context, filter domain.MemoryFilter) ([
 	s.listCalls++
 	s.lastListFilter = filter
 	return append([]domain.Memory(nil), s.listResults...), s.listTotal, nil
-}
-
-func (s *testSessionRepo) CountList(_ context.Context, filter domain.MemoryFilter) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.countListCalls++
-	s.countListFilters = append(s.countListFilters, filter)
-	return s.listTotal, nil
-}
-
-func (s *testSessionRepo) ListPage(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.listPageCalls++
-	s.lastListFilter = filter
-	s.listPageFilters = append(s.listPageFilters, filter)
-	page := testMemoryPage(s.listResults, filter)
-	s.listPageRows += len(page)
-	return page, nil
-}
-
-func testMemoryPage(memories []domain.Memory, filter domain.MemoryFilter) []domain.Memory {
-	start := filter.Offset
-	if start < 0 {
-		start = 0
-	}
-	if start >= len(memories) {
-		return nil
-	}
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = len(memories)
-	}
-	end := start + limit
-	if end > len(memories) {
-		end = len(memories)
-	}
-	return append([]domain.Memory(nil), memories[start:end]...)
 }
 
 func (s *testSessionRepo) SoftDelete(_ context.Context, id, _ string) (int64, error) {
@@ -1243,7 +1172,7 @@ func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
 	}
 }
 
-func TestListMemories_DefaultListMergesAllTypes(t *testing.T) {
+func TestListMemories_DefaultListUsesDurableMemoryPage(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
 		listResults: []domain.Memory{
@@ -1256,7 +1185,7 @@ func TestListMemories_DefaultListMergesAllTypes(t *testing.T) {
 				UpdatedAt:  now.Add(-time.Hour),
 			},
 		},
-		listTotal: 1,
+		listTotal: 1000,
 	}
 	sessionRepo := &testSessionRepo{
 		listResults: []domain.Memory{
@@ -1269,49 +1198,7 @@ func TestListMemories_DefaultListMergesAllTypes(t *testing.T) {
 				UpdatedAt:  now,
 			},
 		},
-		listTotal: 1,
-	}
-	srv := newTestServer(memRepo, sessionRepo)
-	req := makeRequest(t, http.MethodGet, "/memories?limit=10", nil)
-	rr := httptest.NewRecorder()
-
-	srv.listMemories(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
-	}
-	var resp listResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if resp.Total != 2 || resp.Limit != 10 || resp.Offset != 0 {
-		t.Fatalf("page = total:%d limit:%d offset:%d, want 2/10/0", resp.Total, resp.Limit, resp.Offset)
-	}
-	if len(resp.Memories) != 2 || resp.Memories[0].ID != "session-1" || resp.Memories[1].ID != "insight-1" {
-		t.Fatalf("memories = %+v, want session then insight", resp.Memories)
-	}
-	if memRepo.countListCalls != 1 || sessionRepo.countListCalls != 1 || memRepo.listPageCalls != 1 || sessionRepo.listPageCalls != 1 {
-		t.Fatalf("bounded calls = memory count/page %d/%d, session count/page %d/%d, want 1/1 each",
-			memRepo.countListCalls, memRepo.listPageCalls, sessionRepo.countListCalls, sessionRepo.listPageCalls)
-	}
-	if memRepo.lastListFilter.Limit != 1 || memRepo.lastListFilter.Offset != 0 {
-		t.Fatalf("memory filter = %+v, want one-row bounded prefix", memRepo.lastListFilter)
-	}
-}
-
-func TestListMemories_DefaultListUsesConstantFirstPageWorkForLargeTotals(t *testing.T) {
-	now := time.Now()
-	memRepo := &testMemoryRepo{
-		listResults: []domain.Memory{{
-			ID: "insight-1", MemoryType: domain.TypeInsight, UpdatedAt: now.Add(-time.Minute),
-		}},
-		listTotal: 1_000_000,
-	}
-	sessionRepo := &testSessionRepo{
-		listResults: []domain.Memory{{
-			ID: "session-1", MemoryType: domain.TypeSession, UpdatedAt: now,
-		}},
-		listTotal: 1_000_000,
+		listTotal: 1000,
 	}
 	srv := newTestServer(memRepo, sessionRepo)
 	req := makeRequest(t, http.MethodGet, "/memories?limit=1", nil)
@@ -1326,187 +1213,17 @@ func TestListMemories_DefaultListUsesConstantFirstPageWorkForLargeTotals(t *test
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Total != 2_000_000 || len(resp.Memories) != 1 || resp.Memories[0].ID != "session-1" {
-		t.Fatalf("response = total:%d memories:%+v, want newest row from 2,000,000", resp.Total, resp.Memories)
+	if resp.Total != 1000 || resp.Limit != 1 || resp.Offset != 0 {
+		t.Fatalf("page = total:%d limit:%d offset:%d, want 1000/1/0", resp.Total, resp.Limit, resp.Offset)
 	}
-	if memRepo.countListCalls != 1 || sessionRepo.countListCalls != 1 || memRepo.listPageCalls != 1 || sessionRepo.listPageCalls != 1 {
-		t.Fatalf("bounded calls = memory count/page %d/%d, session count/page %d/%d, want 1/1 each",
-			memRepo.countListCalls, memRepo.listPageCalls, sessionRepo.countListCalls, sessionRepo.listPageCalls)
+	if len(resp.Memories) != 1 || resp.Memories[0].ID != "insight-1" {
+		t.Fatalf("memories = %+v, want durable memory page", resp.Memories)
 	}
-	if memRepo.listPageRows != 1 || sessionRepo.listPageRows != 1 {
-		t.Fatalf("materialized rows = memory:%d session:%d, want 1/1", memRepo.listPageRows, sessionRepo.listPageRows)
+	if memRepo.listCalls != 1 || sessionRepo.listCalls != 0 {
+		t.Fatalf("list calls = memory:%d session:%d, want 1/0", memRepo.listCalls, sessionRepo.listCalls)
 	}
-}
-
-func TestListMemories_DefaultListRejectsDeepPaginationBeforeRepositoryWork(t *testing.T) {
-	memRepo := &testMemoryRepo{}
-	sessionRepo := &testSessionRepo{}
-	srv := newTestServer(memRepo, sessionRepo)
-	req := makeRequest(t, http.MethodGet, "/memories?limit=1&offset=3000", nil)
-	rr := httptest.NewRecorder()
-
-	srv.listMemories(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
-	}
-	if memRepo.countListCalls != 0 || sessionRepo.countListCalls != 0 ||
-		memRepo.listPageCalls != 0 || sessionRepo.listPageCalls != 0 {
-		t.Fatalf("repository calls = memory count/page %d/%d, session count/page %d/%d, want 0/0 each",
-			memRepo.countListCalls, memRepo.listPageCalls, sessionRepo.countListCalls, sessionRepo.listPageCalls)
-	}
-}
-
-func TestListMemories_DefaultListRejectsSourceSpecificSortsBeforeRepositoryWork(t *testing.T) {
-	for _, sortBy := range []string{"content", "tags"} {
-		t.Run(sortBy, func(t *testing.T) {
-			memRepo := &testMemoryRepo{}
-			sessionRepo := &testSessionRepo{}
-			srv := newTestServer(memRepo, sessionRepo)
-			req := makeRequest(t, http.MethodGet, "/memories?sort_by="+sortBy, nil)
-			rr := httptest.NewRecorder()
-
-			srv.listMemories(rr, req)
-
-			if rr.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
-			}
-			if memRepo.countListCalls != 0 || sessionRepo.countListCalls != 0 ||
-				memRepo.listPageCalls != 0 || sessionRepo.listPageCalls != 0 {
-				t.Fatalf("repository calls = memory count/page %d/%d, session count/page %d/%d, want 0/0 each",
-					memRepo.countListCalls, memRepo.listPageCalls, sessionRepo.countListCalls, sessionRepo.listPageCalls)
-			}
-		})
-	}
-}
-
-func TestLocalAllTypeMemoryListWindowAllowsMaximum(t *testing.T) {
-	window, err := localAllTypeMemoryListWindow(domain.MemoryFilter{
-		Offset: localAllTypeMemoryListMaxWindow - 1,
-		Limit:  1,
-	})
-	if err != nil {
-		t.Fatalf("localAllTypeMemoryListWindow: %v", err)
-	}
-	if window != localAllTypeMemoryListMaxWindow {
-		t.Fatalf("window = %d, want %d", window, localAllTypeMemoryListMaxWindow)
-	}
-}
-
-func TestListMemories_DefaultListPaginatesMergedOrderAndPreservesFilters(t *testing.T) {
-	now := time.Now()
-	memRepo := &testMemoryRepo{
-		listResults: []domain.Memory{
-			{ID: "memory-4", MemoryType: domain.TypePinned, UpdatedAt: now.Add(4 * time.Minute)},
-			{ID: "memory-2", MemoryType: domain.TypeInsight, UpdatedAt: now.Add(2 * time.Minute)},
-			{ID: "memory-0", MemoryType: domain.TypeInsight, UpdatedAt: now},
-		},
-		listTotal: 3,
-	}
-	sessionRepo := &testSessionRepo{
-		listResults: []domain.Memory{
-			{ID: "session-5", MemoryType: domain.TypeSession, UpdatedAt: now.Add(5 * time.Minute)},
-			{ID: "session-3", MemoryType: domain.TypeSession, UpdatedAt: now.Add(3 * time.Minute)},
-			{ID: "session-1", MemoryType: domain.TypeSession, UpdatedAt: now.Add(time.Minute)},
-		},
-		listTotal: 3,
-	}
-	srv := newTestServer(memRepo, sessionRepo)
-	req := makeRequest(t, http.MethodGet,
-		"/memories?limit=2&offset=2&state=active&agent_id=agent-a&session_id=sess-a&source=cli&appId=app-a&tags=alpha,beta&sort_by=updated_at&sort_dir=desc", nil)
-	rr := httptest.NewRecorder()
-
-	srv.listMemories(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
-	}
-	var resp listResponse
-	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if resp.Total != 6 || len(resp.Memories) != 2 || resp.Memories[0].ID != "session-3" || resp.Memories[1].ID != "memory-2" {
-		t.Fatalf("response = total:%d memories:%+v, want merged page [session-3 memory-2]", resp.Total, resp.Memories)
-	}
-
-	for name, filters := range map[string][]domain.MemoryFilter{
-		"memory count":  memRepo.countListFilters,
-		"memory page":   memRepo.listPageFilters,
-		"session count": sessionRepo.countListFilters,
-		"session page":  sessionRepo.listPageFilters,
-	} {
-		if len(filters) != 1 {
-			t.Fatalf("%s filters = %d, want 1", name, len(filters))
-		}
-		filter := filters[0]
-		if filter.State != "active" || filter.AgentID != "agent-a" || filter.SessionID != "sess-a" ||
-			filter.Source != "cli" || filter.AppID == nil || *filter.AppID != "app-a" || !reflect.DeepEqual(filter.Tags, []string{"alpha", "beta"}) ||
-			filter.SortBy != "updated_at" || filter.SortDir != "desc" {
-			t.Fatalf("%s filter = %+v, want shared list filters", name, filter)
-		}
-	}
-	if memRepo.listPageFilters[0].Limit != 3 || memRepo.listPageFilters[0].Offset != 0 ||
-		sessionRepo.listPageFilters[0].Limit != 3 || sessionRepo.listPageFilters[0].Offset != 0 {
-		t.Fatalf("page filters = memory:%+v session:%+v, want three-row prefixes", memRepo.listPageFilters[0], sessionRepo.listPageFilters[0])
-	}
-}
-
-func TestMergeLocalMemoryListPrefixesOrdersAndDeduplicates(t *testing.T) {
-	now := time.Now()
-	tests := []struct {
-		name   string
-		left   []domain.Memory
-		right  []domain.Memory
-		filter domain.MemoryFilter
-		want   []string
-	}{
-		{
-			name: "updated at descending with id tie breaker",
-			left: []domain.Memory{
-				{ID: "b", UpdatedAt: now},
-				{ID: "a", UpdatedAt: now.Add(-time.Minute)},
-			},
-			right: []domain.Memory{
-				{ID: "c", UpdatedAt: now},
-				{ID: "d", UpdatedAt: now.Add(-2 * time.Minute)},
-			},
-			want: []string{"c", "b", "a", "d"},
-		},
-		{
-			name: "memory type ascending",
-			left: []domain.Memory{
-				{ID: "a", MemoryType: domain.TypeInsight},
-				{ID: "b", MemoryType: domain.TypePinned},
-			},
-			right:  []domain.Memory{{ID: "c", MemoryType: domain.TypeSession}},
-			filter: domain.MemoryFilter{SortBy: "memory_type", SortDir: "asc"},
-			want:   []string{"a", "b", "c"},
-		},
-		{
-			name: "duplicate id",
-			left: []domain.Memory{
-				{ID: "shared", UpdatedAt: now},
-				{ID: "memory", UpdatedAt: now.Add(-2 * time.Minute)},
-			},
-			right: []domain.Memory{
-				{ID: "shared", UpdatedAt: now.Add(-time.Minute)},
-				{ID: "session", UpdatedAt: now.Add(-3 * time.Minute)},
-			},
-			want: []string{"shared", "memory", "session"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			merged := mergeLocalMemoryListPrefixes(tt.left, tt.right, tt.filter, len(tt.left)+len(tt.right))
-			got := make([]string, 0, len(merged))
-			for _, memory := range merged {
-				got = append(got, memory.ID)
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("merged IDs = %v, want %v", got, tt.want)
-			}
-		})
+	if memRepo.lastListFilter.Limit != 1 || memRepo.lastListFilter.Offset != 0 {
+		t.Fatalf("memory filter = %+v, want limit=1 offset=0", memRepo.lastListFilter)
 	}
 }
 

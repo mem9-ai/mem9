@@ -117,12 +117,6 @@ func (stubSessionRepo) GetByID(_ context.Context, _ string) (*domain.Memory, err
 func (stubSessionRepo) List(_ context.Context, _ domain.MemoryFilter) ([]domain.Memory, int, error) {
 	return nil, 0, fmt.Errorf("session memories: %w", domain.ErrNotSupported)
 }
-func (stubSessionRepo) CountList(_ context.Context, _ domain.MemoryFilter) (int, error) {
-	return 0, nil
-}
-func (stubSessionRepo) ListPage(_ context.Context, _ domain.MemoryFilter) ([]domain.Memory, error) {
-	return nil, nil
-}
 func (stubSessionRepo) SoftDelete(_ context.Context, _, _ string) (int64, error) {
 	return 0, fmt.Errorf("session memory delete: %w", domain.ErrNotSupported)
 }

@@ -247,18 +247,6 @@ func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, 
 }
 
 func (r *SessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
-	total, err := r.CountList(ctx, f)
-	if err != nil {
-		return nil, 0, err
-	}
-	memories, err := r.ListPage(ctx, f)
-	if err != nil {
-		return nil, 0, err
-	}
-	return memories, total, nil
-}
-
-func (r *SessionRepo) CountList(ctx context.Context, f domain.MemoryFilter) (int, error) {
 	conds, args := r.buildSessionFilterConds(f)
 	if f.Query != "" {
 		conds = append(conds, "content LIKE ?")
@@ -270,21 +258,12 @@ func (r *SessionRepo) CountList(ctx context.Context, f domain.MemoryFilter) (int
 	countQuery := "SELECT COUNT(*) FROM sessions WHERE " + where
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
-			return 0, nil
+			return nil, 0, nil
 		}
 		slog.ErrorContext(ctx, "list session memories: count failed", "cluster_id", r.clusterID, "err", err)
-		return 0, fmt.Errorf("count session memories: %w", err)
+		return nil, 0, fmt.Errorf("count session memories: %w", err)
 	}
-	return total, nil
-}
 
-func (r *SessionRepo) ListPage(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, error) {
-	conds, args := r.buildSessionFilterConds(f)
-	if f.Query != "" {
-		conds = append(conds, "content LIKE ?")
-		args = append(args, "%"+f.Query+"%")
-	}
-	where := strings.Join(conds, " AND ")
 	limit := f.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -303,38 +282,29 @@ func (r *SessionRepo) ListPage(ctx context.Context, f domain.MemoryFilter) ([]do
 	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
-			return nil, nil
+			return nil, 0, nil
 		}
 		slog.ErrorContext(ctx, "list session memories: query failed", "cluster_id", r.clusterID, "err", err)
-		return nil, fmt.Errorf("list session memories: %w", err)
+		return nil, 0, fmt.Errorf("list session memories: %w", err)
 	}
 	defer rows.Close()
 
 	memories, err := scanSessionRows(rows)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return memories, nil
+	return memories, total, nil
 }
 
 func sessionListOrderBy(f domain.MemoryFilter) string {
 	column := "updated_at"
-	if f.AllTypes {
-		column = "created_at"
-	}
 	switch strings.TrimSpace(f.SortBy) {
 	case "content":
 		column = "content"
 	case "tags":
 		column = "tags"
-	case "memory_type":
-		if f.AllTypes {
-			column = "id"
-		}
-	case "updated_at", "":
-		if f.AllTypes {
-			column = "created_at"
-		}
+	case "updated_at", "memory_type", "":
+		column = "updated_at"
 	}
 
 	direction := "DESC"
@@ -342,9 +312,6 @@ func sessionListOrderBy(f domain.MemoryFilter) string {
 		direction = "ASC"
 	}
 
-	if column == "id" {
-		return column + " " + direction
-	}
 	return column + " " + direction + ", id " + direction
 }
 

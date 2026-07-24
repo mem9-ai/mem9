@@ -18,8 +18,6 @@ type MemoryRepo interface {
 	ArchiveAndCreate(ctx context.Context, archiveID, supersededBy string, newMem *domain.Memory) error
 	SetState(ctx context.Context, id string, state domain.MemoryState) error
 	List(ctx context.Context, f domain.MemoryFilter) (memories []domain.Memory, total int, err error)
-	CountList(ctx context.Context, f domain.MemoryFilter) (total int, err error)
-	ListPage(ctx context.Context, f domain.MemoryFilter) (memories []domain.Memory, err error)
 	Count(ctx context.Context) (int, error)
 	BulkCreate(ctx context.Context, memories []*domain.Memory) error
 
@@ -108,8 +106,6 @@ type SessionRepo interface {
 	PatchTags(ctx context.Context, appID, sessionID, contentHash string, tags []string) error
 	GetByID(ctx context.Context, id string) (*domain.Memory, error)
 	List(ctx context.Context, f domain.MemoryFilter) (memories []domain.Memory, total int, err error)
-	CountList(ctx context.Context, f domain.MemoryFilter) (total int, err error)
-	ListPage(ctx context.Context, f domain.MemoryFilter) (memories []domain.Memory, err error)
 	SoftDelete(ctx context.Context, id, agentName string) (int64, error)
 	BulkSoftDelete(ctx context.Context, ids []string, agentName string) (int64, error)
 	AutoVectorSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error)

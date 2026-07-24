@@ -114,8 +114,7 @@ CREATE TABLE IF NOT EXISTS memories (
   INDEX idx_agent               (agent_id),
   INDEX idx_session             (session_id),
   INDEX idx_app                 (app_id),
-  INDEX idx_updated             (updated_at),
-  INDEX idx_state_updated_id    (state, updated_at, id)
+  INDEX idx_updated             (updated_at)
 );
 
 -- Full-text search index (TiDB Cloud Serverless with MULTILINGUAL tokenizer).

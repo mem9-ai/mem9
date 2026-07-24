@@ -35,8 +35,7 @@ func TestMemoryListMode(t *testing.T) {
 		{name: "default recall", filter: domain.MemoryFilter{Query: "term"}, want: "default_recall"},
 		{name: "single pool recall", filter: domain.MemoryFilter{Query: "term", MemoryType: string(domain.TypeInsight)}, want: "single_pool_recall"},
 		{name: "session list", filter: domain.MemoryFilter{MemoryType: string(domain.TypeSession)}, want: "session_list"},
-		{name: "all types list", filter: domain.MemoryFilter{}, want: "all_types_list"},
-		{name: "durable list", filter: domain.MemoryFilter{MemoryType: string(domain.TypeInsight)}, want: "durable_list"},
+		{name: "durable list", filter: domain.MemoryFilter{}, want: "durable_list"},
 		{name: "unknown recall pool", filter: domain.MemoryFilter{Query: "term", MemoryType: "future"}, want: "other"},
 	}
 
@@ -75,10 +74,10 @@ func TestListMemories_RecordsMemoryListMetrics(t *testing.T) {
 
 			srv.listMemories(rr, req)
 
-			if got := memoryListRequestCount(t, "all_types_list", tt.wantStatus); got != 1 {
+			if got := memoryListRequestCount(t, "durable_list", tt.wantStatus); got != 1 {
 				t.Fatalf("memory list request count = %v, want 1", got)
 			}
-			if got := memoryListDurationCount(t, "all_types_list", tt.wantStatus); got != 1 {
+			if got := memoryListDurationCount(t, "durable_list", tt.wantStatus); got != 1 {
 				t.Fatalf("memory list duration count = %d, want 1", got)
 			}
 		})
@@ -94,12 +93,12 @@ func TestListMemories_RecordsValidationMetrics(t *testing.T) {
 		{
 			name: "oversized app ID",
 			path: "/memories?appId=" + strings.Repeat("a", maxAppIDLen+1),
-			mode: "all_types_list",
+			mode: "durable_list",
 		},
 		{
 			name: "malformed timestamp",
 			path: "/memories?created_after=not-a-time",
-			mode: "all_types_list",
+			mode: "durable_list",
 		},
 		{
 			name: "inverted session range",
@@ -109,7 +108,7 @@ func TestListMemories_RecordsValidationMetrics(t *testing.T) {
 		{
 			name: "range on durable pool",
 			path: "/memories?created_after=2026-07-23T01:00:00Z",
-			mode: "all_types_list",
+			mode: "durable_list",
 		},
 	}
 
@@ -148,11 +147,6 @@ func TestMemoryListObservation_LogsSlowSummary(t *testing.T) {
 	observation.startedAt = time.Now().Add(-2100 * time.Millisecond)
 	observation.queryDuration = 1500 * time.Millisecond
 	observation.overlayDuration = 100 * time.Millisecond
-	observation.memoryCountDuration = 20 * time.Millisecond
-	observation.sessionCountDuration = 30 * time.Millisecond
-	observation.memoryQueryDuration = 900 * time.Millisecond
-	observation.sessionQueryDuration = 500 * time.Millisecond
-	observation.mergeDuration = 80 * time.Millisecond
 	observation.memoryPages = 2
 	observation.memoryRows = 250
 	observation.sessionPages = 1
@@ -177,35 +171,12 @@ func TestMemoryListObservation_LogsSlowSummary(t *testing.T) {
 	assertMemoryListLogField(t, entry, "memory_rows", float64(250))
 	assertMemoryListLogField(t, entry, "session_pages", float64(1))
 	assertMemoryListLogField(t, entry, "session_rows", float64(40))
-	assertMemoryListLogField(t, entry, "memory_count_ms", float64(20))
-	assertMemoryListLogField(t, entry, "session_count_ms", float64(30))
-	assertMemoryListLogField(t, entry, "memory_query_ms", float64(900))
-	assertMemoryListLogField(t, entry, "session_query_ms", float64(500))
 	assertMemoryListLogField(t, entry, "query_ms", float64(1500))
-	assertMemoryListLogField(t, entry, "merge_ms", float64(80))
 	assertMemoryListLogField(t, entry, "overlay_ms", float64(100))
 	assertMemoryListLogField(t, entry, "outcome", "ok")
 	assertMemoryListLogField(t, entry, "cancel_origin", "none")
 	if got, ok := entry["duration_ms"].(float64); !ok || got < 2000 {
 		t.Fatalf("duration_ms = %#v, want at least 2000", entry["duration_ms"])
-	}
-}
-
-func TestMemoryListObservation_RecordsBoundedPhaseMetrics(t *testing.T) {
-	resetMemoryListMetrics()
-	observation := newMemoryListObservation(slog.Default(), &domain.AuthInfo{}, domain.MemoryFilter{}, false)
-	observation.memoryCountDuration = 20 * time.Millisecond
-	observation.sessionCountDuration = 30 * time.Millisecond
-	observation.memoryQueryDuration = 40 * time.Millisecond
-	observation.sessionQueryDuration = 50 * time.Millisecond
-	observation.mergeDuration = 10 * time.Millisecond
-
-	observation.finish(context.Background(), nil, 1, 2)
-
-	for _, phase := range []string{"count", "page_read", "merge"} {
-		if got := memoryListPhaseDurationCount(t, "all_types_list", phase); got != 1 {
-			t.Fatalf("%s phase sample count = %d, want 1", phase, got)
-		}
 	}
 }
 
@@ -219,13 +190,11 @@ func TestMemoryListObservation_RecordsConcurrentChainWork(t *testing.T) {
 		group.Add(3)
 		go func() {
 			defer group.Done()
-			observation.recordCount("memory", time.Millisecond)
 			observation.recordPage("memory", 2, time.Millisecond)
 			observation.recordMerge(time.Millisecond)
 		}()
 		go func() {
 			defer group.Done()
-			observation.recordCount("session", time.Millisecond)
 			observation.recordPage("session", 3, time.Millisecond)
 		}()
 		go func() {
@@ -249,9 +218,6 @@ func TestMemoryListObservation_RecordsConcurrentChainWork(t *testing.T) {
 	}
 	if observation.mergeDuration != 10*time.Millisecond {
 		t.Fatalf("merge duration = %s, want 10ms", observation.mergeDuration)
-	}
-	if observation.memoryCountDuration != 10*time.Millisecond || observation.sessionCountDuration != 10*time.Millisecond {
-		t.Fatalf("count durations = memory:%s session:%s, want 10ms each", observation.memoryCountDuration, observation.sessionCountDuration)
 	}
 }
 
@@ -328,7 +294,7 @@ func TestListMemories_LogsFailureAndCancellationOrigin(t *testing.T) {
 			entry := findMemoryListLogEntry(t, &logBuf, "memory list failed")
 			assertMemoryListLogField(t, entry, "request_id", "request-list-failure")
 			assertMemoryListLogField(t, entry, "cluster_id", "cluster-list-failure")
-			assertMemoryListLogField(t, entry, "mode", "all_types_list")
+			assertMemoryListLogField(t, entry, "mode", "durable_list")
 			assertMemoryListLogField(t, entry, "outcome", tt.wantStatus)
 			assertMemoryListLogField(t, entry, "cancel_origin", tt.wantOrigin)
 		})
@@ -338,7 +304,6 @@ func TestListMemories_LogsFailureAndCancellationOrigin(t *testing.T) {
 func resetMemoryListMetrics() {
 	metrics.MemoryListRequestsTotal.Reset()
 	metrics.MemoryListDuration.Reset()
-	metrics.MemoryListPhaseDuration.Reset()
 }
 
 func memoryListRequestCount(t *testing.T, mode, status string) float64 {
@@ -374,26 +339,6 @@ func memoryListDurationCount(t *testing.T, mode, status string) uint64 {
 	var pb dto.Metric
 	if err := metric.Write(&pb); err != nil {
 		t.Fatalf("write memory list duration metric: %v", err)
-	}
-	if pb.Histogram == nil {
-		return 0
-	}
-	return pb.Histogram.GetSampleCount()
-}
-
-func memoryListPhaseDurationCount(t *testing.T, mode, phase string) uint64 {
-	t.Helper()
-	observer, err := metrics.MemoryListPhaseDuration.GetMetricWithLabelValues(mode, phase)
-	if err != nil {
-		t.Fatalf("get memory list phase metric: %v", err)
-	}
-	metric, ok := observer.(interface{ Write(*dto.Metric) error })
-	if !ok {
-		t.Fatal("memory list phase metric does not implement Write")
-	}
-	var pb dto.Metric
-	if err := metric.Write(&pb); err != nil {
-		t.Fatalf("write memory list phase metric: %v", err)
 	}
 	if pb.Histogram == nil {
 		return 0
