@@ -256,6 +256,10 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	return memories, total, rows.Err()
 }
 
+func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	return r.List(ctx, f)
+}
+
 func memoryListOrderBy(f domain.MemoryFilter) string {
 	column := "updated_at"
 	switch strings.TrimSpace(f.SortBy) {

@@ -192,6 +192,10 @@ func (r *SessionRepo) BulkSoftDelete(ctx context.Context, ids []string, agentNam
 }
 
 func (r *SessionRepo) buildSessionFilterConds(f domain.MemoryFilter) ([]string, []any) {
+	return buildSessionFilterConds(f)
+}
+
+func buildSessionFilterConds(f domain.MemoryFilter) ([]string, []any) {
 	conds := []string{}
 	args := []any{}
 

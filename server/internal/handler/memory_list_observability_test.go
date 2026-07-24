@@ -35,7 +35,8 @@ func TestMemoryListMode(t *testing.T) {
 		{name: "default recall", filter: domain.MemoryFilter{Query: "term"}, want: "default_recall"},
 		{name: "single pool recall", filter: domain.MemoryFilter{Query: "term", MemoryType: string(domain.TypeInsight)}, want: "single_pool_recall"},
 		{name: "session list", filter: domain.MemoryFilter{MemoryType: string(domain.TypeSession)}, want: "session_list"},
-		{name: "durable list", filter: domain.MemoryFilter{}, want: "durable_list"},
+		{name: "all types list", filter: domain.MemoryFilter{}, want: "all_types_list"},
+		{name: "durable list", filter: domain.MemoryFilter{MemoryType: string(domain.TypeInsight)}, want: "durable_list"},
 		{name: "unknown recall pool", filter: domain.MemoryFilter{Query: "term", MemoryType: "future"}, want: "other"},
 	}
 
@@ -74,10 +75,10 @@ func TestListMemories_RecordsMemoryListMetrics(t *testing.T) {
 
 			srv.listMemories(rr, req)
 
-			if got := memoryListRequestCount(t, "durable_list", tt.wantStatus); got != 1 {
+			if got := memoryListRequestCount(t, "all_types_list", tt.wantStatus); got != 1 {
 				t.Fatalf("memory list request count = %v, want 1", got)
 			}
-			if got := memoryListDurationCount(t, "durable_list", tt.wantStatus); got != 1 {
+			if got := memoryListDurationCount(t, "all_types_list", tt.wantStatus); got != 1 {
 				t.Fatalf("memory list duration count = %d, want 1", got)
 			}
 		})
@@ -93,12 +94,12 @@ func TestListMemories_RecordsValidationMetrics(t *testing.T) {
 		{
 			name: "oversized app ID",
 			path: "/memories?appId=" + strings.Repeat("a", maxAppIDLen+1),
-			mode: "durable_list",
+			mode: "all_types_list",
 		},
 		{
 			name: "malformed timestamp",
 			path: "/memories?created_after=not-a-time",
-			mode: "durable_list",
+			mode: "all_types_list",
 		},
 		{
 			name: "inverted session range",
@@ -108,7 +109,7 @@ func TestListMemories_RecordsValidationMetrics(t *testing.T) {
 		{
 			name: "range on durable pool",
 			path: "/memories?created_after=2026-07-23T01:00:00Z",
-			mode: "durable_list",
+			mode: "all_types_list",
 		},
 	}
 
@@ -294,7 +295,7 @@ func TestListMemories_LogsFailureAndCancellationOrigin(t *testing.T) {
 			entry := findMemoryListLogEntry(t, &logBuf, "memory list failed")
 			assertMemoryListLogField(t, entry, "request_id", "request-list-failure")
 			assertMemoryListLogField(t, entry, "cluster_id", "cluster-list-failure")
-			assertMemoryListLogField(t, entry, "mode", "durable_list")
+			assertMemoryListLogField(t, entry, "mode", "all_types_list")
 			assertMemoryListLogField(t, entry, "outcome", tt.wantStatus)
 			assertMemoryListLogField(t, entry, "cancel_origin", tt.wantOrigin)
 		})

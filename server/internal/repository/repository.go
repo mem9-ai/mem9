@@ -18,6 +18,8 @@ type MemoryRepo interface {
 	ArchiveAndCreate(ctx context.Context, archiveID, supersededBy string, newMem *domain.Memory) error
 	SetState(ctx context.Context, id string, state domain.MemoryState) error
 	List(ctx context.Context, f domain.MemoryFilter) (memories []domain.Memory, total int, err error)
+	// ListAllTypes includes raw sessions on backends that store them.
+	ListAllTypes(ctx context.Context, f domain.MemoryFilter) (memories []domain.Memory, total int, err error)
 	Count(ctx context.Context) (int, error)
 	BulkCreate(ctx context.Context, memories []*domain.Memory) error
 

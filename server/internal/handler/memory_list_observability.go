@@ -35,6 +35,8 @@ type memoryListObservation struct {
 	memoryRows           int
 	sessionPages         int
 	sessionRows          int
+	allTypePages         int
+	allTypeRows          int
 	chainPages           int
 	chainRows            int
 	chainQueryDuration   time.Duration
@@ -87,6 +89,9 @@ func memoryListMode(auth *domain.AuthInfo, filter domain.MemoryFilter, contentKe
 	}
 	if filter.MemoryType == string(domain.TypeSession) {
 		return "session_list"
+	}
+	if filter.MemoryType == "" {
+		return "all_types_list"
 	}
 	return "durable_list"
 }
@@ -151,6 +156,11 @@ func (o *memoryListObservation) recordDirectList(auth *domain.AuthInfo, filter d
 	if filter.Query != "" && filter.MemoryType == "" {
 		return
 	}
+	if filter.Query == "" && filter.MemoryType == "" {
+		o.allTypePages = 1
+		o.allTypeRows = rows
+		return
+	}
 	if filter.MemoryType == string(domain.TypeSession) {
 		o.sessionPages = 1
 		o.sessionRows = rows
@@ -170,8 +180,8 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		return
 	}
 
-	pages := o.memoryPages + o.sessionPages
-	rows := o.memoryRows + o.sessionRows
+	pages := o.memoryPages + o.sessionPages + o.allTypePages
+	rows := o.memoryRows + o.sessionRows + o.allTypeRows
 	if pages == 0 && o.chainPages > 0 {
 		pages = o.chainPages
 		rows = o.chainRows
@@ -191,6 +201,8 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		slog.Int("memory_rows", o.memoryRows),
 		slog.Int("session_pages", o.sessionPages),
 		slog.Int("session_rows", o.sessionRows),
+		slog.Int("all_type_pages", o.allTypePages),
+		slog.Int("all_type_rows", o.allTypeRows),
 		slog.Int("chain_pages", o.chainPages),
 		slog.Int("chain_rows", o.chainRows),
 		slog.Int64("memory_query_ms", o.memoryQueryDuration.Milliseconds()),

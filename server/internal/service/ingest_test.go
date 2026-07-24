@@ -1824,6 +1824,10 @@ func (m *memoryRepoMock) List(ctx context.Context, f domain.MemoryFilter) ([]dom
 	return nil, 0, nil
 }
 
+func (m *memoryRepoMock) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	return m.List(ctx, f)
+}
+
 func (m *memoryRepoMock) Count(ctx context.Context) (int, error) {
 	return 0, nil
 }

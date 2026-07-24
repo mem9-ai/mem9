@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"io"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
@@ -132,6 +134,133 @@ func TestMemoryListSelectsSearchColumnsWithoutEmbedding(t *testing.T) {
 	}
 	if len(results[0].Embedding) != 0 {
 		t.Fatalf("List hydrated embedding length = %d, want 0", len(results[0].Embedding))
+	}
+}
+
+func TestMemoryListAllTypesUsesBoundedUnionPage(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	appID := "app-1"
+	filterArgs := []any{"active", "agent-1", "sess-1", appID, "chat", `"tag-a"`}
+	countArgs := append(append([]any(nil), filterArgs...), filterArgs...)
+	pageArgs := append(append([]any(nil), filterArgs...), 5)
+	pageArgs = append(pageArgs, filterArgs...)
+	pageArgs = append(pageArgs, 5, 2, 3)
+
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"(SELECT COUNT(*) FROM memories WHERE state = ? AND agent_id = ? AND session_id = ? AND app_id = ? AND source = ? AND JSON_CONTAINS(tags, ?))",
+				"(SELECT COUNT(*) FROM sessions WHERE state = ? AND agent_id = ? AND session_id = ? AND app_id = ? AND source = ? AND JSON_CONTAINS(tags, ?))",
+			},
+			mustNotContain: []string{"ALTER TABLE", "CREATE INDEX"},
+			wantArgs:       countArgs,
+			rows: &scriptedRows{
+				columns: []string{"total"},
+				values:  [][]driver.Value{{int64(6)}},
+			},
+		},
+		{
+			mustContain: []string{
+				"WITH memory_page AS",
+				"SELECT " + searchColumns + ", updated_at AS sort_value",
+				"FROM memories",
+				"ORDER BY updated_at DESC, id DESC LIMIT ?",
+				"session_page AS",
+				"JSON_OBJECT('role', COALESCE(role, ''), 'seq', seq, 'content_type', COALESCE(content_type, '')) AS metadata",
+				"'session' AS memory_type",
+				"FROM sessions",
+				"ORDER BY created_at DESC, id DESC LIMIT ?",
+				"UNION ALL",
+				"ORDER BY sort_value DESC, id DESC",
+				"LIMIT ? OFFSET ?",
+			},
+			mustNotContain: []string{"embedding", "ALTER TABLE", "CREATE INDEX"},
+			wantArgs:       pageArgs,
+			rows: &scriptedRows{
+				columns: memorySearchColumns(),
+				values: [][]driver.Value{
+					{
+						"session-1", "raw turn", "chat", []byte(`["tag-a"]`),
+						[]byte(`{"role":"user","seq":2,"content_type":"text"}`), string(domain.TypeSession),
+						"agent-1", "sess-1", appID, "active", int64(0), nil, now, now, nil,
+					},
+					memorySearchRow("memory-1", "durable memory", "agent-1", "sess-1", "active", []byte(`["tag-a"]`), now.Add(-time.Minute)),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	memories, total, err := repo.ListAllTypes(context.Background(), domain.MemoryFilter{
+		State:     "active",
+		AgentID:   "agent-1",
+		SessionID: "sess-1",
+		AppID:     &appID,
+		Source:    "chat",
+		Tags:      []string{"tag-a"},
+		Limit:     2,
+		Offset:    3,
+	})
+	if err != nil {
+		t.Fatalf("ListAllTypes: %v", err)
+	}
+	if total != 6 || len(memories) != 2 {
+		t.Fatalf("page = total:%d memories:%+v, want 6/2", total, memories)
+	}
+	if memories[0].ID != "session-1" || memories[0].MemoryType != domain.TypeSession {
+		t.Fatalf("first memory = %+v, want session-1", memories[0])
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(memories[0].Metadata, &metadata); err != nil {
+		t.Fatalf("decode session metadata: %v", err)
+	}
+	if metadata["role"] != "user" || metadata["seq"] != float64(2) || metadata["content_type"] != "text" {
+		t.Fatalf("session metadata = %#v", metadata)
+	}
+}
+
+func TestMemoryListAllTypesFallsBackWhenSessionsTableIsMissing(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	db := newScriptedTestDB(t, []*queryExpectation{
+		{
+			mustContain: []string{
+				"(SELECT COUNT(*) FROM memories WHERE state = 'active')",
+				"(SELECT COUNT(*) FROM sessions WHERE state = 'active')",
+			},
+			err: &mysql.MySQLError{Number: 1146, Message: "Table doesn't exist"},
+		},
+		{
+			mustContain: []string{"SELECT COUNT(*) FROM memories WHERE state = 'active'"},
+			rows: &scriptedRows{
+				columns: []string{"COUNT(*)"},
+				values:  [][]driver.Value{{int64(1)}},
+			},
+		},
+		{
+			mustContain: []string{
+				"SELECT " + searchColumns + " FROM memories",
+				"ORDER BY updated_at DESC, id DESC",
+				"LIMIT ? OFFSET ?",
+			},
+			wantArgs: []any{1, 0},
+			rows: &scriptedRows{
+				columns: memorySearchColumns(),
+				values: [][]driver.Value{
+					memorySearchRow("memory-1", "durable memory", "agent-1", "sess-1", "active", []byte(`[]`), now),
+				},
+			},
+		},
+	})
+	defer db.Close()
+
+	repo := NewMemoryRepo(db, "", true, "cluster-1")
+	memories, total, err := repo.ListAllTypes(context.Background(), domain.MemoryFilter{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListAllTypes: %v", err)
+	}
+	if total != 1 || len(memories) != 1 || memories[0].ID != "memory-1" {
+		t.Fatalf("page = total:%d memories:%+v, want durable fallback", total, memories)
 	}
 }
 

@@ -25,6 +25,7 @@ const (
 	maxTags              = 20
 	maxBulkSize          = 100
 	maxBulkDeleteSize    = 1000
+	maxAllTypeListWindow = 3000
 	defaultMinScore      = 0.3
 	maxLooseSearchTokens = 5
 
@@ -178,6 +179,34 @@ func (s *MemoryService) List(ctx context.Context, filter domain.MemoryFilter) ([
 	mems, total, err := s.memories.List(ctx, filter)
 	if err != nil {
 		return nil, 0, err
+	}
+	return finalizeSearchResults(mems, filter.Query), total, nil
+}
+
+func (s *MemoryService) ListAllTypes(ctx context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	if filter.Limit <= 0 || filter.Limit > 200 {
+		filter.Limit = DefaultSessionLimit
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	if filter.Offset > maxAllTypeListWindow-filter.Limit {
+		return nil, 0, &domain.ValidationError{
+			Field:   "offset",
+			Message: fmt.Sprintf("offset plus limit exceeds the all-types maximum of %d", maxAllTypeListWindow),
+		}
+	}
+	switch strings.TrimSpace(filter.SortBy) {
+	case "content", "tags":
+		return nil, 0, &domain.ValidationError{
+			Field:   "sort_by",
+			Message: "content and tags sorting require an explicit memory_type",
+		}
+	}
+
+	mems, total, err := s.memories.ListAllTypes(ctx, filter)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list all-types memories: %w", err)
 	}
 	return finalizeSearchResults(mems, filter.Query), total, nil
 }

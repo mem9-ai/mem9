@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/qiffang/mnemos/server/internal/domain"
+	internaltenant "github.com/qiffang/mnemos/server/internal/tenant"
 )
 
 type MemoryRepo struct {
@@ -39,6 +40,7 @@ const (
 	searchColumns            = `id, content, source, tags, metadata, memory_type, agent_id, session_id, app_id, state, version, updated_by, created_at, updated_at, superseded_by`
 	maxFTSCandidatePageLimit = 10000
 	maxFTSFallbackPages      = 30
+	allTypeListSlowThreshold = 2 * time.Second
 	// TiDB Cloud FTS is only safe with fts_match_word as the only WHERE predicate,
 	// so wider recall uses bounded pure-FTS pages followed by post-filtering.
 	maxFTSFallbackCandidateLimit = maxFTSCandidatePageLimit * maxFTSFallbackPages
@@ -342,24 +344,183 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	return memories, total, rows.Err()
 }
 
-func memoryListOrderBy(f domain.MemoryFilter) string {
-	column := "updated_at"
-	switch strings.TrimSpace(f.SortBy) {
-	case "content":
-		column = "content"
-	case "memory_type":
-		column = "memory_type"
-	case "tags":
-		column = "tags"
-	case "updated_at", "":
-		column = "updated_at"
+func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([]domain.Memory, int, error) {
+	startedAt := time.Now()
+	var countDuration, pageDuration time.Duration
+	total := 0
+	returned := 0
+	fallback := false
+	defer func() {
+		if time.Since(startedAt) < allTypeListSlowThreshold {
+			return
+		}
+		slog.InfoContext(ctx, "all-types memory list phases",
+			"cluster_id", r.clusterID,
+			"count_ms", countDuration.Milliseconds(),
+			"page_ms", pageDuration.Milliseconds(),
+			"fallback", fallback,
+			"total", total,
+			"returned", returned,
+			"duration_ms", time.Since(startedAt).Milliseconds(),
+		)
+	}()
+
+	memoryFilter := f
+	memoryFilter.MemoryType = ""
+	memoryConds, memoryArgs := r.buildFilterConds(memoryFilter)
+	sessionConds, sessionArgs := buildSessionFilterConds(f)
+	memoryWhere := strings.Join(memoryConds, " AND ")
+	sessionWhere := strings.Join(sessionConds, " AND ")
+
+	countQuery := `SELECT
+		(SELECT COUNT(*) FROM memories WHERE ` + memoryWhere + `) +
+		(SELECT COUNT(*) FROM sessions WHERE ` + sessionWhere + `) AS total`
+	countArgs := make([]any, 0, len(memoryArgs)+len(sessionArgs))
+	countArgs = append(countArgs, memoryArgs...)
+	countArgs = append(countArgs, sessionArgs...)
+
+	countStartedAt := time.Now()
+	err := r.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
+	countDuration = time.Since(countStartedAt)
+	if err != nil {
+		if internaltenant.IsTableNotFoundError(err) {
+			fallback = true
+			slog.InfoContext(ctx, "all-types memory list using durable fallback",
+				"cluster_id", r.clusterID,
+				"phase", "count",
+			)
+			fallbackStartedAt := time.Now()
+			memories, fallbackTotal, fallbackErr := r.List(ctx, f)
+			pageDuration = time.Since(fallbackStartedAt)
+			total = fallbackTotal
+			returned = len(memories)
+			return memories, fallbackTotal, fallbackErr
+		}
+		slog.ErrorContext(ctx, "list all-types memories: count failed",
+			"cluster_id", r.clusterID,
+			"duration_ms", countDuration.Milliseconds(),
+			"err", err,
+		)
+		return nil, 0, fmt.Errorf("count all-types memories: %w", err)
 	}
 
-	direction := "DESC"
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	if total <= offset {
+		return []domain.Memory{}, total, nil
+	}
+	window := offset + limit
+	memorySort, sessionSort, direction := allTypeMemoryListOrder(f)
+
+	dataQuery := `WITH memory_page AS (
+		SELECT ` + searchColumns + `, ` + memorySort + ` AS sort_value
+		FROM memories
+		WHERE ` + memoryWhere + `
+		ORDER BY ` + memorySort + ` ` + direction + `, id ` + direction + ` LIMIT ?
+	),
+	session_page AS (
+		SELECT id, content, source, tags,
+			JSON_OBJECT('role', COALESCE(role, ''), 'seq', seq, 'content_type', COALESCE(content_type, '')) AS metadata,
+			'session' AS memory_type, agent_id, session_id, app_id, state, 0 AS version,
+			NULL AS updated_by, created_at, created_at AS updated_at, NULL AS superseded_by,
+			` + sessionSort + ` AS sort_value
+		FROM sessions
+		WHERE ` + sessionWhere + `
+		ORDER BY ` + sessionSort + ` ` + direction + `, id ` + direction + ` LIMIT ?
+	),
+	all_type_rows AS (
+		SELECT * FROM memory_page
+		UNION ALL
+		SELECT * FROM session_page
+	)
+	SELECT ` + searchColumns + `
+	FROM all_type_rows
+	ORDER BY sort_value ` + direction + `, id ` + direction + `
+	LIMIT ? OFFSET ?`
+
+	dataArgs := make([]any, 0, len(memoryArgs)+len(sessionArgs)+4)
+	dataArgs = append(dataArgs, memoryArgs...)
+	dataArgs = append(dataArgs, window)
+	dataArgs = append(dataArgs, sessionArgs...)
+	dataArgs = append(dataArgs, window, limit, offset)
+
+	pageStartedAt := time.Now()
+	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
+	if err != nil {
+		pageDuration = time.Since(pageStartedAt)
+		if internaltenant.IsTableNotFoundError(err) {
+			fallback = true
+			slog.InfoContext(ctx, "all-types memory list using durable fallback",
+				"cluster_id", r.clusterID,
+				"phase", "page",
+			)
+			fallbackStartedAt := time.Now()
+			memories, fallbackTotal, fallbackErr := r.List(ctx, f)
+			pageDuration += time.Since(fallbackStartedAt)
+			total = fallbackTotal
+			returned = len(memories)
+			return memories, fallbackTotal, fallbackErr
+		}
+		slog.ErrorContext(ctx, "list all-types memories: page query failed",
+			"cluster_id", r.clusterID,
+			"duration_ms", pageDuration.Milliseconds(),
+			"err", err,
+		)
+		return nil, 0, fmt.Errorf("list all-types memories: %w", err)
+	}
+	defer rows.Close()
+
+	memories := make([]domain.Memory, 0, limit)
+	for rows.Next() {
+		memory, scanErr := scanSearchMemoryRows(rows)
+		if scanErr != nil {
+			pageDuration = time.Since(pageStartedAt)
+			return nil, 0, scanErr
+		}
+		memories = append(memories, *memory)
+	}
+	pageDuration = time.Since(pageStartedAt)
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate all-types memories: %w", err)
+	}
+	returned = len(memories)
+	return memories, total, nil
+}
+
+func allTypeMemoryListOrder(f domain.MemoryFilter) (memoryColumn, sessionColumn, direction string) {
+	memoryColumn, direction = memoryListSort(f)
+	sessionColumn = memoryColumn
+	switch memoryColumn {
+	case "memory_type":
+		sessionColumn = "'session'"
+	case "updated_at":
+		sessionColumn = "created_at"
+	}
+	return memoryColumn, sessionColumn, direction
+}
+
+func memoryListSort(f domain.MemoryFilter) (column, direction string) {
+	column = "updated_at"
+	switch strings.TrimSpace(f.SortBy) {
+	case "content", "memory_type", "tags":
+		column = strings.TrimSpace(f.SortBy)
+	case "updated_at", "":
+	}
+	direction = "DESC"
 	if strings.EqualFold(strings.TrimSpace(f.SortDir), "asc") {
 		direction = "ASC"
 	}
+	return column, direction
+}
 
+func memoryListOrderBy(f domain.MemoryFilter) string {
+	column, direction := memoryListSort(f)
 	return column + " " + direction + ", id " + direction
 }
 

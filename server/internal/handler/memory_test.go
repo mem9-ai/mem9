@@ -34,31 +34,36 @@ import (
 
 // testMemoryRepo is a minimal MemoryRepo mock for handler tests.
 type testMemoryRepo struct {
-	mu                   sync.Mutex
-	createCalls          []*domain.Memory
-	bulkCreateCalls      int
-	bulkCreateHook       func(context.Context)
-	updateCalls          []*domain.Memory
-	vectorSearchResults  []domain.Memory
-	keywordSearchResults []domain.Memory
-	keywordSearchHook    func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
-	lastKeywordQuery     string
-	lastKeywordFilter    domain.MemoryFilter
-	lastKeywordLimit     int
-	listResults          []domain.Memory
-	listTotal            int
-	listErr              error
-	lastListFilter       domain.MemoryFilter
-	listCalls            int
-	softDeleteCalls      []string
-	softDeleteResult     int64
-	softDeleteErr        error
-	bulkSoftDeleteCalls  [][]string
-	bulkSoftDeleteResult int64
-	countStatsTotal      int64
-	countStatsLast7d     int64
-	countStatsErr        error
-	countStatsCalls      int
+	mu                    sync.Mutex
+	createCalls           []*domain.Memory
+	bulkCreateCalls       int
+	bulkCreateHook        func(context.Context)
+	updateCalls           []*domain.Memory
+	vectorSearchResults   []domain.Memory
+	keywordSearchResults  []domain.Memory
+	keywordSearchHook     func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
+	lastKeywordQuery      string
+	lastKeywordFilter     domain.MemoryFilter
+	lastKeywordLimit      int
+	listResults           []domain.Memory
+	listTotal             int
+	listErr               error
+	lastListFilter        domain.MemoryFilter
+	listCalls             int
+	allTypeListResults    []domain.Memory
+	allTypeListTotal      int
+	allTypeListErr        error
+	lastAllTypeListFilter domain.MemoryFilter
+	allTypeListCalls      int
+	softDeleteCalls       []string
+	softDeleteResult      int64
+	softDeleteErr         error
+	bulkSoftDeleteCalls   [][]string
+	bulkSoftDeleteResult  int64
+	countStatsTotal       int64
+	countStatsLast7d      int64
+	countStatsErr         error
+	countStatsCalls       int
 }
 
 func (m *testMemoryRepo) Create(_ context.Context, mem *domain.Memory) error {
@@ -124,6 +129,22 @@ func (m *testMemoryRepo) List(_ context.Context, filter domain.MemoryFilter) ([]
 	defer m.mu.Unlock()
 	m.listCalls++
 	m.lastListFilter = filter
+	if m.listErr != nil {
+		return nil, 0, m.listErr
+	}
+	return append([]domain.Memory(nil), m.listResults...), m.listTotal, nil
+}
+func (m *testMemoryRepo) ListAllTypes(_ context.Context, filter domain.MemoryFilter) ([]domain.Memory, int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.allTypeListCalls++
+	m.lastAllTypeListFilter = filter
+	if m.allTypeListErr != nil {
+		return nil, 0, m.allTypeListErr
+	}
+	if m.allTypeListResults != nil {
+		return append([]domain.Memory(nil), m.allTypeListResults...), m.allTypeListTotal, nil
+	}
 	if m.listErr != nil {
 		return nil, 0, m.listErr
 	}
@@ -1172,7 +1193,7 @@ func TestListMemories_SessionTypeListsSessionRows(t *testing.T) {
 	}
 }
 
-func TestListMemories_DefaultListUsesDurableMemoryPage(t *testing.T) {
+func TestListMemories_DefaultListUsesUnifiedAllTypesPage(t *testing.T) {
 	now := time.Now()
 	memRepo := &testMemoryRepo{
 		listResults: []domain.Memory{
@@ -1186,6 +1207,17 @@ func TestListMemories_DefaultListUsesDurableMemoryPage(t *testing.T) {
 			},
 		},
 		listTotal: 1000,
+		allTypeListResults: []domain.Memory{
+			{
+				ID:         "session-1",
+				Content:    "raw conversation turn",
+				MemoryType: domain.TypeSession,
+				State:      domain.StateActive,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+		allTypeListTotal: 2000,
 	}
 	sessionRepo := &testSessionRepo{
 		listResults: []domain.Memory{
@@ -1213,17 +1245,54 @@ func TestListMemories_DefaultListUsesDurableMemoryPage(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Total != 1000 || resp.Limit != 1 || resp.Offset != 0 {
-		t.Fatalf("page = total:%d limit:%d offset:%d, want 1000/1/0", resp.Total, resp.Limit, resp.Offset)
+	if resp.Total != 2000 || resp.Limit != 1 || resp.Offset != 0 {
+		t.Fatalf("page = total:%d limit:%d offset:%d, want 2000/1/0", resp.Total, resp.Limit, resp.Offset)
 	}
-	if len(resp.Memories) != 1 || resp.Memories[0].ID != "insight-1" {
-		t.Fatalf("memories = %+v, want durable memory page", resp.Memories)
+	if len(resp.Memories) != 1 || resp.Memories[0].ID != "session-1" {
+		t.Fatalf("memories = %+v, want unified all-types page", resp.Memories)
 	}
-	if memRepo.listCalls != 1 || sessionRepo.listCalls != 0 {
-		t.Fatalf("list calls = memory:%d session:%d, want 1/0", memRepo.listCalls, sessionRepo.listCalls)
+	if memRepo.allTypeListCalls != 1 || memRepo.listCalls != 0 || sessionRepo.listCalls != 0 {
+		t.Fatalf("list calls = all-types:%d memory:%d session:%d, want 1/0/0",
+			memRepo.allTypeListCalls, memRepo.listCalls, sessionRepo.listCalls)
 	}
-	if memRepo.lastListFilter.Limit != 1 || memRepo.lastListFilter.Offset != 0 {
-		t.Fatalf("memory filter = %+v, want limit=1 offset=0", memRepo.lastListFilter)
+	if memRepo.lastAllTypeListFilter.Limit != 1 || memRepo.lastAllTypeListFilter.Offset != 0 {
+		t.Fatalf("all-types filter = %+v, want limit=1 offset=0", memRepo.lastAllTypeListFilter)
+	}
+}
+
+func TestListMemories_DefaultListRejectsDeepPagination(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	req := makeRequest(t, http.MethodGet, "/memories?limit=1&offset=3000", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+	}
+	if memRepo.allTypeListCalls != 0 {
+		t.Fatalf("all-types list calls = %d, want 0", memRepo.allTypeListCalls)
+	}
+}
+
+func TestListMemories_DefaultListRejectsUnboundedSorts(t *testing.T) {
+	for _, sortBy := range []string{"content", "tags"} {
+		t.Run(sortBy, func(t *testing.T) {
+			memRepo := &testMemoryRepo{}
+			srv := newTestServer(memRepo, &testSessionRepo{})
+			req := makeRequest(t, http.MethodGet, "/memories?sort_by="+sortBy, nil)
+			rr := httptest.NewRecorder()
+
+			srv.listMemories(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+			}
+			if memRepo.allTypeListCalls != 0 {
+				t.Fatalf("all-types list calls = %d, want 0", memRepo.allTypeListCalls)
+			}
+		})
 	}
 }
 

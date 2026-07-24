@@ -895,6 +895,8 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	} else {
 		svc := s.resolveServices(auth)
 		switch {
+		case filter.Query == "" && filter.MemoryType == "":
+			memories, total, err = svc.memory.ListAllTypes(listCtx, filter)
 		case filter.Query != "" && contentKeywordSearch:
 			memories, total, err = s.listLocalMemoriesContentKeyword(listCtx, svc, filter)
 		case filter.Query != "" && filter.ScanAll:
@@ -912,7 +914,9 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	listObservation.queryDuration = time.Since(queryStartedAt)
-	listObservation.recordDirectList(auth, filter, contentKeywordSearch, len(memories))
+	if err == nil {
+		listObservation.recordDirectList(auth, filter, contentKeywordSearch, len(memories))
+	}
 
 	if err != nil {
 		if s.runtimeUsageEnabled() && recallLease != nil {
