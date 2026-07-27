@@ -64,7 +64,7 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapsho
     });
   }, [cards, memories, range, snapshot, stats]);
   const { data: insightGraph } = useBackgroundMemoryInsightGraph({ cards, memories, matchMap });
-  const profileGridClass = "grid gap-4 xl:grid-cols-[calc(27.76%_+_100px)_minmax(0,calc(72.24%_-_100px))]";
+  const profileGridClass = "grid gap-4 xl:grid-cols-[calc((100%_-_1rem)*0.2776_+_100px)_minmax(0,calc((100%_-_1rem)*0.7224_-_100px))]";
 
   if (loading && !stats && memories.length === 0) return <ProfileSkeleton className={className} />;
 
