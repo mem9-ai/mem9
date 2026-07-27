@@ -147,6 +147,7 @@ export function MemoryCompositionChart({
   onTypeSelect,
   showLegend = true,
   legendPosition = "below",
+  legendItemClassName,
   chartSize = 220,
 }: {
   total: number;
@@ -157,6 +158,7 @@ export function MemoryCompositionChart({
   onTypeSelect: (type: MemoryType) => void;
   showLegend?: boolean;
   legendPosition?: "below" | "side";
+  legendItemClassName?: string;
   chartSize?: number;
 }) {
   const { t } = useTranslation();
@@ -302,6 +304,7 @@ export function MemoryCompositionChart({
                   isActive
                     ? "border-foreground/12 bg-foreground/[0.04]"
                     : "border-transparent bg-secondary/45 hover:border-foreground/8 hover:bg-secondary/70",
+                  legendItemClassName,
                 )}
               >
                 <div className="flex items-center justify-between gap-2 min-w-0">
