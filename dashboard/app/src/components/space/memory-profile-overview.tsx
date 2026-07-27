@@ -64,6 +64,7 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapsho
     });
   }, [cards, memories, range, snapshot, stats]);
   const { data: insightGraph } = useBackgroundMemoryInsightGraph({ cards, memories, matchMap });
+  const profileGridClass = "grid gap-4 xl:grid-cols-[calc(27.76%_+_100px)_minmax(0,calc(72.24%_-_100px))]";
 
   if (loading && !stats && memories.length === 0) return <ProfileSkeleton className={className} />;
 
@@ -73,17 +74,18 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapsho
       <div className="flex items-center gap-3"><span className="text-xs text-soft-foreground">{lastUpdated}</span></div>
     </header>
 
-    <div className="grid gap-4 xl:grid-cols-[.88fr_.95fr_1.34fr]">
+    <div className={profileGridClass}>
       <article className="surface-card relative overflow-hidden p-5"><div className="absolute -left-8 top-16 size-44 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,.15),transparent_68%)]" /><h3 className="sr-only">{t("memory_profile.personal.title")}</h3><div className="relative flex h-full items-center gap-4"><Avatar /><div className="min-w-0"><p className="truncate text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.personal.name")}</p><dl className="mt-7 space-y-3"><Stat label={t("memory_profile.personal.companion_duration")} value={t("memory_profile.personal.days", { count: companionDays })} /><Stat label={t("memory_profile.personal.memory_count")} value={t("memory_profile.personal.memories", { count: memoryCount })} /></dl></div></div></article>
 
-      <article className="surface-card relative overflow-hidden p-5 xl:col-span-2"><div className="absolute right-5 top-5 flex size-[4.5rem] items-center justify-center rounded-full bg-blue-500/10"><span className="size-8 rounded-xl bg-blue-500/80 shadow-[0_0_24px_rgba(59,130,246,.55)]" /></div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-500">{t("memory_profile.current_understanding.eyebrow")}</p><h3 className="mt-2 text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.current_understanding.title")}</h3><p className="mt-6 max-w-[88%] text-sm leading-7 text-foreground/78">{currentUnderstanding}</p>{profile?.summary.message && <p className="mt-3 max-w-[88%] text-xs leading-5 text-soft-foreground">{profile.summary.message}</p>}</article>
+      <article className="surface-card relative overflow-hidden p-5"><div className="absolute right-5 top-5 flex size-[4.5rem] items-center justify-center rounded-full bg-blue-500/10"><span className="size-8 rounded-xl bg-blue-500/80 shadow-[0_0_24px_rgba(59,130,246,.55)]" /></div><p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-500">{t("memory_profile.current_understanding.eyebrow")}</p><h3 className="mt-2 text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.current_understanding.title")}</h3><p className="mt-6 max-w-[88%] text-sm leading-7 text-foreground/78">{currentUnderstanding}</p>{profile?.summary.message && <p className="mt-3 max-w-[88%] text-xs leading-5 text-soft-foreground">{profile.summary.message}</p>}</article>
     </div>
 
-    <div className="mt-4 grid gap-4 xl:grid-cols-[.88fr_.95fr_1.34fr]">
+    <div className={cn("mt-4", profileGridClass)}>
       <ProfileCard title={t("memory_profile.topics.title")}><RadarChart nodes={insightGraph.cards} /></ProfileCard>
-      <article className="surface-card min-h-[260px] p-5"><MemoryCompositionChart total={composition.total} outer={composition.outer} inner={composition.inner} innerKind={composition.innerKind} onTypeSelect={() => {}} legendPosition="side" chartSize={140} /></article>
       <article className="surface-card min-h-[260px] p-5"><MemoryRhythmChart buckets={pulse?.trend.buckets ?? []} maxCount={pulse?.trend.maxCount ?? 0} locale={i18n.language} /></article>
     </div>
+
+    <article className="surface-card mt-4 min-h-[260px] p-5"><MemoryCompositionChart total={composition.total} outer={composition.outer} inner={composition.inner} innerKind={composition.innerKind} onTypeSelect={() => {}} legendPosition="side" legendItemClassName="w-[40%]" chartSize={140} /></article>
 
     <article className="surface-card mt-4 p-5"><h3 className="text-xl font-semibold tracking-[-0.045em]">{t("memory_profile.items.title")}</h3><ProfileItemSections items={profile?.items ?? []} loading={profileQuery.isLoading} /></article>
   </section>;
