@@ -266,6 +266,38 @@ func TestComplete(t *testing.T) {
 		}
 	})
 
+	t.Run("minimax m3 disables thinking without reasoning_split", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if req.EnableThinking == nil || *req.EnableThinking {
+				t.Fatalf("enable_thinking = %v, want %v", req.EnableThinking, false)
+			}
+			if req.ReasoningSplit != nil {
+				t.Fatalf("reasoning_split = %v, want nil", *req.ReasoningSplit)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M3"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+	})
+
 	t.Run("qwen3 model emits cache_control on system only", func(t *testing.T) {
 		var rawBody []byte
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

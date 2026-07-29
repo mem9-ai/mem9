@@ -371,7 +371,15 @@ func (c *Client) DebugLLM() bool {
 }
 
 func disableThinkingOptions(model string) *bool {
-	if strings.Contains(strings.ToLower(model), "qwen") {
+	lower := strings.ToLower(model)
+	if strings.Contains(lower, "qwen") {
+		enableThinking := false
+		return &enableThinking
+	}
+	// MiniMax-M3 supports adaptive/disabled thinking. Disable it for deterministic
+	// structured extraction. The always-on M2 series is handled via reasoning_split
+	// instead (see supportsReasoningSplit) and must not receive this flag.
+	if strings.HasPrefix(lower, "minimax-m3") {
 		enableThinking := false
 		return &enableThinking
 	}
