@@ -352,6 +352,7 @@ export const httpProvider: DashboardProvider = {
 
     while (offset < total) {
       const page = await this.listMemories(apiKey, {
+        memory_type: "pinned,insight",
         limit: PAGE,
         offset,
       });
