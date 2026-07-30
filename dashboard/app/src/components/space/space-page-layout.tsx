@@ -1,4 +1,12 @@
-import { useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
+import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import {
   Search,
   BarChart3,
@@ -107,6 +115,9 @@ export const SpacePageLayout = ({
   onHandleFarmAction,
 }: SpacePageLayoutProps) => {
   const [activeOverviewTab, setActiveOverviewTab] = useState<MemoryInsightTab>("profile");
+  const [memoryListScrollMargin, setMemoryListScrollMargin] = useState(0);
+  const memoryListLayoutRef = useRef<HTMLDivElement>(null);
+  const memoryRowsRef = useRef<HTMLDivElement>(null);
   const isMemoryListTab = activeOverviewTab === "pulse";
   const supportsMemoryDetail = isMemoryListTab || activeOverviewTab === "insight";
   const selectedMemoryForDetail = supportsMemoryDetail ? routeState.selected : null;
@@ -132,6 +143,61 @@ export const SpacePageLayout = ({
     features.enableAnalysis,
     showSelectedMemoryDetail,
   );
+  const getMemoryKey = useCallback(
+    (index: number) => dataModel.displayedMemories[index]?.id ?? index,
+    [dataModel.displayedMemories],
+  );
+  const memoryListVirtualizer = useWindowVirtualizer({
+    count: isMemoryListTab ? dataModel.displayedMemories.length : 0,
+    enabled: isMemoryListTab,
+    estimateSize: () => 220,
+    getItemKey: getMemoryKey,
+    initialRect: {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    },
+    measureElement: (element) =>
+      element.getBoundingClientRect().height || 220,
+    overscan: 5,
+    scrollMargin: memoryListScrollMargin,
+  });
+
+  useLayoutEffect(() => {
+    if (!isMemoryListTab) {
+      return;
+    }
+
+    const updateScrollMargin = () => {
+      const nextMargin =
+        (memoryRowsRef.current?.getBoundingClientRect().top ?? 0) +
+        window.scrollY;
+      setMemoryListScrollMargin((current) =>
+        current === nextMargin ? current : nextMargin,
+      );
+    };
+
+    updateScrollMargin();
+    window.addEventListener("resize", updateScrollMargin);
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(updateScrollMargin);
+    if (memoryListLayoutRef.current) {
+      resizeObserver?.observe(memoryListLayoutRef.current);
+    }
+    if (memoryRowsRef.current) {
+      resizeObserver?.observe(memoryRowsRef.current);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateScrollMargin);
+      resizeObserver?.disconnect();
+    };
+  }, [
+    dataModel.displayedMemories.length,
+    dataModel.isMemoryLoading,
+    isMemoryListTab,
+  ]);
 
   return (
     <div className="min-h-screen">
@@ -170,7 +236,11 @@ export const SpacePageLayout = ({
 
       <div className={`mx-auto px-6 ${pageShellClass}`}>
         <div className="flex flex-col gap-8 xl:flex-row">
-          <div className="min-w-0 flex-1 py-8 xl:order-2">
+          <div
+            ref={memoryListLayoutRef}
+            data-testid="memory-list-layout"
+            className="min-w-0 flex-1 py-8 xl:order-2"
+          >
             {dataModel.stats && (
               <div
                 style={{
@@ -492,26 +562,61 @@ export const SpacePageLayout = ({
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div>
                   {dataModel.isMemoryLoading && (
                     <div className="flex items-center gap-2 rounded-xl bg-secondary/55 px-3 py-3 text-sm text-muted-foreground">
                       <Loader2 className="size-4 animate-spin" />
                       {t("list.loading")}
                     </div>
                   )}
-                  {dataModel.displayedMemories.map((memory, index) => (
-                    <MemoryCard
-                      key={memory.id}
-                      memory={memory}
-                      derivedTags={dataModel.getActiveDerivedTags(memory)}
-                      hasLinkedSession={memory.session_id.trim() !== ""}
-                      isSelected={routeState.selected?.id === memory.id}
-                      onClick={() => routeState.openMemoryDetail(memory, "list")}
-                      onDelete={() => setDeleteTarget(memory)}
-                      t={t}
-                      delay={index < dataModel.displayedFirstPageSize ? index * 30 : 0}
-                    />
-                  ))}
+                  <div
+                    ref={memoryRowsRef}
+                    data-testid="memory-list-rows"
+                    style={{
+                      height: `${memoryListVirtualizer.getTotalSize()}px`,
+                      position: "relative",
+                    }}
+                  >
+                    {memoryListVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const memory =
+                        dataModel.displayedMemories[virtualRow.index];
+                      if (!memory) {
+                        return null;
+                      }
+
+                      return (
+                        <div
+                          key={memory.id}
+                          data-index={virtualRow.index}
+                          ref={memoryListVirtualizer.measureElement}
+                          className="absolute left-0 top-0 w-full pb-3"
+                          style={{
+                            transform: `translateY(${
+                              virtualRow.start - memoryListScrollMargin
+                            }px)`,
+                          }}
+                        >
+                          <MemoryCard
+                            memory={memory}
+                            derivedTags={dataModel.getActiveDerivedTags(memory)}
+                            hasLinkedSession={memory.session_id.trim() !== ""}
+                            isSelected={routeState.selected?.id === memory.id}
+                            onClick={() =>
+                              routeState.openMemoryDetail(memory, "list")
+                            }
+                            onDelete={() => setDeleteTarget(memory)}
+                            t={t}
+                            delay={
+                              virtualRow.index <
+                              dataModel.displayedFirstPageSize
+                                ? virtualRow.index * 30
+                                : 0
+                            }
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
                   {dataModel.hasMoreMemories && (
                     <div className="py-4 text-center">
                       <Button

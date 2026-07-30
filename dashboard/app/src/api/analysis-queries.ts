@@ -110,7 +110,7 @@ export function isAnalysisCacheFresh(
 export function useUserProfile(spaceId: string, enabled = true) {
   return useQuery<UserProfileResponse>({
     queryKey: ["space", spaceId, "user-profile"],
-    queryFn: () => analysisApi.getUserProfile(spaceId),
+    queryFn: ({ signal }) => analysisApi.getUserProfile(spaceId, signal),
     enabled: !!spaceId && enabled && !features.useMock,
     staleTime: 60_000,
   });
@@ -388,7 +388,8 @@ export function useSpaceAnalysis(input: {
 
   const taxonomyQuery = useQuery({
     queryKey: ["analysis", "taxonomy", spaceId, DEFAULT_TAXONOMY_VERSION],
-    queryFn: () => analysisApi.getTaxonomy(spaceId, DEFAULT_TAXONOMY_VERSION),
+    queryFn: ({ signal }) =>
+      analysisApi.getTaxonomy(spaceId, DEFAULT_TAXONOMY_VERSION, signal),
     enabled,
     staleTime: 5 * 60_000,
     retry: false,

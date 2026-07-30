@@ -6,6 +6,8 @@ import type { Memory, MemoryFacet } from "@/types/memory";
 import { FacetBadge } from "./topic-strip";
 import { features } from "@/config/features";
 
+const MEMORY_PREVIEW_MAX_LENGTH = 600;
+
 export const MemoryCard = ({
   memory: m,
   derivedTags = [],
@@ -27,6 +29,10 @@ export const MemoryCard = ({
 }) => {
   const isPinned = m.memory_type === "pinned";
   const tags = m.tags ?? [];
+  const contentPreview =
+    m.content.length > MEMORY_PREVIEW_MAX_LENGTH
+      ? `${m.content.slice(0, MEMORY_PREVIEW_MAX_LENGTH)}…`
+      : m.content;
   const facet = features.enableFacet
     ? ((m.metadata as Record<string, unknown> | null)?.facet as
         | MemoryFacet
@@ -77,7 +83,7 @@ export const MemoryCard = ({
 
         <div className="min-w-0 flex-1">
           <p className="line-clamp-3 text-sm leading-relaxed text-foreground/90 font-medium">
-            {m.content}
+            {contentPreview}
           </p>
           {hasLinkedSession && (
             <div className="mt-3">

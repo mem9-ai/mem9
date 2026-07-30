@@ -99,8 +99,17 @@ describe("useDeepAnalysisReports", () => {
     rerender({ active: true });
 
     await waitFor(() => {
-      expect(mocks.listDeepAnalysisReports).toHaveBeenCalledWith("space-1", 20, 0);
-      expect(mocks.getDeepAnalysisReport).toHaveBeenCalledWith("space-1", "dar_1");
+      expect(mocks.listDeepAnalysisReports).toHaveBeenCalledWith(
+        "space-1",
+        20,
+        0,
+        expect.any(AbortSignal),
+      );
+      expect(mocks.getDeepAnalysisReport).toHaveBeenCalledWith(
+        "space-1",
+        "dar_1",
+        expect.any(AbortSignal),
+      );
     });
   });
 

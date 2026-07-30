@@ -90,6 +90,7 @@ async function listMemoriesPage(
   apiKey: string,
   params: MemoryListParams,
   cacheResult: boolean,
+  signal?: AbortSignal,
 ): Promise<MemoryListResponse> {
   const qs = new URLSearchParams();
   if (params.q) qs.set("q", params.q);
@@ -104,6 +105,7 @@ async function listMemoriesPage(
   const response = await request<MemoryListResponse>(
     apiKey,
     `/memories?${qs}`,
+    { signal },
   );
   const normalized = normalizeMemoryListResponse(response);
   if (cacheResult) {
@@ -222,9 +224,11 @@ async function requestRaw(
 }
 
 export const httpProvider: DashboardProvider = {
-  async verifySpace(apiKey: string): Promise<SpaceInfo> {
+  async verifySpace(apiKey: string, signal?: AbortSignal): Promise<SpaceInfo> {
     const id = apiKey.trim();
-    const res = await request<MemoryListResponse>(id, "/memories?limit=1");
+    const res = await request<MemoryListResponse>(id, "/memories?limit=1", {
+      signal,
+    });
     return {
       tenant_id: id,
       name: id,
@@ -238,13 +242,15 @@ export const httpProvider: DashboardProvider = {
   async listMemories(
     apiKey: string,
     params: MemoryListParams = {},
+    signal?: AbortSignal,
   ): Promise<MemoryListResponse> {
-    return listMemoriesPage(apiKey, params, true);
+    return listMemoriesPage(apiKey, params, true, signal);
   },
 
   async listSessionMessages(
     apiKey: string,
     params: SessionMessageListParams,
+    signal?: AbortSignal,
   ): Promise<SessionMessageListResponse> {
     const sessionIDs = Array.from(
       new Set(
@@ -269,6 +275,7 @@ export const httpProvider: DashboardProvider = {
     const url = `${API_BASE}/session-messages?${qs}`;
     const res = await fetch(url, {
       headers: buildHeaders(apiKey),
+      signal,
     });
 
     if (res.status === 404 || res.status === 405 || res.status === 501) {
@@ -286,6 +293,7 @@ export const httpProvider: DashboardProvider = {
   async getStats(
     apiKey: string,
     params?: TimeRangeParams,
+    signal?: AbortSignal,
   ): Promise<MemoryStats> {
     const qs = new URLSearchParams({ limit: "1" });
     if (params?.updated_from) qs.set("updated_from", params.updated_from);
@@ -297,9 +305,9 @@ export const httpProvider: DashboardProvider = {
     qsInsight.set("memory_type", "insight");
 
     const [all, pinned, insight] = await Promise.all([
-      request<MemoryListResponse>(apiKey, `/memories?${qs}`),
-      request<MemoryListResponse>(apiKey, `/memories?${qsPinned}`),
-      request<MemoryListResponse>(apiKey, `/memories?${qsInsight}`),
+      request<MemoryListResponse>(apiKey, `/memories?${qs}`, { signal }),
+      request<MemoryListResponse>(apiKey, `/memories?${qsPinned}`, { signal }),
+      request<MemoryListResponse>(apiKey, `/memories?${qsInsight}`, { signal }),
     ]);
     return {
       total: all.total,
@@ -308,10 +316,15 @@ export const httpProvider: DashboardProvider = {
     };
   },
 
-  async getMemory(apiKey: string, memoryId: string): Promise<Memory> {
+  async getMemory(
+    apiKey: string,
+    memoryId: string,
+    signal?: AbortSignal,
+  ): Promise<Memory> {
     const response = await request<Memory>(
       apiKey,
       `/memories/${memoryId}`,
+      { signal },
     );
     const normalized = normalizeMemory(response);
     void upsertCachedMemories(apiKey, [normalized]);
@@ -430,12 +443,16 @@ export const httpProvider: DashboardProvider = {
   async getImportTask(
     apiKey: string,
     taskId: string,
+    signal?: AbortSignal,
   ): Promise<ImportTask> {
-    return request<ImportTask>(apiKey, `/imports/${taskId}`);
+    return request<ImportTask>(apiKey, `/imports/${taskId}`, { signal });
   },
 
-  async listImportTasks(apiKey: string): Promise<ImportTaskList> {
-    const tasks = await request<ImportTask[]>(apiKey, "/imports");
+  async listImportTasks(
+    apiKey: string,
+    signal?: AbortSignal,
+  ): Promise<ImportTaskList> {
+    const tasks = await request<ImportTask[]>(apiKey, "/imports", { signal });
     if (!tasks || tasks.length === 0) {
       return { tasks: [], status: "empty" };
     }
@@ -456,11 +473,14 @@ export const httpProvider: DashboardProvider = {
   async getTopicSummary(
     apiKey: string,
     params?: TimeRangeParams,
+    signal?: AbortSignal,
   ): Promise<TopicSummary> {
     const qs = new URLSearchParams();
     if (params?.updated_from) qs.set("updated_from", params.updated_from);
     if (params?.updated_to) qs.set("updated_to", params.updated_to);
-    const response = await request<unknown>(apiKey, `/summary?${qs}`);
+    const response = await request<unknown>(apiKey, `/summary?${qs}`, {
+      signal,
+    });
     return normalizeTopicSummary(response);
   },
 };

@@ -57,4 +57,26 @@ describe("MemoryCard", () => {
 
     expect(screen.queryByText("From a conversation")).not.toBeInTheDocument();
   });
+
+  it("keeps large memory content out of the list DOM", () => {
+    const memory = createMemory("");
+    memory.content = "x".repeat(2_000);
+
+    render(
+      <MemoryCard
+        memory={memory}
+        derivedTags={[]}
+        hasLinkedSession={false}
+        isSelected={false}
+        onClick={vi.fn()}
+        onDelete={vi.fn()}
+        t={i18n.t}
+        delay={0}
+      />,
+    );
+
+    const preview = screen.getByText(/^x+…$/);
+    expect(preview.textContent).toHaveLength(601);
+    expect(screen.queryByText(memory.content)).not.toBeInTheDocument();
+  });
 });

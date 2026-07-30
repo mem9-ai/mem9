@@ -120,6 +120,18 @@ describe("use-pixel-farm-npc-dialog-content", () => {
     await waitFor(() => {
       expect(result.current.catalog.deepInsights.length).toBeGreaterThan(0);
     });
+
+    expect(analysisApi.listDeepAnalysisReports).toHaveBeenCalledWith(
+      "space-1",
+      20,
+      0,
+      expect.any(AbortSignal),
+    );
+    expect(analysisApi.getDeepAnalysisReport).toHaveBeenCalledWith(
+      "space-1",
+      "dar_1",
+      expect.any(AbortSignal),
+    );
   });
 
   it("keeps tips available when no analysis source exists", async () => {

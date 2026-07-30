@@ -55,7 +55,7 @@ export function useStats(
   const timeParams = range ? presetToParams(range) : undefined;
   return useQuery({
     queryKey: ["space", spaceId, "stats", range ?? "all"],
-    queryFn: () => api.getStats(spaceId, timeParams),
+    queryFn: ({ signal }) => api.getStats(spaceId, timeParams, signal),
     enabled: !!spaceId && enabled,
     placeholderData: keepPreviousData,
   });
@@ -74,16 +74,20 @@ export function useMemories(
   const timeParams = params.range ? presetToParams(params.range) : {};
   return useInfiniteQuery({
     queryKey: ["space", spaceId, "memories", params],
-    queryFn: ({ pageParam }) =>
-      api.listMemories(spaceId, {
-        q: params.q,
-        tags: params.tag ? [params.tag] : undefined,
-        memory_type: params.memory_type,
-        facet: params.facet,
-        ...timeParams,
-        limit: PAGE_SIZE,
-        offset: pageParam,
-      }),
+    queryFn: ({ pageParam, signal }) =>
+      api.listMemories(
+        spaceId,
+        {
+          q: params.q,
+          tags: params.tag ? [params.tag] : undefined,
+          memory_type: params.memory_type,
+          facet: params.facet,
+          ...timeParams,
+          limit: PAGE_SIZE,
+          offset: pageParam,
+        },
+        signal,
+      ),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => {
       const next = lastPage.offset + lastPage.limit;
@@ -108,10 +112,14 @@ export function useSelectedSessionMessages(
 
   return useQuery({
     queryKey: ["space", spaceId, "sessionMessages", sessionID],
-    queryFn: async () => {
-      const response = await api.listSessionMessages(spaceId, {
-        session_ids: [sessionID],
-      });
+    queryFn: async ({ signal }) => {
+      const response = await api.listSessionMessages(
+        spaceId,
+        {
+          session_ids: [sessionID],
+        },
+        signal,
+      );
       return sortSessionMessages(
         response.messages.filter((message) => message.session_id === sessionID),
       );
@@ -124,7 +132,7 @@ export function useSelectedSessionMessages(
 export function useMemory(spaceId: string, memoryId: string | null) {
   return useQuery({
     queryKey: ["space", spaceId, "memory", memoryId],
-    queryFn: () => api.getMemory(spaceId, memoryId!),
+    queryFn: ({ signal }) => api.getMemory(spaceId, memoryId!, signal),
     enabled: !!spaceId && !!memoryId,
   });
 }
@@ -137,7 +145,7 @@ export function useTopicSummary(
   const timeParams = range ? presetToParams(range) : undefined;
   return useQuery({
     queryKey: ["space", spaceId, "topics", range ?? "all"],
-    queryFn: () => api.getTopicSummary(spaceId, timeParams),
+    queryFn: ({ signal }) => api.getTopicSummary(spaceId, timeParams, signal),
     enabled: !!spaceId && enabled,
     placeholderData: keepPreviousData,
   });
@@ -146,7 +154,7 @@ export function useTopicSummary(
 export function useImportTasks(spaceId: string, enabled = true) {
   return useQuery({
     queryKey: ["space", spaceId, "importTasks"],
-    queryFn: () => api.listImportTasks(spaceId),
+    queryFn: ({ signal }) => api.listImportTasks(spaceId, signal),
     enabled: !!spaceId && enabled,
     refetchInterval: (query) => {
       const data = query.state.data;
@@ -162,7 +170,7 @@ export function useImportTask(
 ) {
   return useQuery({
     queryKey: ["space", spaceId, "importTask", taskId],
-    queryFn: () => api.getImportTask(spaceId, taskId!),
+    queryFn: ({ signal }) => api.getImportTask(spaceId, taskId!, signal),
     enabled: !!spaceId && !!taskId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;

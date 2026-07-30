@@ -612,6 +612,7 @@ describe("SpacePage", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("does not compact the overview when an insight memory opens in a sheet", () => {
@@ -705,6 +706,62 @@ describe("SpacePage", () => {
         document.querySelector('[data-mp-event="Dashboard/Detail/DeleteClicked"]'),
       ).toBeNull();
     });
+  });
+
+  it("keeps the memory list DOM bounded as loaded pages grow", async () => {
+    mockedPageMemories = Array.from({ length: 500 }, (_, index) =>
+      createMemory(
+        `mem-virtual-${index}`,
+        `Virtualized memory ${index}`,
+        new Date(FIXED_NOW.getTime() - index * 60_000).toISOString(),
+      ),
+    );
+    mockedSourceMemories = [...mockedPageMemories];
+    renderSpacePage();
+
+    const listTab = screen.getByRole("tab", { name: "Memory List" });
+    listTab.focus();
+    fireEvent.keyDown(listTab, { key: "Enter" });
+
+    await waitFor(() => expect(listTab).toHaveAttribute("data-state", "active"));
+    await waitFor(() => {
+      expect(screen.queryAllByText(/^Virtualized memory \d+$/)).not.toHaveLength(0);
+    });
+
+    expect(screen.queryAllByText(/^Virtualized memory \d+$/).length).toBeLessThan(50);
+  });
+
+  it("recalculates the virtual list offset when its layout resizes", async () => {
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        public constructor(_callback: ResizeObserverCallback) {}
+
+        public readonly observe = observe;
+        public readonly unobserve = vi.fn();
+        public readonly disconnect = disconnect;
+      },
+    );
+
+    const rendered = renderSpacePage();
+    const listTab = screen.getByRole("tab", { name: "Memory List" });
+    listTab.focus();
+    fireEvent.keyDown(listTab, { key: "Enter" });
+
+    await waitFor(() => expect(listTab).toHaveAttribute("data-state", "active"));
+    const layout = screen.getByTestId("memory-list-layout");
+    const rows = screen.getByTestId("memory-list-rows");
+
+    await waitFor(() => {
+      expect(observe).toHaveBeenCalledWith(layout);
+      expect(observe).toHaveBeenCalledWith(rows);
+    });
+
+    rendered.unmount();
+    expect(disconnect).toHaveBeenCalled();
   });
 
   it("filters memories by clicked analysis category without auto-opening detail", async () => {

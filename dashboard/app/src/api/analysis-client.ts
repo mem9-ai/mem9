@@ -142,15 +142,22 @@ export const analysisApi = {
     return request(spaceId, `/v1/analysis-jobs/${jobId}/updates?${params}`);
   },
 
-  getTaxonomy(spaceId: string, version?: string): Promise<TaxonomyResponse> {
+  getTaxonomy(
+    spaceId: string,
+    version?: string,
+    signal?: AbortSignal,
+  ): Promise<TaxonomyResponse> {
     const params = new URLSearchParams();
     if (version) params.set("version", version);
     const suffix = params.size > 0 ? `?${params}` : "";
-    return request(spaceId, `/v1/taxonomy${suffix}`);
+    return request(spaceId, `/v1/taxonomy${suffix}`, { signal });
   },
 
-  getUserProfile(spaceId: string): Promise<UserProfileResponse> {
-    return request(spaceId, "/v1/user-profile");
+  getUserProfile(
+    spaceId: string,
+    signal?: AbortSignal,
+  ): Promise<UserProfileResponse> {
+    return request(spaceId, "/v1/user-profile", { signal });
   },
 
   createDeepAnalysisReport(
@@ -167,19 +174,27 @@ export const analysisApi = {
     spaceId: string,
     limit = 20,
     offset = 0,
+    signal?: AbortSignal,
   ): Promise<DeepAnalysisReportListResponse> {
     const params = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
     });
-    return request(spaceId, `/v1/deep-analysis/reports?${params.toString()}`);
+    return request(
+      spaceId,
+      `/v1/deep-analysis/reports?${params.toString()}`,
+      { signal },
+    );
   },
 
   getDeepAnalysisReport(
     spaceId: string,
     reportId: string,
+    signal?: AbortSignal,
   ): Promise<DeepAnalysisReportDetail> {
-    return request(spaceId, `/v1/deep-analysis/reports/${reportId}`);
+    return request(spaceId, `/v1/deep-analysis/reports/${reportId}`, {
+      signal,
+    });
   },
 
   async downloadDeepAnalysisDuplicatesCsv(

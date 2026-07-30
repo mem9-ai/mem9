@@ -53,6 +53,32 @@ describe("httpProvider", () => {
     expect(headers.get("Content-Type")).toBe("application/json");
   });
 
+  it("passes cancellation to memory list requests", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          memories: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await httpProvider.listMemories(
+      "space-1",
+      { limit: 50, offset: 0 },
+      controller.signal,
+    );
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
   it("posts manual creates to /memories with explicit pinned memory_type", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

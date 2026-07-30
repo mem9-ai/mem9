@@ -45,7 +45,8 @@ export function usePixelFarmNpcDialogContent(
 
   const reportListQuery = useQuery({
     queryKey: ["space", spaceId, "pixelFarm", "npcDialog", "deepList"],
-    queryFn: () => analysisApi.listDeepAnalysisReports(spaceId, 20, 0),
+    queryFn: ({ signal }) =>
+      analysisApi.listDeepAnalysisReports(spaceId, 20, 0, signal),
     enabled: !!spaceId,
     staleTime: 60_000,
     retry: false,
@@ -65,7 +66,12 @@ export function usePixelFarmNpcDialogContent(
       "deepDetail",
       latestCompletedReport?.id ?? null,
     ],
-    queryFn: () => analysisApi.getDeepAnalysisReport(spaceId, latestCompletedReport!.id),
+    queryFn: ({ signal }) =>
+      analysisApi.getDeepAnalysisReport(
+        spaceId,
+        latestCompletedReport!.id,
+        signal,
+      ),
     enabled: !!spaceId && !!latestCompletedReport,
     staleTime: 60_000,
     retry: false,

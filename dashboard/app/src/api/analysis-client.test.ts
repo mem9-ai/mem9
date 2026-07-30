@@ -125,6 +125,21 @@ describe("analysisApi", () => {
     expect(String(url)).toContain("/v1/deep-analysis/reports?limit=10&offset=20");
   });
 
+  it("forwards an abort signal to read requests", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ summary: { text: "" }, items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await analysisApi.getUserProfile("space-1", controller.signal);
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(init?.signal).toBe(controller.signal);
+  });
+
   it("downloads the duplicate cleanup csv with the same auth header contract", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("duplicateMemoryId,clusterIndex\nmem_2,1\n", {

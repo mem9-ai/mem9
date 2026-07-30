@@ -194,10 +194,15 @@ describe("loadSourceMemories", () => {
 
     const result = await sourceMemories.loadSourceMemories("space-1");
 
-    expect(api.listMemories).toHaveBeenNthCalledWith(2, "space-1", {
-      limit: sourceMemories.SOURCE_MEMORY_SYNC_BUDGET.pageSize,
-      offset: 2,
-    });
+    expect(api.listMemories).toHaveBeenNthCalledWith(
+      2,
+      "space-1",
+      {
+        limit: sourceMemories.SOURCE_MEMORY_SYNC_BUDGET.pageSize,
+        offset: 2,
+      },
+      undefined,
+    );
     expect(result).toHaveLength(3);
     expect(localCache.patchSyncState).toHaveBeenCalledWith(
       "space-1",
@@ -240,5 +245,44 @@ describe("useSourceMemories", () => {
     expect(localCache.readCachedMemories).not.toHaveBeenCalled();
     expect(localCache.readSyncState).not.toHaveBeenCalled();
     expect(api.listMemories).not.toHaveBeenCalled();
+  });
+
+  it("keeps concurrent sync requests bound to their own abort signals", async () => {
+    const { sourceMemories, api } = await importModules();
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+
+    vi.mocked(api.listMemories)
+      .mockResolvedValueOnce({
+        memories: [createMemory("first")],
+        total: 1,
+        limit: 200,
+        offset: 0,
+      })
+      .mockResolvedValueOnce({
+        memories: [createMemory("second")],
+        total: 1,
+        limit: 200,
+        offset: 0,
+      });
+
+    await Promise.all([
+      sourceMemories.syncAllMemories("space-1", firstController.signal),
+      sourceMemories.syncAllMemories("space-1", secondController.signal),
+    ]);
+
+    expect(api.listMemories).toHaveBeenCalledTimes(2);
+    expect(api.listMemories).toHaveBeenNthCalledWith(
+      1,
+      "space-1",
+      { limit: 200, offset: 0 },
+      firstController.signal,
+    );
+    expect(api.listMemories).toHaveBeenNthCalledWith(
+      2,
+      "space-1",
+      { limit: 200, offset: 0 },
+      secondController.signal,
+    );
   });
 });
