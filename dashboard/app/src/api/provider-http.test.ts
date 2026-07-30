@@ -217,7 +217,7 @@ describe("httpProvider", () => {
     expect(result).toEqual({ messages: [] });
   });
 
-  it("exports more than 3000 durable memories through typed list pages", async () => {
+  it("exports more than 3000 pinned and insight memories", async () => {
     const memories = Array.from({ length: 3001 }, (_, index) => ({
       id: `mem-${index}`,
       content: `memory ${index}`,
@@ -239,14 +239,11 @@ describe("httpProvider", () => {
         const url = new URL(String(input), "https://mem9.ai");
         const limit = Number(url.searchParams.get("limit"));
         const offset = Number(url.searchParams.get("offset"));
-        if (
-          url.searchParams.get("memory_type") === null &&
-          offset + limit > 3000
-        ) {
+        const memoryType = url.searchParams.get("memory_type");
+        if (memoryType !== "pinned,insight") {
           return new Response(
             JSON.stringify({
-              error:
-                "offset plus limit exceeds the all-types maximum of 3000",
+              error: "memory_type is required",
             }),
             {
               status: 400,
@@ -271,6 +268,9 @@ describe("httpProvider", () => {
     const result = await httpProvider.exportMemories("space-1");
 
     expect(result.memories).toHaveLength(3001);
+    expect(new Set(result.memories.map((memory) => memory.memory_type))).toEqual(
+      new Set(["pinned", "insight"]),
+    );
     expect(fetchMock).toHaveBeenCalledTimes(16);
     for (const [url] of fetchMock.mock.calls) {
       expect(

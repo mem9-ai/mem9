@@ -284,18 +284,22 @@ If this route is not registered before launch, hide `Add memory`. Do not silentl
 
 ### 5.7 Export JSON
 
-Launch does not need a backend export endpoint. The frontend can export by paginating all current `active` memories and generating the file locally.
+Launch uses client-side export. The frontend paginates current `active` pinned
+and insight memories and generates the file locally.
 
 Recommended flow:
 
-1. Fetch the first page with `limit=200`
+1. Fetch the first page with `memory_type=pinned,insight&limit=200`
 2. Increment `offset` until all `total` records are collected
 3. Build the export JSON
 4. Trigger a browser download
 
-Launch exports only `active` memories, not archived or deleted records.
+Launch exports `active` pinned and insight memories.
 
-Page-level time range does not change export scope. Export covers all current `active` memories in the space by default.
+Export always covers all current `active` pinned and insight memories in the
+space, independently of the page-level time range.
+
+The export dialog count is the sum of the pinned and insight totals.
 
 ### 5.8 Import JSON
 

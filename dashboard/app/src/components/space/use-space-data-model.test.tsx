@@ -194,6 +194,57 @@ describe("useSpaceDataModel", () => {
     );
   });
 
+  it("keeps the empty source-memory reference stable after a source query error", () => {
+    mocks.useSourceMemories.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      isError: true,
+      refetch: mocks.sourceRefetch,
+    });
+    const input = {
+      spaceId: "space-1",
+      q: undefined,
+      range: "all" as const,
+      facet: undefined,
+      analysisCategory: undefined,
+      tag: undefined,
+      memoryTypeFilter: "pinned,insight" as const,
+      timelineSelection: undefined,
+      importStatusOpen: false,
+      exportOpen: false,
+      isDesktopViewport: true,
+      mobileAnalysisOpen: false,
+      selected: null,
+      localVisibleCount: 50,
+      onSelectedMissing: vi.fn(),
+    };
+
+    const { rerender } = renderHook(() => useSpaceDataModel(input));
+    const firstAnalysisCall =
+      mocks.useSpaceAnalysis.mock.calls[
+        mocks.useSpaceAnalysis.mock.calls.length - 1
+      ];
+    const firstSourceMemories = (
+      firstAnalysisCall?.[0] as {
+        sourceMemories: Memory[];
+      }
+    ).sourceMemories;
+
+    rerender();
+
+    const secondAnalysisCall =
+      mocks.useSpaceAnalysis.mock.calls[
+        mocks.useSpaceAnalysis.mock.calls.length - 1
+      ];
+    const secondSourceMemories = (
+      secondAnalysisCall?.[0] as {
+        sourceMemories: Memory[];
+      }
+    ).sourceMemories;
+    expect(secondSourceMemories).toBe(firstSourceMemories);
+  });
+
   it("gates all-range stats behind the export dialog and only enables analysis signals when visible", () => {
     renderHook(() =>
       useSpaceDataModel({
