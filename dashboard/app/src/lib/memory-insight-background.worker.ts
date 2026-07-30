@@ -59,6 +59,10 @@ type WorkerRequest =
         relationType?: MemoryInsightRelationType;
         minimumCoOccurrence?: number;
       };
+    }
+  | {
+      type: "release-cache";
+      target: "derived-signals" | "insight-graph" | "relation-graph";
     };
 
 type WorkerResult =
@@ -79,12 +83,28 @@ type WorkerResponse =
     };
 
 const MAX_MEMORY_ANALYSIS_CACHE = 2048;
-const MAX_RESULT_CACHE = 128;
+const MAX_RESULT_CACHE = 1;
 
 const memoryAnalysisCache = new Map<string, MemoryDerivedAnalysis>();
 const derivedSignalCache = new Map<string, LocalDerivedSignalIndex>();
 const insightGraphCache = new Map<string, MemoryInsightGraph>();
 const relationGraphCache = new Map<string, MemoryInsightRelationGraph>();
+
+function releaseResultCache(
+  target: "derived-signals" | "insight-graph" | "relation-graph",
+): void {
+  switch (target) {
+    case "derived-signals":
+      derivedSignalCache.clear();
+      break;
+    case "insight-graph":
+      insightGraphCache.clear();
+      break;
+    case "relation-graph":
+      relationGraphCache.clear();
+      break;
+  }
+}
 
 function stableHash(value: string): string {
   let hash = 2166136261;
@@ -289,6 +309,11 @@ function getOrBuildRelationGraph(
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
+
+  if (request.type === "release-cache") {
+    releaseResultCache(request.target);
+    return;
+  }
 
   try {
     let result: WorkerResult;

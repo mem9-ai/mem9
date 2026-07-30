@@ -108,22 +108,30 @@ export const EMPTY_MEMORY_INSIGHT_RELATION_GRAPH: MemoryInsightRelationGraph = {
   risingEntities: [],
 };
 
-const DEFAULT_DERIVED_SIGNALS_MINIMUM_MEMORY_COUNT = 80;
+const DEFAULT_BACKGROUND_WORKER_MINIMUM_MEMORY_COUNT = 80;
+const EMPTY_WORKER_MEMORIES: InsightWorkerMemory[] = [];
+const EMPTY_ANALYSIS_MATCHES: MemoryAnalysisMatch[] = [];
+const EMPTY_MEMORY_GRAPH_INPUT = {
+  memories: [] as Memory[],
+  matches: EMPTY_ANALYSIS_MATCHES,
+  matchMap: new Map<string, MemoryAnalysisMatch>(),
+};
 
-let backgroundWorker: Worker | null = null;
 let nextRequestID = 1;
-const pendingRequests = new Map<
-  number,
-  {
-    resolve: (value: WorkerResult) => void;
-    reject: (error: Error) => void;
-  }
->();
+
+interface ActiveWorkerTask {
+  cancel: (error?: Error) => void;
+}
+
+interface WorkerTaskHandle<T extends WorkerResult> extends ActiveWorkerTask {
+  promise: Promise<T>;
+}
+
+const activeWorkerTasks = new Set<ActiveWorkerTask>();
 
 function shouldUseBackgroundWorker(): boolean {
   return typeof window !== "undefined" &&
-    typeof Worker !== "undefined" &&
-    import.meta.env.MODE !== "test";
+    typeof Worker !== "undefined";
 }
 
 export function projectInsightWorkerMemory(memory: Memory): InsightWorkerMemory {
@@ -214,87 +222,145 @@ export function shouldUseDerivedSignalsWorker(input: {
   const {
     enabled = true,
     memoryCount,
-    minimumMemoryCount = DEFAULT_DERIVED_SIGNALS_MINIMUM_MEMORY_COUNT,
+    minimumMemoryCount = DEFAULT_BACKGROUND_WORKER_MINIMUM_MEMORY_COUNT,
     workerAvailable = shouldUseBackgroundWorker(),
   } = input;
 
   return enabled && workerAvailable && memoryCount >= minimumMemoryCount;
 }
 
-function getWorker(): Worker {
-  if (backgroundWorker) {
-    return backgroundWorker;
+export function disposeMemoryInsightBackgroundWorker(
+  error = new Error("Background insight worker disposed"),
+): void {
+  for (const task of [...activeWorkerTasks]) {
+    task.cancel(error);
   }
-
-  backgroundWorker = new Worker(
-    new URL("./memory-insight-background.worker.ts", import.meta.url),
-    { type: "module" },
-  );
-  backgroundWorker.onmessage = (event: MessageEvent<WorkerResponse>) => {
-    const response = event.data;
-    const pending = pendingRequests.get(response.id);
-    if (!pending) {
-      return;
-    }
-
-    pendingRequests.delete(response.id);
-    if (response.ok) {
-      pending.resolve(response.result);
-      return;
-    }
-
-    pending.reject(new Error(response.error));
-  };
-
-  backgroundWorker.onerror = (event) => {
-    const error = new Error(event.message || "Background insight worker failed");
-    for (const [id, pending] of pendingRequests.entries()) {
-      pending.reject(error);
-      pendingRequests.delete(id);
-    }
-  };
-
-  return backgroundWorker;
 }
 
 function runWorkerTask<T extends WorkerResult>(
   request: Omit<WorkerRequest, "id">,
-): Promise<T> {
-  const worker = getWorker();
+): WorkerTaskHandle<T> {
   const id = nextRequestID;
   nextRequestID += 1;
+  let worker: Worker | null = null;
+  let handle: WorkerTaskHandle<T> | null = null;
+  let rejectTask: ((error: Error) => void) | null = null;
+  let settled = false;
 
-  return new Promise<T>((resolve, reject) => {
-    pendingRequests.set(id, {
-      resolve: (value) => resolve(value as T),
-      reject,
-    });
-    worker.postMessage({ ...request, id });
+  const terminateWorker = () => {
+    if (worker) {
+      worker.onmessage = null;
+      worker.onerror = null;
+      worker.terminate();
+      worker = null;
+    }
+    if (handle) {
+      activeWorkerTasks.delete(handle);
+    }
+  };
+
+  const promise = new Promise<T>((resolve, reject) => {
+    rejectTask = reject;
+    try {
+      worker = new Worker(
+        new URL("./memory-insight-background.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+    } catch (error) {
+      settled = true;
+      reject(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+
+    worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+      const response = event.data;
+      if (settled || response.id !== id) {
+        return;
+      }
+
+      settled = true;
+      terminateWorker();
+      if (response.ok) {
+        resolve(response.result as T);
+        return;
+      }
+
+      reject(new Error(response.error));
+    };
+    worker.onerror = (event) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      terminateWorker();
+      reject(new Error(event.message || "Background insight worker failed"));
+    };
+
+    try {
+      worker.postMessage({ ...request, id });
+    } catch (error) {
+      settled = true;
+      terminateWorker();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
   });
+
+  handle = {
+    promise,
+    cancel: (
+      error = new Error("Background insight worker task cancelled"),
+    ) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      terminateWorker();
+      rejectTask?.(error);
+    },
+  };
+  if (!settled) {
+    activeWorkerTasks.add(handle);
+  }
+
+  return handle;
 }
 
 function useBackgroundComputation<T extends WorkerResult>({
+  enabled,
   workerEnabled,
+  syncEnabled,
   request,
   computeSync,
   emptyValue,
   deps,
 }: {
+  enabled: boolean;
   workerEnabled: boolean;
+  syncEnabled: boolean;
   request: Omit<WorkerRequest, "id">;
   computeSync: () => T;
   emptyValue: T;
   deps: readonly unknown[];
 }): { data: T; isComputing: boolean } {
   const syncValue = useMemo(
-    () => (workerEnabled ? emptyValue : computeSync()),
-    [computeSync, emptyValue, workerEnabled],
+    () => {
+      if (!enabled || workerEnabled || !syncEnabled) {
+        return emptyValue;
+      }
+
+      return computeSync();
+    },
+    [computeSync, emptyValue, enabled, syncEnabled, workerEnabled],
   );
   const [data, setData] = useState<T>(syncValue);
-  const [isComputing, setIsComputing] = useState(workerEnabled);
+  const [isComputing, setIsComputing] = useState(enabled && workerEnabled);
 
   useEffect(() => {
-    if (!workerEnabled) {
+    if (!enabled || !workerEnabled) {
+      setData(emptyValue);
+      setIsComputing(false);
       return;
     }
 
@@ -308,9 +374,11 @@ function useBackgroundComputation<T extends WorkerResult>({
     }
 
     let cancelled = false;
+    setData(emptyValue);
     setIsComputing(true);
 
-    runWorkerTask<T>(request)
+    const workerTask = runWorkerTask<T>(request);
+    workerTask.promise
       .then((result) => {
         if (cancelled) {
           return;
@@ -327,17 +395,18 @@ function useBackgroundComputation<T extends WorkerResult>({
         }
 
         startTransition(() => {
-          setData(computeSync());
+          setData(emptyValue);
           setIsComputing(false);
         });
       });
 
     return () => {
       cancelled = true;
+      workerTask.cancel();
     };
   }, deps);
 
-  if (!workerEnabled) {
+  if (!enabled || !workerEnabled) {
     return { data: syncValue, isComputing: false };
   }
 
@@ -348,7 +417,7 @@ export function useBackgroundDerivedSignals({
   memories,
   matchMap,
   enabled = true,
-  minimumMemoryCount = DEFAULT_DERIVED_SIGNALS_MINIMUM_MEMORY_COUNT,
+  minimumMemoryCount = DEFAULT_BACKGROUND_WORKER_MINIMUM_MEMORY_COUNT,
 }: {
   memories: Memory[];
   matchMap: Map<string, MemoryAnalysisMatch>;
@@ -360,14 +429,21 @@ export function useBackgroundDerivedSignals({
     memoryCount: memories.length,
     minimumMemoryCount,
   });
-  const matches = useMemo(() => [...matchMap.values()], [matchMap]);
+  const matches = useMemo(
+    () => enabled ? [...matchMap.values()] : EMPTY_ANALYSIS_MATCHES,
+    [enabled, matchMap],
+  );
   const projectedMemories = useMemo(
-    () => memories.map(projectInsightWorkerMemory),
-    [memories],
+    () => enabled
+      ? memories.map(projectInsightWorkerMemory)
+      : EMPTY_WORKER_MEMORIES,
+    [enabled, memories],
   );
 
   return useBackgroundComputation({
+    enabled,
     workerEnabled,
+    syncEnabled: enabled && memories.length < minimumMemoryCount,
     request: {
       type: "derived-signals",
       payload: {
@@ -381,7 +457,7 @@ export function useBackgroundDerivedSignals({
         matchMap,
       }),
     emptyValue: EMPTY_LOCAL_DERIVED_SIGNAL_INDEX,
-    deps: [workerEnabled, projectedMemories, memories, matches, matchMap],
+    deps: [enabled, workerEnabled, projectedMemories, memories, matches, matchMap],
   });
 }
 
@@ -389,19 +465,27 @@ export function useBackgroundMemoryInsightGraph({
   cards,
   memories,
   matchMap,
+  enabled = true,
 }: {
   cards: AnalysisCategoryCard[];
   memories: Memory[];
   matchMap: Map<string, MemoryAnalysisMatch>;
+  enabled?: boolean;
 }): { data: MemoryInsightGraph; isComputing: boolean } {
-  const workerEnabled = shouldUseBackgroundWorker();
+  const workerEnabled = enabled && shouldUseBackgroundWorker();
   const boundedInput = useMemo(
-    () => buildBoundedMemoryInsightGraphInput({ memories, matchMap }),
-    [memories, matchMap],
+    () =>
+      enabled
+        ? buildBoundedMemoryInsightGraphInput({ memories, matchMap })
+        : EMPTY_MEMORY_GRAPH_INPUT,
+    [enabled, memories, matchMap],
   );
 
   return useBackgroundComputation({
+    enabled,
     workerEnabled,
+    syncEnabled: enabled &&
+      memories.length < DEFAULT_BACKGROUND_WORKER_MINIMUM_MEMORY_COUNT,
     request: {
       type: "insight-graph",
       payload: {
@@ -415,9 +499,9 @@ export function useBackgroundMemoryInsightGraph({
         cards,
         memories: boundedInput.memories,
         matchMap: boundedInput.matchMap,
-      }),
+    }),
     emptyValue: EMPTY_MEMORY_INSIGHT_GRAPH,
-    deps: [workerEnabled, cards, boundedInput],
+    deps: [enabled, workerEnabled, cards, boundedInput],
   });
 }
 
@@ -429,6 +513,7 @@ export function useBackgroundMemoryInsightRelationGraph({
   activeTag,
   relationType,
   minimumCoOccurrence,
+  enabled = true,
 }: {
   cards: AnalysisCategoryCard[];
   memories: Memory[];
@@ -437,15 +522,22 @@ export function useBackgroundMemoryInsightRelationGraph({
   activeTag?: string;
   relationType?: MemoryInsightRelationType;
   minimumCoOccurrence?: number;
+  enabled?: boolean;
 }): { data: MemoryInsightRelationGraph; isComputing: boolean } {
-  const workerEnabled = shouldUseBackgroundWorker();
+  const workerEnabled = enabled && shouldUseBackgroundWorker();
   const boundedInput = useMemo(
-    () => buildBoundedMemoryInsightRelationGraphInput({ memories, matchMap }),
-    [memories, matchMap],
+    () =>
+      enabled
+        ? buildBoundedMemoryInsightRelationGraphInput({ memories, matchMap })
+        : EMPTY_MEMORY_GRAPH_INPUT,
+    [enabled, memories, matchMap],
   );
 
   return useBackgroundComputation({
+    enabled,
     workerEnabled,
+    syncEnabled: enabled &&
+      memories.length < DEFAULT_BACKGROUND_WORKER_MINIMUM_MEMORY_COUNT,
     request: {
       type: "relation-graph",
       payload: {
@@ -471,6 +563,7 @@ export function useBackgroundMemoryInsightRelationGraph({
     emptyValue: EMPTY_MEMORY_INSIGHT_RELATION_GRAPH,
     deps: [
       workerEnabled,
+      enabled,
       cards,
       boundedInput,
       activeCategory,
