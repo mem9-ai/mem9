@@ -348,6 +348,46 @@ describe("memory-insight", () => {
     expect(graph.tags.some((tag) => tag.synthetic)).toBe(false);
   });
 
+  it("caps graph memories, nodes, and edges while preserving every reference", () => {
+    const memories = Array.from({ length: 8 }, (_, index) =>
+      createMemory(`mem-${index + 1}`, {
+        content: "Coordinate `Dashboard` delivery.",
+        tags: ["project"],
+      }),
+    );
+    const graph = buildMemoryInsightGraph({
+      cards: [createCard("project", memories.length)],
+      memories,
+      matchMap: new Map(
+        memories.map((memory) => [
+          memory.id,
+          createMatch(memory.id, ["project"]),
+        ]),
+      ),
+      budget: {
+        maxSourceMemories: 4,
+        maxMemories: 3,
+        maxNodes: 6,
+        maxEdges: 5,
+      },
+    });
+
+    expect(graph.memories).toHaveLength(3);
+    expect(graph.nodes).toHaveLength(6);
+    expect(graph.edges).toHaveLength(5);
+
+    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+    for (const edge of graph.edges) {
+      expect(nodeIds.has(edge.source)).toBe(true);
+      expect(nodeIds.has(edge.target)).toBe(true);
+    }
+    for (const node of graph.nodes) {
+      if (node.parentId) {
+        expect(nodeIds.has(node.parentId)).toBe(true);
+      }
+    }
+  });
+
   it("matches memories against an entity filter", () => {
     const memory = createMemory("mem-3", {
       content: "Follow up with @alice on `mem9-ui` after 2h",

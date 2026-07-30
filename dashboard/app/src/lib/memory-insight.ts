@@ -134,12 +134,27 @@ export interface MemoryInsightGraph {
   memories: MemoryInsightMemoryNode[];
 }
 
+export interface MemoryInsightGraphBudget {
+  maxSourceMemories: number;
+  maxMemories: number;
+  maxNodes: number;
+  maxEdges: number;
+}
+
+export const DEFAULT_MEMORY_INSIGHT_GRAPH_BUDGET: MemoryInsightGraphBudget = {
+  maxSourceMemories: 1_000,
+  maxMemories: 1_000,
+  maxNodes: 2_000,
+  maxEdges: 2_000,
+};
+
 export interface BuildMemoryInsightGraphInput {
   cards: AnalysisCategoryCard[];
   memories: Memory[];
   matches?: MemoryAnalysisMatch[] | null;
   matchMap?: Map<string, MemoryAnalysisMatch> | null;
   signalIndex?: LocalDerivedSignalIndex | null;
+  budget?: MemoryInsightGraphBudget;
 }
 
 interface TagBucket {
@@ -541,6 +556,10 @@ function createMemoryNode(
 export function buildMemoryInsightGraph(
   input: BuildMemoryInsightGraphInput,
 ): MemoryInsightGraph {
+  const budget = input.budget ?? DEFAULT_MEMORY_INSIGHT_GRAPH_BUDGET;
+  const sourceMemories = input.memories.length > budget.maxSourceMemories
+    ? input.memories.slice(0, budget.maxSourceMemories)
+    : input.memories;
   const matchLookup = createMatchLookup(input.matches, input.matchMap);
   const cards = input.cards
     .filter((card) => card.count > 0)
@@ -558,7 +577,11 @@ export function buildMemoryInsightGraph(
   const edges: MemoryInsightEdge[] = [];
 
   for (const card of cards) {
-    const cardMemories = getCardMemories(card.category, input.memories, matchLookup);
+    if (nodes.length >= budget.maxNodes) {
+      break;
+    }
+
+    const cardMemories = getCardMemories(card.category, sourceMemories, matchLookup);
     const cardNode = createCardNode(
       card.category,
       Math.max(card.count, cardMemories.length),
@@ -569,6 +592,10 @@ export function buildMemoryInsightGraph(
 
     const tagBuckets = buildTagBuckets(cardMemories, matchLookup, input.signalIndex);
     for (const tagBucket of tagBuckets) {
+      if (nodes.length >= budget.maxNodes || edges.length >= budget.maxEdges) {
+        break;
+      }
+
       const tagNode = createTagNode(
         card.category,
         tagBucket.tagValue,
@@ -588,6 +615,10 @@ export function buildMemoryInsightGraph(
 
       const entityBuckets = buildEntityBuckets(tagBucket.memories);
       for (const entityBucket of entityBuckets) {
+        if (nodes.length >= budget.maxNodes || edges.length >= budget.maxEdges) {
+          break;
+        }
+
         const entityNode = createEntityNode(
           card.category,
           tagBucket.tagValue,
@@ -607,6 +638,14 @@ export function buildMemoryInsightGraph(
 
         const seenMemoryIds = new Set<string>();
         for (const memory of entityBucket.memories) {
+          if (
+            memoryNodes.length >= budget.maxMemories ||
+            nodes.length >= budget.maxNodes ||
+            edges.length >= budget.maxEdges
+          ) {
+            break;
+          }
+
           if (seenMemoryIds.has(memory.id)) {
             continue;
           }

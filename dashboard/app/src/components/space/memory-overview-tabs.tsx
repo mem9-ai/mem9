@@ -113,7 +113,6 @@ export function MemoryOverviewTabs({
           cards={cards}
           snapshot={snapshot}
           range={range}
-          matchMap={matchMap}
           facetSummary={profileFacetData}
           loading={loading}
           className="!mt-0"

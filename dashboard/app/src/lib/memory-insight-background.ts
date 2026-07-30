@@ -5,11 +5,15 @@ import {
 } from "@/lib/memory-derived-signals";
 import {
   buildMemoryInsightGraph,
+  DEFAULT_MEMORY_INSIGHT_GRAPH_BUDGET,
   type MemoryInsightGraph,
+  type MemoryInsightGraphBudget,
 } from "@/lib/memory-insight";
 import {
   buildMemoryInsightRelationGraph,
+  DEFAULT_MEMORY_INSIGHT_RELATION_GRAPH_BUDGET,
   type MemoryInsightRelationGraph,
+  type MemoryInsightRelationGraphBudget,
   type MemoryInsightRelationType,
 } from "@/lib/memory-insight-relations";
 import type {
@@ -129,6 +133,75 @@ export function projectInsightWorkerMemory(memory: Memory): InsightWorkerMemory 
     created_at: memory.created_at,
     updated_at: memory.updated_at,
     tags: memory.tags.slice(),
+  };
+}
+
+export function buildBoundedMemoryInsightGraphInput({
+  memories,
+  matchMap,
+  budget = DEFAULT_MEMORY_INSIGHT_GRAPH_BUDGET,
+}: {
+  memories: Memory[];
+  matchMap: Map<string, MemoryAnalysisMatch>;
+  budget?: MemoryInsightGraphBudget;
+}): {
+  memories: Memory[];
+  matches: MemoryAnalysisMatch[];
+  matchMap: Map<string, MemoryAnalysisMatch>;
+} {
+  const boundedMemories = memories.length > budget.maxSourceMemories
+    ? memories.slice(0, budget.maxSourceMemories)
+    : memories;
+  const boundedMatches: MemoryAnalysisMatch[] = [];
+  const boundedMatchMap = new Map<string, MemoryAnalysisMatch>();
+
+  for (const memory of boundedMemories) {
+    const match = matchMap.get(memory.id);
+    if (match) {
+      boundedMatches.push(match);
+      boundedMatchMap.set(memory.id, match);
+    }
+  }
+
+  return {
+    memories: boundedMemories,
+    matches: boundedMatches,
+    matchMap: boundedMatchMap,
+  };
+}
+
+export function buildBoundedMemoryInsightRelationGraphInput({
+  memories,
+  matchMap,
+  budget = DEFAULT_MEMORY_INSIGHT_RELATION_GRAPH_BUDGET,
+}: {
+  memories: Memory[];
+  matchMap: Map<string, MemoryAnalysisMatch>;
+  budget?: MemoryInsightRelationGraphBudget;
+}): {
+  memories: Memory[];
+  matches: MemoryAnalysisMatch[];
+  matchMap: Map<string, MemoryAnalysisMatch>;
+} {
+  const boundedMemories =
+    memories.length > budget.maxSourceMemories
+      ? memories.slice(0, budget.maxSourceMemories)
+      : memories;
+  const boundedMatches: MemoryAnalysisMatch[] = [];
+  const boundedMatchMap = new Map<string, MemoryAnalysisMatch>();
+
+  for (const memory of boundedMemories) {
+    const match = matchMap.get(memory.id);
+    if (match) {
+      boundedMatches.push(match);
+      boundedMatchMap.set(memory.id, match);
+    }
+  }
+
+  return {
+    memories: boundedMemories,
+    matches: boundedMatches,
+    matchMap: boundedMatchMap,
   };
 }
 
@@ -322,7 +395,10 @@ export function useBackgroundMemoryInsightGraph({
   matchMap: Map<string, MemoryAnalysisMatch>;
 }): { data: MemoryInsightGraph; isComputing: boolean } {
   const workerEnabled = shouldUseBackgroundWorker();
-  const matches = useMemo(() => [...matchMap.values()], [matchMap]);
+  const boundedInput = useMemo(
+    () => buildBoundedMemoryInsightGraphInput({ memories, matchMap }),
+    [memories, matchMap],
+  );
 
   return useBackgroundComputation({
     workerEnabled,
@@ -330,18 +406,18 @@ export function useBackgroundMemoryInsightGraph({
       type: "insight-graph",
       payload: {
         cards,
-        memories,
-        matches,
+        memories: boundedInput.memories,
+        matches: boundedInput.matches,
       },
     },
     computeSync: () =>
       buildMemoryInsightGraph({
         cards,
-        memories,
-        matchMap,
+        memories: boundedInput.memories,
+        matchMap: boundedInput.matchMap,
       }),
     emptyValue: EMPTY_MEMORY_INSIGHT_GRAPH,
-    deps: [workerEnabled, cards, memories, matches, matchMap],
+    deps: [workerEnabled, cards, boundedInput],
   });
 }
 
@@ -363,7 +439,10 @@ export function useBackgroundMemoryInsightRelationGraph({
   minimumCoOccurrence?: number;
 }): { data: MemoryInsightRelationGraph; isComputing: boolean } {
   const workerEnabled = shouldUseBackgroundWorker();
-  const matches = useMemo(() => [...matchMap.values()], [matchMap]);
+  const boundedInput = useMemo(
+    () => buildBoundedMemoryInsightRelationGraphInput({ memories, matchMap }),
+    [memories, matchMap],
+  );
 
   return useBackgroundComputation({
     workerEnabled,
@@ -371,8 +450,8 @@ export function useBackgroundMemoryInsightRelationGraph({
       type: "relation-graph",
       payload: {
         cards,
-        memories,
-        matches,
+        memories: boundedInput.memories,
+        matches: boundedInput.matches,
         activeCategory,
         activeTag,
         relationType,
@@ -382,8 +461,8 @@ export function useBackgroundMemoryInsightRelationGraph({
     computeSync: () =>
       buildMemoryInsightRelationGraph({
         cards,
-        memories,
-        matchMap,
+        memories: boundedInput.memories,
+        matchMap: boundedInput.matchMap,
         activeCategory,
         activeTag,
         relationType,
@@ -393,9 +472,7 @@ export function useBackgroundMemoryInsightRelationGraph({
     deps: [
       workerEnabled,
       cards,
-      memories,
-      matches,
-      matchMap,
+      boundedInput,
       activeCategory,
       activeTag,
       relationType,

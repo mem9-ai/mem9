@@ -6,16 +6,13 @@ import { MemoryCompositionChart } from "@/components/space/memory-composition-ch
 import { MemoryRhythmChart } from "@/components/space/memory-rhythm-chart";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { buildFacetComposition, buildMemoryPulseData, buildPulseComposition } from "@/lib/memory-pulse";
-import { useBackgroundMemoryInsightGraph } from "@/lib/memory-insight-background";
 import { cn } from "@/lib/utils";
 import type {
   AnalysisCategoryCard,
   AnalysisJobSnapshotResponse,
-  MemoryAnalysisMatch,
   UserProfileImageItem,
   UserProfileItemKind,
 } from "@/types/analysis";
-import type { MemoryInsightCardNode } from "@/lib/memory-insight";
 import type { Memory, MemoryStats, TopicSummary } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
 
@@ -25,14 +22,32 @@ const PROFILE_ITEM_SECTIONS = [
   { key: "constraint", kind: "robot_constraint", color: "bg-emerald-400" },
 ] as const satisfies readonly { key: string; kind: UserProfileItemKind; color: string }[];
 
-export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapshot, range, matchMap, facetSummary, loading, className }: { spaceId: string; stats: MemoryStats | undefined; memories: Memory[]; cards: AnalysisCategoryCard[]; snapshot: AnalysisJobSnapshotResponse | null; range: TimeRangePreset; matchMap: Map<string, MemoryAnalysisMatch>; facetSummary: TopicSummary | undefined; loading: boolean; className?: string }) {
+export function calculateCompanionDays(
+  memories: Memory[],
+  now = Date.now(),
+): number {
+  let earliestTimestamp = Number.POSITIVE_INFINITY;
+
+  for (const memory of memories) {
+    const timestamp = Date.parse(memory.created_at);
+    if (Number.isFinite(timestamp) && timestamp < earliestTimestamp) {
+      earliestTimestamp = timestamp;
+    }
+  }
+
+  return Number.isFinite(earliestTimestamp)
+    ? Math.max(1, Math.ceil((now - earliestTimestamp) / 86_400_000))
+    : 0;
+}
+
+export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapshot, range, facetSummary, loading, className }: { spaceId: string; stats: MemoryStats | undefined; memories: Memory[]; cards: AnalysisCategoryCard[]; snapshot: AnalysisJobSnapshotResponse | null; range: TimeRangePreset; facetSummary: TopicSummary | undefined; loading: boolean; className?: string }) {
   const { i18n, t } = useTranslation();
   const profileQuery = useUserProfile(spaceId);
   const profile = profileQuery.data;
-  const companionDays = useMemo(() => {
-    const values = memories.map((memory) => Date.parse(memory.created_at)).filter(Number.isFinite);
-    return values.length ? Math.max(1, Math.ceil((Date.now() - Math.min(...values)) / 86_400_000)) : 0;
-  }, [memories]);
+  const companionDays = useMemo(
+    () => calculateCompanionDays(memories),
+    [memories],
+  );
   const memoryCount = stats?.total ?? memories.length;
   const currentUnderstanding = profile?.summary.text?.trim()
     || (profileQuery.isLoading ? t("memory_profile.current_understanding.loading") : t("memory_profile.current_understanding.description"));
@@ -63,7 +78,6 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapsho
       range,
     });
   }, [cards, memories, range, snapshot, stats]);
-  const { data: insightGraph } = useBackgroundMemoryInsightGraph({ cards, memories, matchMap });
   const profileGridClass = "grid gap-4 xl:grid-cols-[calc((100%_-_1rem)*0.2776_+_100px)_minmax(0,calc((100%_-_1rem)*0.7224_-_100px))]";
 
   if (loading && !stats && memories.length === 0) return <ProfileSkeleton className={className} />;
@@ -81,7 +95,7 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapsho
     </div>
 
     <div className={cn("mt-4", profileGridClass)}>
-      <ProfileCard title={t("memory_profile.topics.title")}><RadarChart nodes={insightGraph.cards} /></ProfileCard>
+      <ProfileCard title={t("memory_profile.topics.title")}><RadarChart cards={cards} /></ProfileCard>
       <article className="surface-card min-h-[260px] p-5"><MemoryRhythmChart buckets={pulse?.trend.buckets ?? []} maxCount={pulse?.trend.maxCount ?? 0} locale={i18n.language} /></article>
     </div>
 
@@ -132,7 +146,7 @@ function ProfileItemRow({ item }: { item: UserProfileImageItem }) {
   );
 }
 
-function RadarChart({ nodes }: { nodes: MemoryInsightCardNode[] }) {
+function RadarChart({ cards }: { cards: AnalysisCategoryCard[] }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const labels = [
     { x: 130, y: 14, anchor: "middle", countDy: "1em" },
@@ -142,17 +156,18 @@ function RadarChart({ nodes }: { nodes: MemoryInsightCardNode[] }) {
     { x: 56, y: 85, anchor: "end", countDy: "1.25em" },
   ] as const;
   const points = [[130,39],[199,86],[174,145],[89,142],[65,92]] as const;
-  const topicNodes = [...nodes]
-    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label, "en"))
+  const topicCards = cards
+    .filter((card) => card.count > 0)
+    .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category, "en"))
     .slice(0, 5);
-  const path = topicNodes.length > 1
-    ? `${topicNodes.map((_, index) => `${index === 0 ? "M" : "L"}${points[index]![0]} ${points[index]![1]}`).join(" ")}${topicNodes.length > 2 ? " Z" : ""}`
+  const path = topicCards.length > 1
+    ? `${topicCards.map((_, index) => `${index === 0 ? "M" : "L"}${points[index]![0]} ${points[index]![1]}`).join(" ")}${topicCards.length > 2 ? " Z" : ""}`
     : "";
 
   return <svg viewBox="0 0 260 190" className="profile-radar mx-auto h-[190px] w-full max-w-[280px]" aria-label="Memory Insight topics">
     <g fill="none" stroke="currentColor" className="text-foreground/10"><path d="M130 14 235 80 195 171 65 171 25 80Z" /><path d="M130 43 205 89 177 150 83 150 55 89Z" /><path d="M130 71 175 98 160 129 100 129 85 98Z" /></g>
     {path && <path className="profile-radar-area" d={path} fill="rgba(59,130,246,.35)" stroke="#3b82f6" strokeWidth="2" />}
-    {topicNodes.map((node, index) => { const [x, y] = points[index]!; const label = labels[index]!; const active = hoveredIndex === index; return <g key={node.id} tabIndex={0} role="img" aria-label={`${node.label}: ${node.count}`} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)} onFocus={() => setHoveredIndex(index)} onBlur={() => setHoveredIndex(null)} className="cursor-pointer"><text x={label.x} y={label.y} textAnchor={label.anchor} className={cn("text-[10px] font-medium transition-all duration-200", active ? "fill-blue-500" : "fill-muted-foreground")} style={{ transform: active ? "translateY(-2px)" : "translateY(0)" }}><tspan x={label.x}>{node.label}</tspan><tspan x={label.x} dy={label.countDy} className={cn("text-[9px] tabular-nums transition-colors duration-200", active ? "fill-blue-500/75" : "fill-foreground/60")}>{node.count}</tspan></text><circle cx={x} cy={y} r={active ? 12 : 7} fill="#3b82f6" opacity={active ? .2 : 0} className="transition-all duration-200" /><circle className="profile-radar-node transition-all duration-200" cx={x} cy={y} r={active ? 6 : 4} fill="#3b82f6" /><title>{`${node.label}: ${node.count}`}</title></g>; })}
+    {topicCards.map((card, index) => { const [x, y] = points[index]!; const label = labels[index]!; const active = hoveredIndex === index; return <g key={card.category} tabIndex={0} role="img" aria-label={`${card.category}: ${card.count}`} onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)} onFocus={() => setHoveredIndex(index)} onBlur={() => setHoveredIndex(null)} className="cursor-pointer"><text x={label.x} y={label.y} textAnchor={label.anchor} className={cn("text-[10px] font-medium transition-all duration-200", active ? "fill-blue-500" : "fill-muted-foreground")} style={{ transform: active ? "translateY(-2px)" : "translateY(0)" }}><tspan x={label.x}>{card.category}</tspan><tspan x={label.x} dy={label.countDy} className={cn("text-[9px] tabular-nums transition-colors duration-200", active ? "fill-blue-500/75" : "fill-foreground/60")}>{card.count}</tspan></text><circle cx={x} cy={y} r={active ? 12 : 7} fill="#3b82f6" opacity={active ? .2 : 0} className="transition-all duration-200" /><circle className="profile-radar-node transition-all duration-200" cx={x} cy={y} r={active ? 6 : 4} fill="#3b82f6" /><title>{`${card.category}: ${card.count}`}</title></g>; })}
   </svg>;
 }
 

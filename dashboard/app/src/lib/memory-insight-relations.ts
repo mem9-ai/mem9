@@ -74,11 +74,24 @@ export interface MemoryInsightRelationGraph {
   risingEntities: MemoryInsightRelationEntity[];
 }
 
+export interface MemoryInsightRelationGraphBudget {
+  maxSourceMemories: number;
+  maxEntities: number;
+  maxEdges: number;
+}
+
+export const DEFAULT_MEMORY_INSIGHT_RELATION_GRAPH_BUDGET: MemoryInsightRelationGraphBudget = {
+  maxSourceMemories: 1_000,
+  maxEntities: 500,
+  maxEdges: 1_000,
+};
+
 interface BuildInput {
   cards: AnalysisCategoryCard[];
   memories: Memory[];
   matchMap: Map<string, MemoryAnalysisMatch>;
   signalIndex?: LocalDerivedSignalIndex | null;
+  budget?: MemoryInsightRelationGraphBudget;
   activeCategory?: string;
   activeTag?: string;
   relationType?: MemoryInsightRelationType;
@@ -310,11 +323,16 @@ function collectCluster(
 }
 
 export function buildMemoryInsightRelationGraph(input: BuildInput): MemoryInsightRelationGraph {
+  const budget = input.budget ?? DEFAULT_MEMORY_INSIGHT_RELATION_GRAPH_BUDGET;
+  const sourceMemories =
+    input.memories.length > budget.maxSourceMemories
+      ? input.memories.slice(0, budget.maxSourceMemories)
+      : input.memories;
   const signalIndex = input.signalIndex ?? buildLocalDerivedSignalIndex({
-    memories: input.memories,
+    memories: sourceMemories,
     matchMap: input.matchMap,
   });
-  const filteredMemories = input.memories.filter((memory) => {
+  const filteredMemories = sourceMemories.filter((memory) => {
     if (
       input.activeTag &&
       !getCombinedTagsForMemory(memory, signalIndex).some(
@@ -355,8 +373,22 @@ export function buildMemoryInsightRelationGraph(input: BuildInput): MemoryInsigh
     const uniqueEntities = Array.from(
       new Map(entities.map((entity) => [entity.id, entity])).values(),
     );
+    const retainedEntities: typeof uniqueEntities = [];
+    let remainingEntitySlots = Math.max(
+      budget.maxEntities - entityAggregates.size,
+      0,
+    );
 
-    uniqueEntities.forEach((entity) => {
+    for (const entity of uniqueEntities) {
+      if (entityAggregates.has(entity.id)) {
+        retainedEntities.push(entity);
+      } else if (remainingEntitySlots > 0) {
+        retainedEntities.push(entity);
+        remainingEntitySlots -= 1;
+      }
+    }
+
+    retainedEntities.forEach((entity) => {
       const aggregate = entityAggregates.get(entity.id) ?? {
         id: entity.id,
         label: entity.label,
@@ -385,26 +417,34 @@ export function buildMemoryInsightRelationGraph(input: BuildInput): MemoryInsigh
       entityAggregates.set(entity.id, aggregate);
     });
 
-    for (let leftIndex = 0; leftIndex < uniqueEntities.length; leftIndex += 1) {
-      for (let rightIndex = leftIndex + 1; rightIndex < uniqueEntities.length; rightIndex += 1) {
-        const left = uniqueEntities[leftIndex]!;
-        const right = uniqueEntities[rightIndex]!;
+    for (let leftIndex = 0; leftIndex < retainedEntities.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < retainedEntities.length; rightIndex += 1) {
+        const left = retainedEntities[leftIndex]!;
+        const right = retainedEntities[rightIndex]!;
         const sortedIDs = [left.id, right.id].sort((a, b) => a.localeCompare(b, "en"));
         const sourceId = sortedIDs[0]!;
         const targetId = sortedIDs[1]!;
         const edgeId = `${sourceId}=>${targetId}`;
         const relationType = chooseRelationType(memory, left, right);
-        const aggregate = edgeAggregates.get(edgeId) ?? {
-          id: edgeId,
-          sourceId,
-          targetId,
-          evidenceMemoryIds: new Set<string>(),
-          sharedTags: new Map<string, number>(),
-          sharedCategories: new Map<string, number>(),
-          coOccurrenceCount: 0,
-          recencyTotal: 0,
-          relationTypeCounts: new Map<MemoryInsightRelationType, number>(),
-        };
+        let aggregate = edgeAggregates.get(edgeId);
+
+        if (!aggregate) {
+          if (edgeAggregates.size >= budget.maxEdges) {
+            continue;
+          }
+
+          aggregate = {
+            id: edgeId,
+            sourceId,
+            targetId,
+            evidenceMemoryIds: new Set<string>(),
+            sharedTags: new Map<string, number>(),
+            sharedCategories: new Map<string, number>(),
+            coOccurrenceCount: 0,
+            recencyTotal: 0,
+            relationTypeCounts: new Map<MemoryInsightRelationType, number>(),
+          };
+        }
 
         if (!aggregate.evidenceMemoryIds.has(memory.id)) {
           aggregate.evidenceMemoryIds.add(memory.id);
