@@ -216,4 +216,68 @@ describe("httpProvider", () => {
 
     expect(result).toEqual({ messages: [] });
   });
+
+  it("exports more than 3000 durable memories through typed list pages", async () => {
+    const memories = Array.from({ length: 3001 }, (_, index) => ({
+      id: `mem-${index}`,
+      content: `memory ${index}`,
+      memory_type: index % 2 === 0 ? "pinned" : "insight",
+      source: "agent",
+      tags: [],
+      metadata: null,
+      agent_id: "agent",
+      session_id: "",
+      state: "active",
+      version: 1,
+      updated_by: "agent",
+      created_at: "2026-03-16T00:00:00Z",
+      updated_at: "2026-03-16T00:00:00Z",
+    }));
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) => {
+        const url = new URL(String(input), "https://mem9.ai");
+        const limit = Number(url.searchParams.get("limit"));
+        const offset = Number(url.searchParams.get("offset"));
+        if (
+          url.searchParams.get("memory_type") === null &&
+          offset + limit > 3000
+        ) {
+          return new Response(
+            JSON.stringify({
+              error:
+                "offset plus limit exceeds the all-types maximum of 3000",
+            }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            memories: memories.slice(offset, offset + limit),
+            total: memories.length,
+            limit,
+            offset,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      });
+
+    const result = await httpProvider.exportMemories("space-1");
+
+    expect(result.memories).toHaveLength(3001);
+    expect(fetchMock).toHaveBeenCalledTimes(16);
+    for (const [url] of fetchMock.mock.calls) {
+      expect(
+        new URL(String(url), "https://mem9.ai").searchParams.get(
+          "memory_type",
+        ),
+      ).toBe("pinned,insight");
+    }
+  });
 });
