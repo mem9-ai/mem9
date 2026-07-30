@@ -142,10 +142,10 @@
   },
   "export": {
     "title": "Export memories",
-    "description": "Download all active memories to your device. The file is in JSON format.",
+    "description": "Download manually saved and auto learned memories as a JSON file.",
     "count": "{{count}} memories will be exported",
     "breakdown": "{{pinned}} manually saved · {{insight}} auto learned",
-    "note": "The export includes all active memories regardless of filters. Original timestamps are preserved.",
+    "note": "The export always covers every manually saved and auto learned memory in this space. Raw session records remain in the system, and the export preserves original timestamps.",
     "cancel": "Cancel",
     "button": "Download",
     "done": "Downloaded",
