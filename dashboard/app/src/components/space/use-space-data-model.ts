@@ -39,6 +39,8 @@ import type {
 import type { TimeRangePreset, TimelineSelection } from "@/types/time-range";
 import type { TagSummary } from "./tag-strip";
 
+const EMPTY_MEMORIES: Memory[] = [];
+
 export interface SpaceDataModel {
   stats: MemoryStats | undefined;
   totalStats: MemoryStats | undefined;
@@ -122,7 +124,7 @@ export function useSpaceDataModel(input: {
   const updateMutation = useUpdateMemory(spaceId);
   const exportMutation = useExportMemories(spaceId);
   const importMutation = useImportMemories(spaceId);
-  const allMemories = sourceQuery.data ?? [];
+  const allMemories = sourceQuery.data ?? EMPTY_MEMORIES;
   const analysis = useSpaceAnalysis({
     spaceId,
     range: input.range,

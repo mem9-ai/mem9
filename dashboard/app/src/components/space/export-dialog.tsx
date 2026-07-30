@@ -58,7 +58,9 @@ export function ExportDialog({
           {stats && (
             <div className="rounded-lg border bg-secondary/30 p-3">
               <div className="text-sm text-foreground">
-                {t("export.count", { count: stats.total })}
+                {t("export.count", {
+                  count: stats.pinned + stats.insight,
+                })}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 {t("export.breakdown", {

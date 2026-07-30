@@ -25,7 +25,7 @@ const (
 	maxTags              = 20
 	maxBulkSize          = 100
 	maxBulkDeleteSize    = 1000
-	maxAllTypeListWindow = 3000
+	maxAllTypeListWindow = 100000
 	defaultMinScore      = 0.3
 	maxLooseSearchTokens = 5
 

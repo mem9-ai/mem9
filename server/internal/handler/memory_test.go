@@ -1260,16 +1260,38 @@ func TestListMemories_DefaultListUsesUnifiedAllTypesPage(t *testing.T) {
 	}
 }
 
-func TestListMemories_DefaultListRejectsDeepPagination(t *testing.T) {
+func TestListMemories_DefaultListAllowsPaginationWithinExpandedWindow(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	srv := newTestServer(memRepo, &testSessionRepo{})
-	req := makeRequest(t, http.MethodGet, "/memories?limit=1&offset=3000", nil)
+	req := makeRequest(t, http.MethodGet, "/memories?limit=200&offset=99800", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if memRepo.allTypeListCalls != 1 {
+		t.Fatalf("all-types list calls = %d, want 1", memRepo.allTypeListCalls)
+	}
+	if memRepo.lastAllTypeListFilter.Limit != 200 || memRepo.lastAllTypeListFilter.Offset != 99800 {
+		t.Fatalf("all-types filter = %+v, want limit=200 offset=99800", memRepo.lastAllTypeListFilter)
+	}
+}
+
+func TestListMemories_DefaultListRejectsPaginationBeyondExpandedWindow(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	req := makeRequest(t, http.MethodGet, "/memories?limit=200&offset=99801", nil)
 	rr := httptest.NewRecorder()
 
 	srv.listMemories(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "all-types maximum of 100000") {
+		t.Fatalf("body = %q, want expanded-window validation error", rr.Body.String())
 	}
 	if memRepo.allTypeListCalls != 0 {
 		t.Fatalf("all-types list calls = %d, want 0", memRepo.allTypeListCalls)
