@@ -145,7 +145,7 @@
     "description": "导出当前 Space 的全部手动记录和自主学习记忆。",
     "count": "将导出 {{count}} 条记忆",
     "breakdown": "{{pinned}} 条手动记录 · {{insight}} 条自主学习",
-    "note": "导出文件为 JSON 格式，并保留原始时间戳。系统继续保存原始会话记录。",
+    "note": "导出文件为 JSON 格式，并保留原始时间戳。",
     "cancel": "取消",
     "button": "下载",
     "done": "已下载",

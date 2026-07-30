@@ -145,7 +145,7 @@
     "description": "Export all manually saved and auto learned memories in this Space.",
     "count": "{{count}} memories will be exported",
     "breakdown": "{{pinned}} manually saved · {{insight}} auto learned",
-    "note": "The export is a JSON file and preserves original timestamps. Raw session records remain in the system.",
+    "note": "The export is a JSON file and preserves original timestamps.",
     "cancel": "Cancel",
     "button": "Download",
     "done": "Downloaded",
