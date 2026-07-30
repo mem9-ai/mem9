@@ -142,10 +142,10 @@
   },
   "export": {
     "title": "Export memories",
-    "description": "Download manually saved and auto learned memories as a JSON file.",
+    "description": "Export all manually saved and auto learned memories in this Space.",
     "count": "{{count}} memories will be exported",
     "breakdown": "{{pinned}} manually saved · {{insight}} auto learned",
-    "note": "The export always covers every manually saved and auto learned memory in this space. Raw session records remain in the system, and the export preserves original timestamps.",
+    "note": "The export is a JSON file and preserves original timestamps. Raw session records remain in the system.",
     "cancel": "Cancel",
     "button": "Download",
     "done": "Downloaded",
