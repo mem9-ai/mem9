@@ -3,7 +3,10 @@ import type { Memory, SessionMessage } from "@/types/memory";
 
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn((options: unknown) => options),
+  useMutation: vi.fn((options: unknown) => options),
+  invalidateQueries: vi.fn(),
   listSessionMessages: vi.fn(),
+  exportMemories: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-query", async () => {
@@ -14,12 +17,17 @@ vi.mock("@tanstack/react-query", async () => {
   return {
     ...actual,
     useQuery: (options: unknown) => mocks.useQuery(options),
+    useMutation: (options: unknown) => mocks.useMutation(options),
+    useQueryClient: () => ({
+      invalidateQueries: mocks.invalidateQueries,
+    }),
   };
 });
 
 vi.mock("./client", () => ({
   api: {
     listSessionMessages: (...args: unknown[]) => mocks.listSessionMessages(...args),
+    exportMemories: (...args: unknown[]) => mocks.exportMemories(...args),
   },
 }));
 
@@ -156,5 +164,29 @@ describe("useSelectedSessionMessages", () => {
       retry: 1,
       queryKey: ["space", "space-1", "sessionMessages", ""],
     });
+  });
+});
+
+describe("useExportMemories", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("exports without invalidating read-only space queries", async () => {
+    const blob = new Blob(["{}"], { type: "application/json" });
+    mocks.exportMemories.mockResolvedValue(blob);
+
+    const { useExportMemories } = await importQueriesModule();
+    const options = useExportMemories("space-1") as unknown as {
+      mutationFn: () => Promise<Blob>;
+      onSuccess?: () => void;
+    };
+
+    await expect(options.mutationFn()).resolves.toBe(blob);
+    options.onSuccess?.();
+
+    expect(mocks.exportMemories).toHaveBeenCalledWith("space-1");
+    expect(mocks.invalidateQueries).not.toHaveBeenCalled();
   });
 });

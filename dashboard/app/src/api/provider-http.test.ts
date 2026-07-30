@@ -8,8 +8,18 @@ vi.mock("./local-cache", () => ({
   upsertCachedMemories: vi.fn().mockResolvedValue(undefined),
 }));
 
+function readBlob(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result)));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsText(blob);
+  });
+}
+
 describe("httpProvider", () => {
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -217,10 +227,20 @@ describe("httpProvider", () => {
     expect(result).toEqual({ messages: [] });
   });
 
-  it("exports more than 3000 pinned and insight memories", async () => {
+  it("exports large Unicode pages as Blob chunks without caching pages", async () => {
+    const NativeBlob = globalThis.Blob;
+    const constructedParts: BlobPart[][] = [];
+    class RecordingBlob extends NativeBlob {
+      constructor(parts: BlobPart[] = [], options?: BlobPropertyBag) {
+        super(parts, options);
+        constructedParts.push(parts);
+      }
+    }
+    vi.stubGlobal("Blob", RecordingBlob);
+
     const memories = Array.from({ length: 3001 }, (_, index) => ({
       id: `mem-${index}`,
-      content: `memory ${index}`,
+      content: `memory ${index} 中文记忆 🧠`,
       memory_type: index % 2 === 0 ? "pinned" : "insight",
       source: "agent",
       tags: [],
@@ -265,12 +285,26 @@ describe("httpProvider", () => {
         );
       });
 
-    const result = await httpProvider.exportMemories("space-1");
+    vi.mocked(upsertCachedMemories).mockClear();
 
+    const blob = await httpProvider.exportMemories("space-1");
+    const result = JSON.parse(await readBlob(blob)) as {
+      memories: Array<{ memory_type: string }>;
+    };
+
+    expect(blob.type).toBe("application/json");
     expect(result.memories).toHaveLength(3001);
+    expect(result.memories[3000]).toEqual(
+      expect.objectContaining({ content: "memory 3000 中文记忆 🧠" }),
+    );
     expect(new Set(result.memories.map((memory) => memory.memory_type))).toEqual(
       new Set(["pinned", "insight"]),
     );
+    const finalParts = constructedParts[constructedParts.length - 1] ?? [];
+    expect(
+      finalParts.filter((part) => part instanceof NativeBlob),
+    ).toHaveLength(16);
+    expect(upsertCachedMemories).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(16);
     for (const [url] of fetchMock.mock.calls) {
       expect(
@@ -279,5 +313,26 @@ describe("httpProvider", () => {
         ),
       ).toBe("pinned,insight");
     }
+  });
+
+  it("rejects an export when pagination stops before the declared total", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          memories: [],
+          total: 1,
+          limit: 200,
+          offset: 0,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(httpProvider.exportMemories("space-1")).rejects.toThrow(
+      "Memory export ended before all records were received.",
+    );
   });
 });

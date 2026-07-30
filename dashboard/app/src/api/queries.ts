@@ -224,12 +224,8 @@ export function useUpdateMemory(spaceId: string) {
 }
 
 export function useExportMemories(spaceId: string) {
-  const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.exportMemories(spaceId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["space", spaceId] });
-    },
   });
 }
 

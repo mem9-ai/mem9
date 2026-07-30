@@ -143,10 +143,7 @@ export function SpacePage() {
 
   const handleExport = async () => {
     try {
-      const exportFile = await dataModel.exportMutation.mutateAsync();
-      const blob = new Blob([JSON.stringify(exportFile, null, 2)], {
-        type: "application/json",
-      });
+      const blob = await dataModel.exportMutation.mutateAsync();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;

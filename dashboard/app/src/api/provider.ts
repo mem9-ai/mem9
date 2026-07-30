@@ -5,7 +5,6 @@ import type {
   MemoryCreateInput,
   MemoryUpdateInput,
   MemoryStats,
-  MemoryExportFile,
   SessionMessageListParams,
   SessionMessageListResponse,
   SpaceInfo,
@@ -34,7 +33,7 @@ export interface DashboardProvider {
     version?: number,
   ): Promise<Memory>;
   deleteMemory(apiKey: string, memoryId: string): Promise<void>;
-  exportMemories(apiKey: string): Promise<MemoryExportFile>;
+  exportMemories(apiKey: string): Promise<Blob>;
   importMemories(apiKey: string, file: File): Promise<ImportTask>;
   getImportTask(apiKey: string, taskId: string): Promise<ImportTask>;
   listImportTasks(apiKey: string): Promise<ImportTaskList>;

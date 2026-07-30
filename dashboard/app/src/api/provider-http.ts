@@ -6,7 +6,7 @@ import type {
   MemoryCreateInput,
   MemoryUpdateInput,
   MemoryStats,
-  MemoryExportFile,
+  MemoryExportEntry,
   SessionMessage,
   SessionMessageListParams,
   SessionMessageListResponse,
@@ -83,6 +83,44 @@ function normalizeMemoryListResponse(
     total: response.total ?? 0,
     limit: response.limit ?? 0,
     offset: response.offset ?? 0,
+  };
+}
+
+async function listMemoriesPage(
+  apiKey: string,
+  params: MemoryListParams,
+  cacheResult: boolean,
+): Promise<MemoryListResponse> {
+  const qs = new URLSearchParams();
+  if (params.q) qs.set("q", params.q);
+  if (params.tags?.length) qs.set("tags", params.tags.join(","));
+  if (params.memory_type) qs.set("memory_type", params.memory_type);
+  if (params.facet) qs.set("facet", params.facet);
+  if (params.updated_from) qs.set("updated_from", params.updated_from);
+  if (params.updated_to) qs.set("updated_to", params.updated_to);
+  qs.set("limit", String(params.limit ?? 50));
+  qs.set("offset", String(params.offset ?? 0));
+
+  const response = await request<MemoryListResponse>(
+    apiKey,
+    `/memories?${qs}`,
+  );
+  const normalized = normalizeMemoryListResponse(response);
+  if (cacheResult) {
+    void upsertCachedMemories(apiKey, normalized.memories);
+  }
+  return normalized;
+}
+
+function toExportEntry(memory: Memory): MemoryExportEntry {
+  return {
+    content: memory.content,
+    source: memory.source,
+    tags: memory.tags,
+    metadata: memory.metadata,
+    memory_type: memory.memory_type,
+    created_at: memory.created_at,
+    updated_at: memory.updated_at,
   };
 }
 
@@ -201,22 +239,7 @@ export const httpProvider: DashboardProvider = {
     apiKey: string,
     params: MemoryListParams = {},
   ): Promise<MemoryListResponse> {
-    const qs = new URLSearchParams();
-    if (params.q) qs.set("q", params.q);
-    if (params.tags?.length) qs.set("tags", params.tags.join(","));
-    if (params.memory_type) qs.set("memory_type", params.memory_type);
-    if (params.facet) qs.set("facet", params.facet);
-    if (params.updated_from) qs.set("updated_from", params.updated_from);
-    if (params.updated_to) qs.set("updated_to", params.updated_to);
-    qs.set("limit", String(params.limit ?? 50));
-    qs.set("offset", String(params.offset ?? 0));
-    const response = await request<MemoryListResponse>(
-      apiKey,
-      `/memories?${qs}`,
-    );
-    const normalized = normalizeMemoryListResponse(response);
-    void upsertCachedMemories(apiKey, normalized.memories);
-    return normalized;
+    return listMemoriesPage(apiKey, params, true);
   },
 
   async listSessionMessages(
@@ -344,38 +367,51 @@ export const httpProvider: DashboardProvider = {
     await removeCachedMemory(apiKey, memoryId);
   },
 
-  async exportMemories(apiKey: string): Promise<MemoryExportFile> {
+  async exportMemories(apiKey: string): Promise<Blob> {
     const PAGE = 200;
-    const allMemories: Memory[] = [];
-    let offset = 0;
-    let total = Infinity;
-
-    while (offset < total) {
-      const page = await this.listMemories(apiKey, {
-        memory_type: "pinned,insight",
-        limit: PAGE,
-        offset,
-      });
-      allMemories.push(...page.memories);
-      total = page.total;
-      offset += PAGE;
-    }
-
-    return {
+    const header = JSON.stringify({
       schema_version: "mem9.memory_export.v1",
       exported_at: new Date().toISOString(),
       source_space_id: apiKey,
       agent_id: AGENT_ID,
-      memories: allMemories.map((m) => ({
-        content: m.content,
-        source: m.source,
-        tags: m.tags,
-        metadata: m.metadata,
-        memory_type: m.memory_type,
-        created_at: m.created_at,
-        updated_at: m.updated_at,
-      })),
-    };
+    });
+    const parts: BlobPart[] = [header.slice(0, -1), ',"memories":['];
+    let offset = 0;
+    let total = Infinity;
+    let hasMemories = false;
+
+    while (offset < total) {
+      const page = await listMemoriesPage(
+        apiKey,
+        {
+          memory_type: "pinned,insight",
+          limit: PAGE,
+          offset,
+        },
+        false,
+      );
+      total = page.total;
+      if (page.memories.length === 0) {
+        break;
+      }
+
+      const pageJSON = page.memories
+        .map((memory) => JSON.stringify(toExportEntry(memory)))
+        .join(",");
+      if (hasMemories) {
+        parts.push(",");
+      }
+      parts.push(new Blob([pageJSON], { type: "application/json" }));
+      hasMemories = true;
+      offset += page.memories.length;
+    }
+
+    if (offset < total) {
+      throw new Error("Memory export ended before all records were received.");
+    }
+
+    parts.push("]}");
+    return new Blob(parts, { type: "application/json" });
   },
 
   async importMemories(apiKey: string, file: File): Promise<ImportTask> {

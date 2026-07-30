@@ -315,9 +315,9 @@ export const mockProvider: DashboardProvider = {
     await removeCachedMemory(apiKey, memoryId);
   },
 
-  async exportMemories(apiKey: string): Promise<MemoryExportFile> {
+  async exportMemories(apiKey: string): Promise<Blob> {
     await delay(500);
-    return {
+    const exportFile: MemoryExportFile = {
       schema_version: "mem9.memory_export.v1",
       exported_at: new Date().toISOString(),
       source_space_id: apiKey,
@@ -332,6 +332,9 @@ export const mockProvider: DashboardProvider = {
         updated_at: m.updated_at,
       })),
     };
+    return new Blob([JSON.stringify(exportFile)], {
+      type: "application/json",
+    });
   },
 
   async importMemories(
