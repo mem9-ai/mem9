@@ -240,6 +240,8 @@
   "analysis": {
     "title": "Analysis Summary",
     "open": "Summary",
+    "load": "Load analysis",
+    "load_description": "Load memories to start Analysis Summary and Memory Insight. Large spaces use a bounded working set for responsive browsing.",
     "taxonomy_version": "Taxonomy {{version}}",
     "taxonomy_fallback": "Using fallback labels",
     "taxonomy_warning": "Taxonomy is unavailable right now. Showing local fallback labels.",

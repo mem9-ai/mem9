@@ -473,8 +473,8 @@ vi.mock("@/api/queries", () => ({
 
 vi.mock("@/api/source-memories", () => ({
   getSourceMemoriesQueryKey: (spaceId: string) => ["space", spaceId, "sourceMemories"],
-  useSourceMemories: (_spaceId: string) => {
-    mocks.useSourceMemories(_spaceId);
+  useSourceMemories: (_spaceId: string, options?: { enabled?: boolean }) => {
+    mocks.useSourceMemories(_spaceId, options);
     return {
       data: mockedSourceMemories,
       isLoading: false,
@@ -624,6 +624,38 @@ describe("SpacePage", () => {
     expect(shouldCompactMemoryOverview(selected, true, "sheet")).toBe(false);
     expect(shouldCompactMemoryOverview(selected, true, "panel")).toBe(true);
     expect(shouldCompactMemoryOverview(selected, false, "sheet")).toBe(false);
+  });
+
+  it("keeps the full source idle on Profile and enables it after entering Memory Insight", async () => {
+    renderSpacePage();
+
+    expect(mocks.useSourceMemories).toHaveBeenLastCalledWith("space-1", {
+      enabled: false,
+    });
+
+    const insightTab = screen.getByRole("tab", { name: "Memory Insight" });
+    insightTab.focus();
+    fireEvent.keyDown(insightTab, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(mocks.useSourceMemories).toHaveBeenLastCalledWith("space-1", {
+        enabled: true,
+      }),
+    );
+  });
+
+  it("enables the full source from the explicit Analysis Summary action", async () => {
+    renderSpacePage();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Load analysis" }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.useSourceMemories).toHaveBeenLastCalledWith("space-1", {
+        enabled: true,
+      }),
+    );
   });
 
   it("opens an insight memory detail sheet from the Memory Insight tab", async () => {
@@ -1156,6 +1188,7 @@ describe("SpacePage", () => {
   it("does not pass tag state to the useMemories API query", async () => {
     renderSpacePage();
 
+    fireEvent.click(screen.getByRole("button", { name: "Load analysis" }));
     const tagButton = within(screen.getByTestId("analysis-facets-tags"))
       .getByRole("button", { name: /launch/i });
     fireEvent.click(tagButton);
@@ -1173,6 +1206,7 @@ describe("SpacePage", () => {
   it("keeps tag state when leaving analysis mode", async () => {
     renderSpacePage();
 
+    fireEvent.click(screen.getByRole("button", { name: "Load analysis" }));
     fireEvent.click(getAnalysisCategoryButton("activity"));
 
     await waitFor(() => {

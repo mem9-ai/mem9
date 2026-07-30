@@ -65,6 +65,17 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapsho
       ? buildFacetComposition(compositionStats, facetSummary.topics)
       : buildPulseComposition(compositionStats, memories, cards);
   }, [cards, facetSummary, memories, memoryCount, stats]);
+  const radarCards = useMemo(
+    () =>
+      cards.some((card) => card.count > 0)
+        ? cards
+        : composition.inner.map((segment) => ({
+            category: segment.key,
+            count: segment.value,
+            confidence: segment.ratio,
+          })),
+    [cards, composition.inner],
+  );
   const pulse = useMemo(() => {
     if (!stats) {
       return null;
@@ -95,7 +106,7 @@ export function MemoryProfileOverview({ spaceId, stats, memories, cards, snapsho
     </div>
 
     <div className={cn("mt-4", profileGridClass)}>
-      <ProfileCard title={t("memory_profile.topics.title")}><RadarChart cards={cards} /></ProfileCard>
+      <ProfileCard title={t("memory_profile.topics.title")}><RadarChart cards={radarCards} /></ProfileCard>
       <article className="surface-card min-h-[260px] p-5"><MemoryRhythmChart buckets={pulse?.trend.buckets ?? []} maxCount={pulse?.trend.maxCount ?? 0} locale={i18n.language} /></article>
     </div>
 

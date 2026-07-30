@@ -350,6 +350,7 @@ export function useSpaceAnalysis(input: {
   sourceMemories: Memory[];
   sourceLoading: boolean;
   refreshSource: () => Promise<unknown>;
+  enabled: boolean;
 }): {
   state: SpaceAnalysisState;
   taxonomy: TaxonomyResponse | null;
@@ -375,7 +376,7 @@ export function useSpaceAnalysis(input: {
   const [cards, setCards] = useState<AnalysisCategoryCard[]>([]);
   const [matchesLoading, setMatchesLoading] = useState(false);
   const runRef = useRef(0);
-  const enabled = features.enableAnalysis && !!spaceId;
+  const enabled = features.enableAnalysis && input.enabled && !!spaceId;
 
   const sourceMemories = useMemo(
     () =>

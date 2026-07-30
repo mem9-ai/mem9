@@ -10,7 +10,11 @@ import {
 import { sortMemoriesByCreatedAtDesc } from "@/lib/memory-filters";
 import type { Memory } from "@/types/memory";
 
-const PAGE_SIZE = 200;
+export const SOURCE_MEMORY_SYNC_BUDGET = {
+  pageSize: 200,
+  maxPages: 5,
+  maxRecords: 1_000,
+} as const;
 const activeSyncs = new Map<string, Promise<Memory[]>>();
 
 export function getSourceMemoriesQueryKey(spaceId: string): string[] {
@@ -27,21 +31,41 @@ export async function syncAllMemories(spaceId: string): Promise<Memory[]> {
     const all: Memory[] = [];
     let offset = 0;
     let total = Number.POSITIVE_INFINITY;
+    let pagesFetched = 0;
 
-    while (offset < total) {
+    while (
+      offset < total &&
+      pagesFetched < SOURCE_MEMORY_SYNC_BUDGET.maxPages &&
+      all.length < SOURCE_MEMORY_SYNC_BUDGET.maxRecords
+    ) {
+      const limit = Math.min(
+        SOURCE_MEMORY_SYNC_BUDGET.pageSize,
+        SOURCE_MEMORY_SYNC_BUDGET.maxRecords - all.length,
+      );
       const page = await api.listMemories(spaceId, {
-        limit: PAGE_SIZE,
+        limit,
         offset,
       });
-      all.push(...page.memories);
+      all.push(
+        ...page.memories.slice(
+          0,
+          SOURCE_MEMORY_SYNC_BUDGET.maxRecords - all.length,
+        ),
+      );
       total = page.total;
-      offset += page.limit;
+      pagesFetched += 1;
+      offset += page.memories.length;
+
+      if (page.memories.length === 0) {
+        break;
+      }
     }
 
+    const hasFullCache = all.length >= total;
     await clearCachedMemoriesForSpace(spaceId);
     await upsertCachedMemories(spaceId, all);
     await patchSyncState(spaceId, {
-      hasFullCache: true,
+      hasFullCache,
       lastSyncedAt: new Date().toISOString(),
       incrementalCursor: null,
     });
@@ -75,12 +99,18 @@ export async function loadSourceMemories(spaceId: string): Promise<Memory[]> {
 
 export function useSourceMemories(
   spaceId: string,
-  refreshToken = 0,
+  {
+    enabled = true,
+    refreshToken = 0,
+  }: {
+    enabled?: boolean;
+    refreshToken?: number;
+  } = {},
 ) {
   return useQuery({
     queryKey: [...getSourceMemoriesQueryKey(spaceId), refreshToken],
     queryFn: () => loadSourceMemories(spaceId),
-    enabled: !!spaceId,
+    enabled: enabled && !!spaceId,
     staleTime: 30_000,
     retry: 1,
   });

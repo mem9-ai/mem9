@@ -49,6 +49,8 @@ interface SpacePageLayoutProps {
   spaceId: string;
   routeState: SpaceRouteState;
   dataModel: SpaceDataModel;
+  analysisActivated: boolean;
+  onActivateAnalysis: () => void;
   t: TFunction;
   addOpen: boolean;
   setAddOpen: Dispatch<SetStateAction<boolean>>;
@@ -78,6 +80,8 @@ export const SpacePageLayout = ({
   spaceId,
   routeState,
   dataModel,
+  analysisActivated,
+  onActivateAnalysis,
   t,
   addOpen,
   setAddOpen,
@@ -264,6 +268,9 @@ export const SpacePageLayout = ({
                 navigateAndScrollToMemoryList(() => routeState.handleEntitySearch(query))
               }
               onTabChange={(nextTab) => {
+                if (nextTab === "insight" || nextTab === "analysis") {
+                  onActivateAnalysis();
+                }
                 setActiveOverviewTab(nextTab);
                 if (nextTab !== activeOverviewTab) {
                   routeState.setSelected(null);
@@ -543,6 +550,8 @@ export const SpacePageLayout = ({
                 onAction={onHandleFarmAction}
               />
               <AnalysisPanel
+                active={analysisActivated}
+                onActivate={onActivateAnalysis}
                 state={dataModel.analysis.state}
                 sourceCount={dataModel.analysis.sourceCount}
                 sourceLoading={dataModel.analysis.sourceLoading}
@@ -553,12 +562,16 @@ export const SpacePageLayout = ({
                 activeTag={routeState.tag}
                 tagStats={dataModel.analysisTagStats}
                 onSelectCategory={(category) =>
-                  navigateAndScrollToMemoryList(() =>
-                    routeState.handleAnalysisCategoryChange(category),
-                  )
+                  navigateAndScrollToMemoryList(() => {
+                    onActivateAnalysis();
+                    routeState.handleAnalysisCategoryChange(category);
+                  })
                 }
                 onSelectTag={(tag) =>
-                  navigateAndScrollToMemoryList(() => routeState.handleTagChange(tag))
+                  navigateAndScrollToMemoryList(() => {
+                    onActivateAnalysis();
+                    routeState.handleTagChange(tag);
+                  })
                 }
                 onRefreshMemories={onRefreshMemories}
                 refreshingMemories={refreshingMemories}
@@ -593,7 +606,12 @@ export const SpacePageLayout = ({
       {!routeState.isDesktopViewport && features.enableAnalysis && (
         <MobileAnalysisSheet
           open={routeState.mobileAnalysisOpen}
-          onOpenChange={routeState.setMobileAnalysisOpen}
+          onOpenChange={(open) => {
+            if (open) {
+              onActivateAnalysis();
+            }
+            routeState.setMobileAnalysisOpen(open);
+          }}
           state={dataModel.analysis.state}
           sourceCount={dataModel.analysis.sourceCount}
           sourceLoading={dataModel.analysis.sourceLoading}

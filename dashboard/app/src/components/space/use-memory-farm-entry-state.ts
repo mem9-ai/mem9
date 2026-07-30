@@ -20,7 +20,9 @@ export async function resolveMemoryFarmEntryStatus(input: {
   }
 
   const syncState = await readSyncState(input.spaceId);
-  if (!syncState?.hasFullCache) {
+  const sourcePrepared =
+    syncState?.hasFullCache || Boolean(syncState?.lastSyncedAt);
+  if (!sourcePrepared) {
     return "preparing";
   }
 
@@ -55,6 +57,7 @@ export function useMemoryFarmEntryState(
   isSourceMemoriesLoading: boolean,
   currentAnalysisState: SpaceAnalysisState,
   currentRange: string,
+  enabled = true,
 ): MemoryFarmEntryStatus {
   const query = useQuery({
     queryKey: [
@@ -74,7 +77,7 @@ export function useMemoryFarmEntryState(
         currentAnalysisState,
         currentRange,
       }),
-    enabled: !!spaceId,
+    enabled: enabled && !!spaceId,
     initialData: "preparing" as MemoryFarmEntryStatus,
     refetchInterval: (currentQuery) =>
       currentQuery.state.data === "preparing" ? 2000 : false,

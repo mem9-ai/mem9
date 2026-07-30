@@ -170,6 +170,8 @@ export function formatBatchSummary(
 }
 
 export function AnalysisPanel({
+  active = true,
+  onActivate = () => {},
   state,
   sourceCount,
   sourceLoading,
@@ -186,6 +188,8 @@ export function AnalysisPanel({
   onRetry,
   t,
 }: {
+  active?: boolean;
+  onActivate?: () => void;
   state: SpaceAnalysisState;
   sourceCount: number;
   sourceLoading: boolean;
@@ -215,23 +219,43 @@ export function AnalysisPanel({
         </div>
 
         <div className="analysis-scroll-area space-y-4 px-4 py-4 xl:max-h-[calc(100vh-9.5rem)] xl:overflow-y-auto">
-          <AnalysisPanelBody
-            state={state}
-            sourceCount={sourceCount}
-            sourceLoading={sourceLoading}
-            taxonomy={taxonomy}
-            taxonomyUnavailable={taxonomyUnavailable}
-            cards={cards}
-            activeCategory={activeCategory}
-            activeTag={activeTag}
-            tagStats={tagStats}
-            onSelectCategory={onSelectCategory}
-            onSelectTag={onSelectTag}
-            onRefreshMemories={onRefreshMemories}
-            refreshingMemories={refreshingMemories}
-            onRetry={onRetry}
-            t={t}
-          />
+          {!active && (
+            <div className="rounded-lg border border-dashed bg-muted/30 p-3">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t("analysis.load_description")}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                className="mt-3 w-full"
+                onClick={onActivate}
+                data-mp-event="Dashboard/Analysis/LoadClicked"
+                data-mp-page-name="space"
+              >
+                <BarChart3 className="size-4" />
+                {t("analysis.load")}
+              </Button>
+            </div>
+          )}
+          {active && (
+            <AnalysisPanelBody
+              state={state}
+              sourceCount={sourceCount}
+              sourceLoading={sourceLoading}
+              taxonomy={taxonomy}
+              taxonomyUnavailable={taxonomyUnavailable}
+              cards={cards}
+              activeCategory={activeCategory}
+              activeTag={activeTag}
+              tagStats={tagStats}
+              onSelectCategory={onSelectCategory}
+              onSelectTag={onSelectTag}
+              onRefreshMemories={onRefreshMemories}
+              refreshingMemories={refreshingMemories}
+              onRetry={onRetry}
+              t={t}
+            />
+          )}
         </div>
       </div>
     </aside>

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   sourceRefetch: vi.fn(async () => undefined),
   useSpaceAnalysis: vi.fn(),
   useBackgroundDerivedSignals: vi.fn(),
+  useMemoryFarmEntryState: vi.fn((..._args: unknown[]) => "preparing"),
 }));
 
 function createMemory(id: string): Memory {
@@ -71,7 +72,8 @@ vi.mock("@/api/analysis-queries", () => ({
 }));
 
 vi.mock("@/components/space/use-memory-farm-entry-state", () => ({
-  useMemoryFarmEntryState: () => "ready",
+  useMemoryFarmEntryState: (...args: unknown[]) =>
+    mocks.useMemoryFarmEntryState(...args),
 }));
 
 vi.mock("@/lib/memory-insight-background", () => ({
@@ -160,6 +162,178 @@ describe("useSpaceDataModel", () => {
   });
 
   primeMocks();
+
+  it("keeps source loading and analysis idle before a heavy memory surface is activated", () => {
+    renderHook(() =>
+      useSpaceDataModel({
+        spaceId: "space-1",
+        q: undefined,
+        range: "all",
+        facet: undefined,
+        analysisCategory: undefined,
+        tag: undefined,
+        memoryTypeFilter: "pinned,insight",
+        timelineSelection: undefined,
+        importStatusOpen: false,
+        exportOpen: false,
+        isDesktopViewport: true,
+        mobileAnalysisOpen: false,
+        analysisActivated: false,
+        selected: null,
+        localVisibleCount: 50,
+        onSelectedMissing: vi.fn(),
+      }),
+    );
+
+    expect(mocks.useSourceMemories).toHaveBeenCalledWith("space-1", {
+      enabled: false,
+    });
+    expect(mocks.useSpaceAnalysis).toHaveBeenCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
+    expect(mocks.useMemoryFarmEntryState).toHaveBeenCalledWith(
+      "space-1",
+      false,
+      expect.any(Object),
+      "all",
+      false,
+    );
+  });
+
+  it("uses loaded page memories for Profile while the full source stays idle", () => {
+    mocks.useSourceMemories.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      refetch: mocks.sourceRefetch,
+    });
+
+    const { result } = renderHook(() =>
+      useSpaceDataModel({
+        spaceId: "space-1",
+        q: undefined,
+        range: "all",
+        facet: undefined,
+        analysisCategory: undefined,
+        tag: undefined,
+        memoryTypeFilter: "pinned,insight",
+        timelineSelection: undefined,
+        importStatusOpen: false,
+        exportOpen: false,
+        isDesktopViewport: true,
+        mobileAnalysisOpen: false,
+        analysisActivated: false,
+        selected: null,
+        localVisibleCount: 50,
+        onSelectedMissing: vi.fn(),
+      }),
+    );
+
+    expect(mocks.useSourceMemories).toHaveBeenCalledWith("space-1", {
+      enabled: false,
+    });
+    expect(result.current.pulseMemories).toEqual(SOURCE_MEMORIES);
+  });
+
+  it("keeps the Profile sample independent from main-list filters", () => {
+    const filteredMemory = createMemory("filtered");
+    mocks.useMemories.mockImplementation(
+      (
+        _spaceId: string,
+        params: {
+          q?: string;
+          facet?: string;
+          memory_type?: string;
+        },
+      ) => {
+        const memories =
+          params.q || params.facet || params.memory_type === "pinned"
+            ? [filteredMemory]
+            : SOURCE_MEMORIES;
+        return {
+          data: {
+            pages: [
+              {
+                memories,
+                total: memories.length,
+                limit: 50,
+                offset: 0,
+              },
+            ],
+          },
+          fetchNextPage: vi.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+          isFetching: false,
+        };
+      },
+    );
+    mocks.useSourceMemories.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isFetching: false,
+      refetch: mocks.sourceRefetch,
+    });
+
+    const { result } = renderHook(() =>
+      useSpaceDataModel({
+        spaceId: "space-1",
+        q: "filtered",
+        range: "30d",
+        facet: "plans",
+        analysisCategory: undefined,
+        tag: undefined,
+        memoryTypeFilter: "pinned",
+        timelineSelection: undefined,
+        importStatusOpen: false,
+        exportOpen: false,
+        isDesktopViewport: true,
+        mobileAnalysisOpen: false,
+        analysisActivated: false,
+        selected: null,
+        localVisibleCount: 50,
+        onSelectedMissing: vi.fn(),
+      }),
+    );
+
+    expect(result.current.memories).toEqual([filteredMemory]);
+    expect(result.current.pulseMemories).toEqual(SOURCE_MEMORIES);
+    expect(mocks.useMemories).toHaveBeenNthCalledWith(2, "space-1", {
+      range: "30d",
+      memory_type: "pinned,insight",
+    });
+  });
+
+  it("activates analysis and the full source for a direct tag route", () => {
+    renderHook(() =>
+      useSpaceDataModel({
+        spaceId: "space-1",
+        q: undefined,
+        range: "all",
+        facet: undefined,
+        analysisCategory: undefined,
+        tag: "dashboard",
+        memoryTypeFilter: "pinned,insight",
+        timelineSelection: undefined,
+        importStatusOpen: false,
+        exportOpen: false,
+        isDesktopViewport: true,
+        mobileAnalysisOpen: false,
+        analysisActivated: false,
+        selected: null,
+        localVisibleCount: 50,
+        onSelectedMissing: vi.fn(),
+      }),
+    );
+
+    expect(mocks.useSourceMemories).toHaveBeenCalledWith("space-1", {
+      enabled: true,
+    });
+    expect(mocks.useSpaceAnalysis).toHaveBeenCalledWith(
+      expect.objectContaining({ enabled: true }),
+    );
+  });
 
   it("keeps source memories under a single owner and passes shared source state into useSpaceAnalysis", () => {
     renderHook(() =>

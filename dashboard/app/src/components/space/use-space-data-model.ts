@@ -90,11 +90,17 @@ export function useSpaceDataModel(input: {
   exportOpen: boolean;
   isDesktopViewport: boolean;
   mobileAnalysisOpen: boolean;
+  analysisActivated?: boolean;
   selected: Memory | null;
   localVisibleCount: number;
   onSelectedMissing: () => void;
 }): SpaceDataModel {
   const { spaceId } = input;
+  const analysisActivated =
+    !!input.tag ||
+    (input.analysisActivated ??
+      (input.mobileAnalysisOpen || !!input.analysisCategory));
+  const analysisEnabled = features.enableAnalysis && analysisActivated;
   const { data: stats } = useStats(spaceId, input.range);
   const { data: totalStatsQuery } = useStats(
     spaceId,
@@ -114,7 +120,13 @@ export function useSpaceDataModel(input: {
     range: input.range,
     facet: input.facet,
   });
-  const sourceQuery = useSourceMemories(spaceId);
+  const { data: profileMemData } = useMemories(spaceId, {
+    range: input.range,
+    memory_type: "pinned,insight",
+  });
+  const sourceQuery = useSourceMemories(spaceId, {
+    enabled: analysisEnabled,
+  });
   const refreshSource = useCallback(
     () => sourceQuery.refetch(),
     [sourceQuery],
@@ -131,12 +143,14 @@ export function useSpaceDataModel(input: {
     sourceMemories: allMemories,
     sourceLoading: sourceQuery.isLoading || sourceQuery.isFetching,
     refreshSource,
+    enabled: analysisEnabled,
   });
   const farmEntryStatus = useMemoryFarmEntryState(
     spaceId,
     sourceQuery.isLoading || sourceQuery.isFetching,
     analysis.state,
     input.range,
+    analysisEnabled,
   );
   const { data: topicData } = useTopicSummary(
     spaceId,
@@ -146,6 +160,8 @@ export function useSpaceDataModel(input: {
   const { data: importTaskData } = useImportTasks(spaceId, input.importStatusOpen);
 
   const memories = memData?.pages.flatMap((page) => page.memories) ?? [];
+  const profileSampleMemories =
+    profileMemData?.pages.flatMap((page) => page.memories) ?? EMPTY_MEMORIES;
   const firstPageSize = memData?.pages[0]?.memories.length ?? 0;
   const rangeScopedMemories = useMemo(
     () => filterMemoriesForView(allMemories, { range: input.range }),
@@ -171,7 +187,7 @@ export function useSpaceDataModel(input: {
     () => createTagResolver(listSignalIndex),
     [listSignalIndex],
   );
-  const analysisSignalsEnabled = features.enableAnalysis &&
+  const analysisSignalsEnabled = analysisEnabled &&
     (input.isDesktopViewport || input.mobileAnalysisOpen);
   const { data: analysisRangeSignalIndex } = useBackgroundDerivedSignals({
     memories: rangeScopedMemories,
@@ -213,7 +229,7 @@ export function useSpaceDataModel(input: {
   const { data: analysisCategorySignalIndex } = useBackgroundDerivedSignals({
     memories: analysisCategoryScopeMemories,
     matchMap: analysis.matchMap,
-    enabled: !!input.analysisCategory,
+    enabled: analysisEnabled && !!input.analysisCategory,
   });
   const analysisCategoryTagResolver = useMemo<MemoryTagResolver>(
     () => createTagResolver(analysisCategorySignalIndex),
@@ -370,7 +386,10 @@ export function useSpaceDataModel(input: {
   return {
     stats,
     totalStats,
-    pulseMemories: rangeScopedMemories,
+    pulseMemories:
+      sourceQuery.data === undefined
+        ? profileSampleMemories
+        : rangeScopedMemories,
     analysis,
     sourceQuery,
     farmEntryStatus,

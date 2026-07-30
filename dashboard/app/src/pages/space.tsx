@@ -28,6 +28,9 @@ export function SpacePage() {
   const [importStatusOpen, setImportStatusOpen] = useState(false);
   const [refreshingMemories, setRefreshingMemories] = useState(false);
   const [farmPrepOpen, setFarmPrepOpen] = useState(false);
+  const [analysisActivated, setAnalysisActivated] = useState(
+    () => !!routeState.analysisCategory,
+  );
   const dataModel = useSpaceDataModel({
     spaceId,
     q: routeState.search.q,
@@ -41,6 +44,7 @@ export function SpacePage() {
     exportOpen,
     isDesktopViewport: routeState.isDesktopViewport,
     mobileAnalysisOpen: routeState.mobileAnalysisOpen,
+    analysisActivated,
     selected: routeState.selected,
     localVisibleCount: routeState.localVisibleCount,
     onSelectedMissing: () => routeState.setSelected(null),
@@ -171,6 +175,7 @@ export function SpacePage() {
       return;
     }
 
+    setAnalysisActivated(true);
     setFarmPrepOpen(true);
   };
 
@@ -179,6 +184,8 @@ export function SpacePage() {
       spaceId={spaceId}
       routeState={routeState}
       dataModel={dataModel}
+      analysisActivated={analysisActivated}
+      onActivateAnalysis={() => setAnalysisActivated(true)}
       t={t}
       addOpen={addOpen}
       setAddOpen={setAddOpen}

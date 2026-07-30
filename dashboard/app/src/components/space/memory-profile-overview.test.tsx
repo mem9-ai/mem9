@@ -93,6 +93,32 @@ describe("MemoryProfileOverview", () => {
     expect(useBackgroundMemoryInsightGraph).not.toHaveBeenCalled();
   });
 
+  it("renders the topic radar from the lightweight facet summary while analysis is idle", () => {
+    render(
+      <MemoryProfileOverview
+        spaceId="space-1"
+        stats={{ total: 12, pinned: 3, insight: 9 }}
+        memories={[createMemory()]}
+        cards={[]}
+        snapshot={null}
+        range="all"
+        facetSummary={{
+          topics: [
+            { facet: "plans", count: 8 },
+            { facet: "preferences", count: 4 },
+          ],
+          total: 12,
+        }}
+        loading={false}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "plans: 8" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "preferences: 4" }),
+    ).toBeInTheDocument();
+  });
+
   it("calculates companion days for a memory set larger than the function argument limit", () => {
     const recentMemory = {
       ...createMemory(),

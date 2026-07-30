@@ -16,11 +16,16 @@ async function importModules() {
 }
 
 describe("resolveMemoryFarmEntryStatus", () => {
-  it("returns ready when the full cache exists and the all-range snapshot is terminal", async () => {
+  it.each([
+    { cacheKind: "full", hasFullCache: true },
+    { cacheKind: "bounded", hasFullCache: false },
+  ])("returns ready when the $cacheKind cache has a terminal all-range snapshot", async ({
+    hasFullCache,
+  }) => {
     const { localCache, memoryFarm } = await importModules();
     vi.mocked(localCache.readSyncState).mockResolvedValue({
       spaceId: "space-1",
-      hasFullCache: true,
+      hasFullCache,
       lastSyncedAt: "2026-03-28T00:00:00Z",
       incrementalCursor: null,
       incrementalTodo: null,
