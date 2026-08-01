@@ -289,7 +289,7 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 			if reservationErr.code == reservationErrorCodeOperationConflict {
 				return nil, err
 			}
-			if shouldRetryReservation(reservationErr) && attempt+1 < reservationMaxAttempts {
+			if reservationErr.ReservationRetryable() && attempt+1 < reservationMaxAttempts {
 				delay := m.reservationRetryDelay(attempt, reservationErr)
 				if waitErr := m.wait(ctx, delay); waitErr != nil {
 					return nil, &UnavailableError{Err: waitErr}
@@ -316,10 +316,6 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 		return lease, nil
 	}
 	return nil, err
-}
-
-func shouldRetryReservation(reservationErr *reservationError) bool {
-	return reservationErr.ReservationRetryable()
 }
 
 func (m *manager) reservationRetryDelay(retry int, reservationErr *reservationError) time.Duration {

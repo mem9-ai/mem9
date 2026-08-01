@@ -314,7 +314,6 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 				t,
 				http.StatusServiceUnavailable,
 				`{"code":"unavailable","details":{"retryable":true}}`,
-				"",
 			),
 			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
 				ClusterID: "cluster-reserve",
@@ -333,7 +332,6 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 				t,
 				http.StatusConflict,
 				`{"code":"operation_conflict","details":{"retryable":true}}`,
-				"",
 			),
 			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
 				ClusterID: "cluster-reserve-conflict",
@@ -399,13 +397,10 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 	}
 }
 
-func newRuntimeUsageReservationResponseError(t *testing.T, status int, body, retryAfter string) error {
+func newRuntimeUsageReservationResponseError(t *testing.T, status int, body string) error {
 	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if retryAfter != "" {
-			w.Header().Set("Retry-After", retryAfter)
-		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
 	}))
