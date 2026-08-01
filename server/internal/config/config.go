@@ -171,13 +171,18 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED=false requires MNEMO_RUNTIME_USAGE_FAIL_OPEN=true when runtime usage is enabled")
 		}
 	}
-	runtimeUsageRetryBaseDelay, err := envDurationStrict("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY", runtimeusage.DefaultReservationRetryBaseDelay)
-	if err != nil {
-		return nil, err
-	}
-	runtimeUsageRetryMaxDelay, err := envDurationStrict("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY", runtimeusage.DefaultReservationRetryMaxDelay)
-	if err != nil {
-		return nil, err
+	runtimeUsageRetryBaseDelay := runtimeusage.DefaultReservationRetryBaseDelay
+	runtimeUsageRetryMaxDelay := runtimeusage.DefaultReservationRetryMaxDelay
+	if runtimeUsageEnabled {
+		var err error
+		runtimeUsageRetryBaseDelay, err = envDurationStrict("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY", runtimeUsageRetryBaseDelay)
+		if err != nil {
+			return nil, err
+		}
+		runtimeUsageRetryMaxDelay, err = envDurationStrict("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY", runtimeUsageRetryMaxDelay)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	env := strings.ToLower(strings.TrimSpace(envOr("MNEMO_ENV", envOr("APP_ENV", "development"))))
@@ -282,22 +287,24 @@ func Load() (*Config, error) {
 	if cfg.RuntimeUsageNoticeStaleTTL < 0 {
 		return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL must not be negative")
 	}
-	if cfg.RuntimeUsageRetryBaseDelay < runtimeusage.MinReservationRetryBaseDelay || cfg.RuntimeUsageRetryBaseDelay > runtimeusage.MaxReservationRetryBaseDelay {
-		return nil, fmt.Errorf(
-			"MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY must be between %s and %s",
-			runtimeusage.MinReservationRetryBaseDelay,
-			runtimeusage.MaxReservationRetryBaseDelay,
-		)
-	}
-	if cfg.RuntimeUsageRetryMaxDelay < runtimeusage.MinReservationRetryMaxDelay || cfg.RuntimeUsageRetryMaxDelay > runtimeusage.MaxReservationRetryMaxDelay {
-		return nil, fmt.Errorf(
-			"MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be between %s and %s",
-			runtimeusage.MinReservationRetryMaxDelay,
-			runtimeusage.MaxReservationRetryMaxDelay,
-		)
-	}
-	if cfg.RuntimeUsageRetryMaxDelay <= cfg.RuntimeUsageRetryBaseDelay {
-		return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be greater than MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY")
+	if cfg.RuntimeUsageEnabled {
+		if cfg.RuntimeUsageRetryBaseDelay < runtimeusage.MinReservationRetryBaseDelay || cfg.RuntimeUsageRetryBaseDelay > runtimeusage.MaxReservationRetryBaseDelay {
+			return nil, fmt.Errorf(
+				"MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY must be between %s and %s",
+				runtimeusage.MinReservationRetryBaseDelay,
+				runtimeusage.MaxReservationRetryBaseDelay,
+			)
+		}
+		if cfg.RuntimeUsageRetryMaxDelay < runtimeusage.MinReservationRetryMaxDelay || cfg.RuntimeUsageRetryMaxDelay > runtimeusage.MaxReservationRetryMaxDelay {
+			return nil, fmt.Errorf(
+				"MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be between %s and %s",
+				runtimeusage.MinReservationRetryMaxDelay,
+				runtimeusage.MaxReservationRetryMaxDelay,
+			)
+		}
+		if cfg.RuntimeUsageRetryMaxDelay <= cfg.RuntimeUsageRetryBaseDelay {
+			return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be greater than MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY")
+		}
 	}
 
 	return cfg, nil

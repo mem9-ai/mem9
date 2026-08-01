@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
 
 func TestConfig_MeteringSurfaceReduced(t *testing.T) {
@@ -371,6 +373,24 @@ func TestLoad_RuntimeUsageReservationRetryConfigRedactsParseInputAndWrapsCause(t
 	}
 	if errors.Unwrap(err) == nil {
 		t.Fatal("duration parse error did not wrap its cause")
+	}
+}
+
+func TestLoad_RuntimeUsageReservationRetryConfigIgnoresValuesWhenDisabled(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "false")
+	t.Setenv("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY", "placeholder-base")
+	t.Setenv("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY", "placeholder-maximum")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RuntimeUsageRetryBaseDelay != runtimeusage.DefaultReservationRetryBaseDelay {
+		t.Fatalf("RuntimeUsageRetryBaseDelay = %v, want %v", cfg.RuntimeUsageRetryBaseDelay, runtimeusage.DefaultReservationRetryBaseDelay)
+	}
+	if cfg.RuntimeUsageRetryMaxDelay != runtimeusage.DefaultReservationRetryMaxDelay {
+		t.Fatalf("RuntimeUsageRetryMaxDelay = %v, want %v", cfg.RuntimeUsageRetryMaxDelay, runtimeusage.DefaultReservationRetryMaxDelay)
 	}
 }
 
