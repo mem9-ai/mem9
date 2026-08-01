@@ -189,23 +189,7 @@ func main() {
 		logger.Info("runtime usage metering writer initialized", "enabled", true)
 	}
 	runtimeUsageClient := runtimeusage.NewHTTPClient(cfg.RuntimeUsageBaseURL, cfg.RuntimeUsageInternalSecret, cfg.RuntimeUsageTimeout)
-	runtimeUsageManager := runtimeusage.NewManager(runtimeusage.Config{
-		Enabled:            cfg.RuntimeUsageEnabled,
-		ProviderID:         cfg.RuntimeUsageProviderID,
-		BaseURL:            cfg.RuntimeUsageBaseURL,
-		InternalSecret:     cfg.RuntimeUsageInternalSecret,
-		Timeout:            cfg.RuntimeUsageTimeout,
-		MeteringTimeout:    cfg.RuntimeUsageMeteringTimeout,
-		ReservationTTL:     cfg.RuntimeUsageReservationTTL,
-		OperationTTL:       cfg.RuntimeUsageOperationTTL,
-		FailOpen:           cfg.RuntimeUsageFailOpen,
-		OutboxEnabled:      cfg.RuntimeUsageOutboxEnabled,
-		NoticeTimeout:      cfg.RuntimeUsageNoticeTimeout,
-		NoticeCacheEnabled: cfg.RuntimeUsageNoticeCacheEnabled,
-		NoticeCacheTTL:     cfg.RuntimeUsageNoticeCacheTTL,
-		NoticeStaleTTL:     cfg.RuntimeUsageNoticeStaleTTL,
-		Outbox:             runtimeUsageStore,
-	}, runtimeUsageClient, runtimeUsageMetering, logger)
+	runtimeUsageManager := runtimeusage.NewManager(newRuntimeUsageConfig(cfg, runtimeUsageStore), runtimeUsageClient, runtimeUsageMetering, logger)
 	var runtimeUsageWorkerCancel context.CancelFunc
 	if cfg.RuntimeUsageEnabled && runtimeUsageStore != nil {
 		var runtimeUsageWorkerCtx context.Context
@@ -363,6 +347,28 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
+}
+
+func newRuntimeUsageConfig(cfg *config.Config, outbox runtimeusage.OutboxStore) runtimeusage.Config {
+	return runtimeusage.Config{
+		Enabled:                   cfg.RuntimeUsageEnabled,
+		ProviderID:                cfg.RuntimeUsageProviderID,
+		BaseURL:                   cfg.RuntimeUsageBaseURL,
+		InternalSecret:            cfg.RuntimeUsageInternalSecret,
+		Timeout:                   cfg.RuntimeUsageTimeout,
+		MeteringTimeout:           cfg.RuntimeUsageMeteringTimeout,
+		ReservationTTL:            cfg.RuntimeUsageReservationTTL,
+		OperationTTL:              cfg.RuntimeUsageOperationTTL,
+		ReservationRetryBaseDelay: cfg.RuntimeUsageRetryBaseDelay,
+		ReservationRetryMaxDelay:  cfg.RuntimeUsageRetryMaxDelay,
+		FailOpen:                  cfg.RuntimeUsageFailOpen,
+		OutboxEnabled:             cfg.RuntimeUsageOutboxEnabled,
+		NoticeTimeout:             cfg.RuntimeUsageNoticeTimeout,
+		NoticeCacheEnabled:        cfg.RuntimeUsageNoticeCacheEnabled,
+		NoticeCacheTTL:            cfg.RuntimeUsageNoticeCacheTTL,
+		NoticeStaleTTL:            cfg.RuntimeUsageNoticeStaleTTL,
+		Outbox:                    outbox,
+	}
 }
 
 func redactMeteringURLForLog(raw string) string {

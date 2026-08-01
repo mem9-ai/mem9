@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -219,6 +220,157 @@ func TestLoad_RuntimeUsageProviderID(t *testing.T) {
 	}
 	if cfg.RuntimeUsageProviderID != "provider-x" {
 		t.Fatalf("RuntimeUsageProviderID = %q, want provider-x", cfg.RuntimeUsageProviderID)
+	}
+}
+
+func TestLoad_RuntimeUsageReservationRetryConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		baseDelay   string
+		maxDelay    string
+		wantBase    time.Duration
+		wantMaximum time.Duration
+	}{
+		{
+			name:        "defaults",
+			wantBase:    500 * time.Millisecond,
+			wantMaximum: time.Second,
+		},
+		{
+			name:        "lower bounds",
+			baseDelay:   "300ms",
+			maxDelay:    "600ms",
+			wantBase:    300 * time.Millisecond,
+			wantMaximum: 600 * time.Millisecond,
+		},
+		{
+			name:        "upper bounds",
+			baseDelay:   "1s",
+			maxDelay:    "2s",
+			wantBase:    time.Second,
+			wantMaximum: 2 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MNEMO_DSN", "test-dsn")
+			t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
+			t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
+			t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
+			if tt.baseDelay != "" {
+				t.Setenv("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY", tt.baseDelay)
+			}
+			if tt.maxDelay != "" {
+				t.Setenv("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY", tt.maxDelay)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.RuntimeUsageRetryBaseDelay != tt.wantBase {
+				t.Fatalf("RuntimeUsageRetryBaseDelay = %v, want %v", cfg.RuntimeUsageRetryBaseDelay, tt.wantBase)
+			}
+			if cfg.RuntimeUsageRetryMaxDelay != tt.wantMaximum {
+				t.Fatalf("RuntimeUsageRetryMaxDelay = %v, want %v", cfg.RuntimeUsageRetryMaxDelay, tt.wantMaximum)
+			}
+		})
+	}
+}
+
+func TestLoad_RuntimeUsageReservationRetryConfigValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseDelay  string
+		maxDelay   string
+		wantSubstr string
+	}{
+		{
+			name:       "base below minimum",
+			baseDelay:  "299ms",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY must be between 300ms and 1s",
+		},
+		{
+			name:       "base above maximum",
+			baseDelay:  "1001ms",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY must be between 300ms and 1s",
+		},
+		{
+			name:       "maximum below minimum",
+			maxDelay:   "599ms",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be between 600ms and 2s",
+		},
+		{
+			name:       "maximum above maximum",
+			maxDelay:   "2001ms",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be between 600ms and 2s",
+		},
+		{
+			name:       "maximum equals base",
+			baseDelay:  "600ms",
+			maxDelay:   "600ms",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be greater than MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY",
+		},
+		{
+			name:       "maximum below base",
+			baseDelay:  "700ms",
+			maxDelay:   "600ms",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be greater than MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY",
+		},
+		{
+			name:       "malformed base",
+			baseDelay:  "soon",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY must be a valid duration",
+		},
+		{
+			name:       "malformed maximum",
+			maxDelay:   "later",
+			wantSubstr: "MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be a valid duration",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MNEMO_DSN", "test-dsn")
+			t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
+			t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
+			t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
+			if tt.baseDelay != "" {
+				t.Setenv("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY", tt.baseDelay)
+			}
+			if tt.maxDelay != "" {
+				t.Setenv("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY", tt.maxDelay)
+			}
+
+			_, err := Load()
+			if err == nil {
+				t.Fatal("Load error = nil, want validation error")
+			}
+			if !strings.Contains(err.Error(), tt.wantSubstr) {
+				t.Fatalf("Load error = %v, want %q", err, tt.wantSubstr)
+			}
+		})
+	}
+}
+
+func TestLoad_RuntimeUsageReservationRetryConfigRedactsParseInputAndWrapsCause(t *testing.T) {
+	const rawValue = "private-duration-value"
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_RUNTIME_USAGE_ENABLED", "true")
+	t.Setenv("MNEMO_RUNTIME_USAGE_BASE_URL", "https://runtime-usage.example.com")
+	t.Setenv("MNEMO_RUNTIME_USAGE_INTERNAL_SECRET", "secret-value")
+	t.Setenv("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY", rawValue)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load error = nil, want duration parse error")
+	}
+	if strings.Contains(err.Error(), rawValue) {
+		t.Fatal("duration parse error exposed the raw environment value")
+	}
+	if errors.Unwrap(err) == nil {
+		t.Fatal("duration parse error did not wrap its cause")
 	}
 }
 

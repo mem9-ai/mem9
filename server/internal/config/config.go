@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
 
 type Config struct {
@@ -82,6 +84,8 @@ type Config struct {
 	RuntimeUsageMeteringTimeout    time.Duration
 	RuntimeUsageReservationTTL     time.Duration
 	RuntimeUsageOperationTTL       time.Duration
+	RuntimeUsageRetryBaseDelay     time.Duration
+	RuntimeUsageRetryMaxDelay      time.Duration
 	RuntimeUsageFailOpen           bool
 	RuntimeUsageOutboxEnabled      bool
 	RuntimeUsageNoticeTimeout      time.Duration
@@ -167,6 +171,14 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_OUTBOX_ENABLED=false requires MNEMO_RUNTIME_USAGE_FAIL_OPEN=true when runtime usage is enabled")
 		}
 	}
+	runtimeUsageRetryBaseDelay, err := envDurationStrict("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY", runtimeusage.DefaultReservationRetryBaseDelay)
+	if err != nil {
+		return nil, err
+	}
+	runtimeUsageRetryMaxDelay, err := envDurationStrict("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY", runtimeusage.DefaultReservationRetryMaxDelay)
+	if err != nil {
+		return nil, err
+	}
 
 	env := strings.ToLower(strings.TrimSpace(envOr("MNEMO_ENV", envOr("APP_ENV", "development"))))
 	cfg := &Config{
@@ -214,6 +226,8 @@ func Load() (*Config, error) {
 		RuntimeUsageMeteringTimeout:      envDuration("MNEMO_RUNTIME_USAGE_METERING_TIMEOUT", 5*time.Second),
 		RuntimeUsageReservationTTL:       envDuration("MNEMO_RUNTIME_USAGE_RESERVATION_TTL", 30*time.Minute),
 		RuntimeUsageOperationTTL:         envDuration("MNEMO_RUNTIME_USAGE_OPERATION_TTL", 30*time.Minute),
+		RuntimeUsageRetryBaseDelay:       runtimeUsageRetryBaseDelay,
+		RuntimeUsageRetryMaxDelay:        runtimeUsageRetryMaxDelay,
 		RuntimeUsageFailOpen:             runtimeUsageFailOpen,
 		RuntimeUsageOutboxEnabled:        runtimeUsageOutboxEnabled,
 		RuntimeUsageNoticeTimeout:        envDuration("MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT", time.Second),
@@ -267,6 +281,23 @@ func Load() (*Config, error) {
 	}
 	if cfg.RuntimeUsageNoticeStaleTTL < 0 {
 		return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL must not be negative")
+	}
+	if cfg.RuntimeUsageRetryBaseDelay < runtimeusage.MinReservationRetryBaseDelay || cfg.RuntimeUsageRetryBaseDelay > runtimeusage.MaxReservationRetryBaseDelay {
+		return nil, fmt.Errorf(
+			"MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY must be between %s and %s",
+			runtimeusage.MinReservationRetryBaseDelay,
+			runtimeusage.MaxReservationRetryBaseDelay,
+		)
+	}
+	if cfg.RuntimeUsageRetryMaxDelay < runtimeusage.MinReservationRetryMaxDelay || cfg.RuntimeUsageRetryMaxDelay > runtimeusage.MaxReservationRetryMaxDelay {
+		return nil, fmt.Errorf(
+			"MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be between %s and %s",
+			runtimeusage.MinReservationRetryMaxDelay,
+			runtimeusage.MaxReservationRetryMaxDelay,
+		)
+	}
+	if cfg.RuntimeUsageRetryMaxDelay <= cfg.RuntimeUsageRetryBaseDelay {
+		return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be greater than MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY")
 	}
 
 	return cfg, nil
@@ -343,6 +374,30 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+func envDurationStrict(key string, fallback time.Duration) (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	duration, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid duration: %w", key, &redactedDurationParseError{cause: err})
+	}
+	return duration, nil
+}
+
+type redactedDurationParseError struct {
+	cause error
+}
+
+func (e *redactedDurationParseError) Error() string {
+	return "invalid duration syntax"
+}
+
+func (e *redactedDurationParseError) Unwrap() error {
+	return e.cause
 }
 
 func parseClusterBlacklist(raw string) map[string]struct{} {

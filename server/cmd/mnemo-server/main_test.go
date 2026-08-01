@@ -1,6 +1,26 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/qiffang/mnemos/server/internal/config"
+)
+
+func TestNewRuntimeUsageConfigMapsReservationRetryDelays(t *testing.T) {
+	cfg := &config.Config{
+		RuntimeUsageRetryBaseDelay: 450 * time.Millisecond,
+		RuntimeUsageRetryMaxDelay:  1250 * time.Millisecond,
+	}
+
+	got := newRuntimeUsageConfig(cfg, nil)
+	if got.ReservationRetryBaseDelay != cfg.RuntimeUsageRetryBaseDelay {
+		t.Fatalf("ReservationRetryBaseDelay = %v, want %v", got.ReservationRetryBaseDelay, cfg.RuntimeUsageRetryBaseDelay)
+	}
+	if got.ReservationRetryMaxDelay != cfg.RuntimeUsageRetryMaxDelay {
+		t.Fatalf("ReservationRetryMaxDelay = %v, want %v", got.ReservationRetryMaxDelay, cfg.RuntimeUsageRetryMaxDelay)
+	}
+}
 
 func TestRedactMeteringURLForLog(t *testing.T) {
 	cases := []struct {

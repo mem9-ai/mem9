@@ -308,6 +308,8 @@ Runtime usage is disabled by default. When enabled, the server reserves quota be
 
 The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for pending reservation finalization and metering delivery. It is enabled by default when runtime usage is enabled.
 
+Reservation retries require one of these exact responses with `details.retryable: true`: `409 registry_conflict`, `409 operation_in_progress`, `429 reservation_concurrency_limited` with a positive decimal integer-seconds `Retry-After`, or `503 unavailable`. Other response shapes retain their existing status handling. Reservation calls make up to three total attempts. The first retry samples from the base delay through the midpoint, and the second samples from the midpoint through the maximum delay. Admission concurrency responses use the greater of the sampled delay and `Retry-After`.
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MNEMO_RUNTIME_USAGE_ENABLED` | No | `false` | Enable runtime usage quota gating and console metering for memory recall/write operations |
@@ -315,6 +317,8 @@ The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for
 | `MNEMO_RUNTIME_USAGE_BASE_URL` | Yes when enabled | — | Runtime usage service base URL. Must be `http` or `https`; query and fragment are rejected |
 | `MNEMO_RUNTIME_USAGE_INTERNAL_SECRET` | Yes when enabled | — | Bearer token for internal runtime usage service calls |
 | `MNEMO_RUNTIME_USAGE_TIMEOUT` | No | `3s` | Timeout for quota reservation and finalization requests |
+| `MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY` | No | `500ms` | Lower bound for Reservation retry jitter. Accepted range: `300ms` through `1s` |
+| `MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY` | No | `1s` | Upper bound for Reservation retry jitter. Accepted range: `600ms` through `2s`; must exceed the base delay |
 | `MNEMO_RUNTIME_USAGE_METERING_TIMEOUT` | No | `5s` | Timeout for console metering event delivery requests |
 | `MNEMO_RUNTIME_USAGE_RESERVATION_TTL` | No | `30m` | Parsed into server config, but currently not sent to reservation requests; changing it does not alter reservation lifetimes |
 | `MNEMO_RUNTIME_USAGE_OPERATION_TTL` | No | `30m` | Parsed into server config, but currently not used to expire runtime usage outbox rows; changing it does not alter outbox lifetimes |
