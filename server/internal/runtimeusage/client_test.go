@@ -421,10 +421,7 @@ func TestHTTPClientReserveConcurrencyLimitRequiresPositiveRetryAfter(t *testing.
 				t.Fatalf("structured reservation classification = %v, want %v", got, tt.wantStructured)
 			}
 			if !tt.wantStructured {
-				var unavailable *UnavailableError
-				if !errors.As(err, &unavailable) {
-					t.Fatalf("Reserve error = %T, want legacy unavailable fallback", err)
-				}
+				assertReservationFallbackForStatus(t, err, http.StatusTooManyRequests)
 				return
 			}
 			if reservationErr.retryAfter != tt.wantRetryAfter {
@@ -471,14 +468,14 @@ func TestHTTPClientReserveKeepsPermanentStatusesOutsideRetryAllowlist(t *testing
 
 func TestHTTPClientReserveRequiresExactReservationRetryContract(t *testing.T) {
 	details := []struct {
-		name           string
-		json           string
-		wantStructured bool
-		wantRetryable  bool
+		name          string
+		json          string
+		decodable     bool
+		wantRetryable bool
 	}{
-		{name: "true", json: `"details":{"retryable":true}`, wantStructured: true, wantRetryable: true},
-		{name: "false", json: `"details":{"retryable":false}`, wantStructured: true},
-		{name: "missing", wantStructured: true},
+		{name: "true", json: `"details":{"retryable":true}`, decodable: true, wantRetryable: true},
+		{name: "false", json: `"details":{"retryable":false}`, decodable: true},
+		{name: "missing", decodable: true},
 		{name: "non boolean", json: `"details":{"retryable":"true"}`},
 	}
 
@@ -492,7 +489,7 @@ func TestHTTPClientReserveRequiresExactReservationRetryContract(t *testing.T) {
 				body += "}"
 				err := reserveErrorForTest(t, code.status, body, code.retryAfter)
 				var reservationErr *reservationError
-				wantStructured := detail.wantStructured && (detail.wantRetryable || code.code == reservationErrorCodeOperationConflict)
+				wantStructured := detail.decodable && (detail.wantRetryable || code.code == reservationErrorCodeOperationConflict)
 				if got := errors.As(err, &reservationErr); got != wantStructured {
 					t.Fatalf("structured reservation classification = %v, want %v", got, wantStructured)
 				}
