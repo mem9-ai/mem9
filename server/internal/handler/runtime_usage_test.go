@@ -308,6 +308,44 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			wantOperation: "operation-conflict",
 			wantMessage:   "runtime usage conflict",
 		},
+		{
+			name: "exhausted retryable reservation response",
+			err: newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusServiceUnavailable,
+				`{"code":"unavailable","details":{"retryable":true}}`,
+				"",
+			),
+			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
+				ClusterID: "cluster-reserve",
+			}, runtimeusage.MeterMemoryRecallRequests),
+			wantStatus:    http.StatusServiceUnavailable,
+			wantClass:     "unavailable",
+			wantRetryable: true,
+			wantStage:     runtimeUsageStageReserve,
+			wantClusterID: "cluster-reserve",
+			wantMeter:     runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:   "runtime usage unavailable",
+		},
+		{
+			name: "permanent reservation operation conflict",
+			err: newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusConflict,
+				`{"code":"operation_conflict","details":{"retryable":true}}`,
+				"",
+			),
+			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
+				ClusterID: "cluster-reserve-conflict",
+			}, runtimeusage.MeterMemoryWriteRequests),
+			wantStatus:    http.StatusBadGateway,
+			wantClass:     "conflict",
+			wantRetryable: false,
+			wantStage:     runtimeUsageStageReserve,
+			wantClusterID: "cluster-reserve-conflict",
+			wantMeter:     runtimeusage.MeterMemoryWriteRequests,
+			wantMessage:   "runtime usage conflict",
+		},
 	}
 
 	for _, tt := range tests {
@@ -359,6 +397,29 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newRuntimeUsageReservationResponseError(t *testing.T, status int, body, retryAfter string) error {
+	t.Helper()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if retryAfter != "" {
+			w.Header().Set("Retry-After", retryAfter)
+		}
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer upstream.Close()
+
+	client := runtimeusage.NewHTTPClient(upstream.URL, "test-secret", time.Second)
+	_, err := client.Reserve(context.Background(), runtimeusage.Subject{APIKeySubject: "test-subject"}, "test-operation", runtimeusage.Operation{
+		Meter: runtimeusage.MeterMemoryRecallRequests,
+		Units: 1,
+	})
+	if err == nil {
+		t.Fatal("Reserve error = nil")
+	}
+	return err
 }
 
 func TestLogRuntimeUsageBackgroundFinalizeError(t *testing.T) {
