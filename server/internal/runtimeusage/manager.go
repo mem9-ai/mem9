@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -13,13 +14,25 @@ import (
 	"github.com/qiffang/mnemos/server/internal/metrics"
 )
 
+const (
+	DefaultReservationRetryBaseDelay = 500 * time.Millisecond
+	DefaultReservationRetryMaxDelay  = time.Second
+	MinReservationRetryBaseDelay     = 300 * time.Millisecond
+	MaxReservationRetryBaseDelay     = time.Second
+	MinReservationRetryMaxDelay      = 600 * time.Millisecond
+	MaxReservationRetryMaxDelay      = 2 * time.Second
+	reservationMaxAttempts           = 3
+)
+
 type manager struct {
-	cfg      Config
-	client   QuotaClient
-	metering metering.Writer
-	outbox   OutboxStore
-	logger   *slog.Logger
-	now      func() time.Time
+	cfg          Config
+	client       QuotaClient
+	metering     metering.Writer
+	outbox       OutboxStore
+	logger       *slog.Logger
+	now          func() time.Time
+	wait         func(context.Context, time.Duration) error
+	randomInt64N func(int64) int64
 
 	noticeState *noticeStateCache
 }
@@ -31,13 +44,21 @@ func NewManager(cfg Config, client QuotaClient, writer metering.Writer, logger *
 	if !cfg.Enabled {
 		return noopManager{}
 	}
+	if cfg.ReservationRetryBaseDelay == 0 {
+		cfg.ReservationRetryBaseDelay = DefaultReservationRetryBaseDelay
+	}
+	if cfg.ReservationRetryMaxDelay == 0 {
+		cfg.ReservationRetryMaxDelay = DefaultReservationRetryMaxDelay
+	}
 	manager := &manager{
-		cfg:      cfg,
-		client:   client,
-		metering: writer,
-		outbox:   cfg.Outbox,
-		logger:   logger,
-		now:      time.Now,
+		cfg:          cfg,
+		client:       client,
+		metering:     writer,
+		outbox:       cfg.Outbox,
+		logger:       logger,
+		now:          time.Now,
+		wait:         waitForContext,
+		randomInt64N: rand.Int64N,
 	}
 	manager.noticeState = newNoticeStateCache(cfg, manager.runtimeStateProvider)
 	return manager
@@ -250,30 +271,87 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 		Units:       units,
 		Reserved:    true,
 	}
-	_, err = m.client.Reserve(ctx, subject, operationID, Operation{Meter: meter, Units: units})
-	if err != nil {
+	op := Operation{Meter: meter, Units: units}
+	for attempt := 0; attempt < reservationMaxAttempts; attempt++ {
+		_, err = m.client.Reserve(ctx, subject, operationID, op)
+		if err == nil {
+			return lease, nil
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, &UnavailableError{Err: ctxErr}
+		}
 		var denied *QuotaDeniedError
 		if errors.As(err, &denied) {
 			return nil, err
+		}
+		var reservationErr *reservationError
+		if errors.As(err, &reservationErr) {
+			if reservationErr.code == reservationErrorCodeOperationConflict {
+				return nil, err
+			}
+			if shouldRetryReservation(reservationErr) && attempt+1 < reservationMaxAttempts {
+				delay := m.reservationRetryDelay(attempt, reservationErr)
+				if waitErr := m.wait(ctx, delay); waitErr != nil {
+					return nil, &UnavailableError{Err: waitErr}
+				}
+				continue
+			}
+			break
 		}
 		var conflict *ConflictError
 		if errors.As(err, &conflict) {
 			return nil, err
 		}
-		if m.cfg.FailOpen {
-			m.logger.WarnContext(ctx, "runtime usage reserve failed open",
-				"operation_id", operationID,
-				"tenant_id", subject.TenantID,
-				"cluster_id", subject.ClusterID,
-				"meter", meter,
-				"err", err,
-			)
-			lease.Reserved = false
-			return lease, nil
-		}
-		return nil, err
+		break
 	}
-	return lease, nil
+	if m.cfg.FailOpen {
+		m.logger.WarnContext(ctx, "runtime usage reserve failed open",
+			"operation_id", operationID,
+			"tenant_id", subject.TenantID,
+			"cluster_id", subject.ClusterID,
+			"meter", meter,
+			"err", err,
+		)
+		lease.Reserved = false
+		return lease, nil
+	}
+	return nil, err
+}
+
+func shouldRetryReservation(reservationErr *reservationError) bool {
+	return reservationErr.ReservationRetryable()
+}
+
+func (m *manager) reservationRetryDelay(retry int, reservationErr *reservationError) time.Duration {
+	base := m.cfg.ReservationRetryBaseDelay
+	maximum := m.cfg.ReservationRetryMaxDelay
+	midpoint := base + (maximum-base)/2
+	minimum := base
+	upper := midpoint
+	if retry > 0 {
+		minimum = midpoint
+		upper = maximum
+	}
+
+	delay := minimum
+	if width := int64(upper-minimum) + 1; width > 1 {
+		delay += time.Duration(m.randomInt64N(width))
+	}
+	if reservationErr.code == reservationErrorCodeConcurrencyLimited && reservationErr.retryAfter > delay {
+		return reservationErr.retryAfter
+	}
+	return delay
+}
+
+func waitForContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (m *manager) release(ctx context.Context, lease *OperationLease, reason string, detail string) {

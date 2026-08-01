@@ -62,21 +62,23 @@ const (
 )
 
 type Config struct {
-	Enabled            bool
-	ProviderID         string
-	BaseURL            string
-	InternalSecret     string
-	Timeout            time.Duration
-	MeteringTimeout    time.Duration
-	ReservationTTL     time.Duration
-	OperationTTL       time.Duration
-	FailOpen           bool
-	OutboxEnabled      bool
-	NoticeTimeout      time.Duration
-	NoticeCacheEnabled bool
-	NoticeCacheTTL     time.Duration
-	NoticeStaleTTL     time.Duration
-	Outbox             OutboxStore
+	Enabled                   bool
+	ProviderID                string
+	BaseURL                   string
+	InternalSecret            string
+	Timeout                   time.Duration
+	MeteringTimeout           time.Duration
+	ReservationTTL            time.Duration
+	OperationTTL              time.Duration
+	ReservationRetryBaseDelay time.Duration
+	ReservationRetryMaxDelay  time.Duration
+	FailOpen                  bool
+	OutboxEnabled             bool
+	NoticeTimeout             time.Duration
+	NoticeCacheEnabled        bool
+	NoticeCacheTTL            time.Duration
+	NoticeStaleTTL            time.Duration
+	Outbox                    OutboxStore
 }
 
 type Subject struct {
