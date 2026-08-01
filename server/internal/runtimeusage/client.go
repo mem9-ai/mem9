@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -91,8 +92,16 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		return &UnavailableError{Err: err}
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	respBody, err := readBoundedResponseBody(resp.Body)
+	if err != nil {
+		return &UnavailableError{Err: err}
+	}
 
+	if classifyQuotaStatuses {
+		if reservationErr := classifyReservationError(resp.StatusCode, respBody, resp.Header.Get("Retry-After")); reservationErr != nil {
+			return reservationErr
+		}
+	}
 	if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
 		return &QuotaDeniedError{
 			StatusCode: resp.StatusCode,
@@ -112,6 +121,59 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		}
 	}
 	return nil
+}
+
+func classifyReservationError(status int, body []byte, retryAfterHeader string) *reservationError {
+	var envelope struct {
+		Code    reservationErrorCode `json:"code"`
+		Details struct {
+			Retryable bool `json:"retryable"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil
+	}
+
+	policy, known := envelope.Code.policy()
+	if !known || policy.statusCode != status {
+		return nil
+	}
+
+	retryAfter := parseRetryAfter(retryAfterHeader)
+	retryable := policy.retryable && envelope.Details.Retryable
+	if envelope.Code == reservationErrorCodeConcurrencyLimited {
+		retryable = retryable && retryAfter > 0
+	}
+	return newReservationError(envelope.Code, retryable, retryAfter)
+}
+
+func parseRetryAfter(raw string) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	for _, digit := range []byte(raw) {
+		if digit < '0' || digit > '9' {
+			return 0
+		}
+	}
+	seconds, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || seconds == 0 || seconds > uint64((1<<63-1)/time.Second) {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func readBoundedResponseBody(body io.Reader) ([]byte, error) {
+	const maxResponseBodyBytes = 1 << 20
+	responseBody, err := io.ReadAll(io.LimitReader(body, maxResponseBodyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("runtime usage read response: %w", err)
+	}
+	if len(responseBody) > maxResponseBodyBytes {
+		return nil, fmt.Errorf("runtime usage response exceeds %d bytes", maxResponseBodyBytes)
+	}
+	return responseBody, nil
 }
 
 func isRuntimeQuotaDenialResponse(status int, body []byte) bool {

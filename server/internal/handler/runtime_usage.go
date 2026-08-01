@@ -198,6 +198,16 @@ func classifyRuntimeUsageError(err error) (string, int, bool) {
 	if errors.As(err, &denied) {
 		return "quota_denied", status, status == http.StatusTooManyRequests
 	}
+	var reservationFailure interface {
+		ReservationRetryable() bool
+	}
+	if errors.As(err, &reservationFailure) {
+		var conflict *runtimeusage.ConflictError
+		if errors.As(err, &conflict) {
+			return "conflict", status, false
+		}
+		return "unavailable", status, reservationFailure.ReservationRetryable()
+	}
 	var conflict *runtimeusage.ConflictError
 	if errors.As(err, &conflict) {
 		return "conflict", status, true
