@@ -587,6 +587,22 @@ func TestHTTPClientReserveBoundsAndRedactsResponseFailures(t *testing.T) {
 		}
 	})
 
+	t.Run("quota denial survives read failure", func(t *testing.T) {
+		client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+		client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusPaymentRequired,
+				Header:     make(http.Header),
+				Body:       failingReadCloser{err: errors.New("quota response read failed")},
+			}, nil
+		})}
+		_, err := client.Reserve(context.Background(), Subject{APIKeySubject: "test-subject"}, "test-operation", Operation{Meter: MeterMemoryRecallRequests, Units: 1})
+		var denied *QuotaDeniedError
+		if !errors.As(err, &denied) || denied.Status() != http.StatusPaymentRequired {
+			t.Fatalf("Reserve error = %T, want status-based quota denial", err)
+		}
+	})
+
 	const structuredBody = `{"code":"unavailable","details":{"retryable":true}}`
 	for _, tt := range []struct {
 		name           string
@@ -611,6 +627,17 @@ func TestHTTPClientReserveBoundsAndRedactsResponseFailures(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("oversized quota denial preserves status classification", func(t *testing.T) {
+		err := reserveErrorForTest(t, http.StatusPaymentRequired, strings.Repeat("x", (1<<20)+1), "")
+		var denied *QuotaDeniedError
+		if !errors.As(err, &denied) || denied.Status() != http.StatusPaymentRequired {
+			t.Fatalf("Reserve error = %T, want status-based quota denial", err)
+		}
+		if len(denied.Body) != 0 {
+			t.Fatal("oversized quota denial retained response body bytes")
+		}
+	})
 
 	t.Run("structured response body is discarded", func(t *testing.T) {
 		const sensitiveMarker = "sensitive-provider-message"
