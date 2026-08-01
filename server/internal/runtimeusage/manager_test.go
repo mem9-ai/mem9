@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -1395,6 +1396,34 @@ func TestManagerOversizedQuotaDenialPreservesFailOpenFence(t *testing.T) {
 	}
 	if lease != nil {
 		t.Fatal("fail-open quota denial returned a lease")
+	}
+	if attempts != 1 {
+		t.Fatalf("Reservation attempts = %d, want 1", attempts)
+	}
+}
+
+func TestManagerOversizedPostQuotaDenialPreservesFailOpenFence(t *testing.T) {
+	attempts := 0
+	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts++
+		body := oversizedResponseWithPrefix(postQuotaRateLimitBody)
+		return statusJSONResponse(http.StatusTooManyRequests, body, http.Header{"Retry-After": []string{"20"}}), nil
+	})}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	runtimeManager := NewManager(Config{Enabled: true, FailOpen: true}, client, &captureWriter{}, logger)
+	runtimeManager.(*manager).wait = func(context.Context, time.Duration) error {
+		t.Fatal("post-quota denial entered retry delay")
+		return nil
+	}
+
+	lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+	var denied *QuotaDeniedError
+	if !errors.As(err, &denied) || denied.Status() != http.StatusTooManyRequests {
+		t.Fatalf("BeforeRecall error = %T, want post-quota denial", err)
+	}
+	if lease != nil {
+		t.Fatal("fail-open post-quota denial returned a lease")
 	}
 	if attempts != 1 {
 		t.Fatalf("Reservation attempts = %d, want 1", attempts)

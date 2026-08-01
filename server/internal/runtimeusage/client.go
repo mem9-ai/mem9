@@ -20,6 +20,8 @@ type HTTPClient struct {
 	client         *http.Client
 }
 
+const maxResponseBodyBytes = 1 << 20
+
 func NewHTTPClient(baseURL, internalSecret string, timeout time.Duration) *HTTPClient {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
@@ -92,13 +94,16 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		return &UnavailableError{Err: err}
 	}
 	defer resp.Body.Close()
-	respBody, err := readBoundedResponseBody(resp.Body)
-	if err != nil {
+	respBody, overflow, err := readBoundedResponseBody(resp.Body)
+	if err != nil || overflow {
+		if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
+			return newQuotaDeniedError(resp, nil)
+		}
 		if resp.StatusCode == http.StatusConflict {
 			return newConflictError(resp, nil)
 		}
-		if classifyQuotaStatuses && resp.StatusCode == http.StatusPaymentRequired {
-			return newQuotaDeniedError(resp, nil)
+		if err == nil {
+			err = fmt.Errorf("runtime usage response exceeds %d bytes", maxResponseBodyBytes)
 		}
 		return &UnavailableError{Err: err}
 	}
@@ -183,16 +188,16 @@ func parseRetryAfter(raw string) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func readBoundedResponseBody(body io.Reader) ([]byte, error) {
-	const maxResponseBodyBytes = 1 << 20
+func readBoundedResponseBody(body io.Reader) ([]byte, bool, error) {
 	responseBody, err := io.ReadAll(io.LimitReader(body, maxResponseBodyBytes+1))
+	overflow := len(responseBody) > maxResponseBodyBytes
+	if overflow {
+		responseBody = responseBody[:maxResponseBodyBytes]
+	}
 	if err != nil {
-		return nil, fmt.Errorf("runtime usage read response: %w", err)
+		return responseBody, overflow, fmt.Errorf("runtime usage read response: %w", err)
 	}
-	if len(responseBody) > maxResponseBodyBytes {
-		return nil, fmt.Errorf("runtime usage response exceeds %d bytes", maxResponseBodyBytes)
-	}
-	return responseBody, nil
+	return responseBody, overflow, nil
 }
 
 func isRuntimeQuotaDenialResponse(status int, body []byte) bool {

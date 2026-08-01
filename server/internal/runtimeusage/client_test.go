@@ -34,6 +34,12 @@ var reservationContractCases = []reservationContractCase{
 	{name: "operation conflict", code: reservationErrorCodeOperationConflict, status: http.StatusConflict},
 }
 
+const postQuotaRateLimitBody = `{"code":"provider_post_quota_throttled","message":"Post-quota rate limit exceeded.","details":{"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`
+
+func oversizedResponseWithPrefix(prefix string) string {
+	return prefix + strings.Repeat(" ", (1<<20)+1-len(prefix))
+}
+
 func TestHTTPClientReserveAllowsNullRemainingIncludedUnits(t *testing.T) {
 	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
 	client.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -654,6 +660,45 @@ func TestHTTPClientReserveBoundsAndRedactsResponseFailures(t *testing.T) {
 			t.Fatal("oversized quota denial retained response body bytes")
 		}
 	})
+
+	t.Run("oversized post quota denial preserves quota classification", func(t *testing.T) {
+		body := oversizedResponseWithPrefix(postQuotaRateLimitBody)
+		err := reserveErrorForTest(t, http.StatusTooManyRequests, body, "20")
+		var denied *QuotaDeniedError
+		if !errors.As(err, &denied) || denied.Status() != http.StatusTooManyRequests {
+			t.Fatalf("Reserve error = %T, want status-based post-quota denial", err)
+		}
+		if denied.RetryAfter != "20" {
+			t.Fatalf("RetryAfter = %q, want 20", denied.RetryAfter)
+		}
+		if len(denied.Body) != 0 {
+			t.Fatal("oversized post-quota denial retained response body bytes")
+		}
+	})
+
+	for _, tt := range []struct {
+		name string
+		body string
+	}{
+		{name: "oversized generic rate limit", body: `{"error":"rate limited"}`},
+		{name: "oversized concurrency limit", body: `{"code":"reservation_concurrency_limited","details":{"retryable":true}}`},
+	} {
+		t.Run(tt.name+" stays unavailable", func(t *testing.T) {
+			err := reserveErrorForTest(t, http.StatusTooManyRequests, oversizedResponseWithPrefix(tt.body), "1")
+			var denied *QuotaDeniedError
+			if errors.As(err, &denied) {
+				t.Fatalf("Reserve error = %T, want non-quota unavailable failure", err)
+			}
+			var reservationErr *reservationError
+			if errors.As(err, &reservationErr) {
+				t.Fatalf("Reserve error = %T, want no structured retry classification", err)
+			}
+			var unavailable *UnavailableError
+			if !errors.As(err, &unavailable) {
+				t.Fatalf("Reserve error = %T, want UnavailableError", err)
+			}
+		})
+	}
 
 	t.Run("oversized conflict preserves status classification", func(t *testing.T) {
 		err := reserveErrorForTest(t, http.StatusConflict, strings.Repeat("x", (1<<20)+1), "")
