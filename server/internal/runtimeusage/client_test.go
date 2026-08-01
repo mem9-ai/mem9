@@ -603,6 +603,22 @@ func TestHTTPClientReserveBoundsAndRedactsResponseFailures(t *testing.T) {
 		}
 	})
 
+	t.Run("conflict survives read failure", func(t *testing.T) {
+		client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+		client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusConflict,
+				Header:     make(http.Header),
+				Body:       failingReadCloser{err: errors.New("conflict response read failed")},
+			}, nil
+		})}
+		_, err := client.Reserve(context.Background(), Subject{APIKeySubject: "test-subject"}, "test-operation", Operation{Meter: MeterMemoryRecallRequests, Units: 1})
+		var conflict *ConflictError
+		if !errors.As(err, &conflict) {
+			t.Fatalf("Reserve error = %T, want status-based conflict", err)
+		}
+	})
+
 	const structuredBody = `{"code":"unavailable","details":{"retryable":true}}`
 	for _, tt := range []struct {
 		name           string
@@ -636,6 +652,17 @@ func TestHTTPClientReserveBoundsAndRedactsResponseFailures(t *testing.T) {
 		}
 		if len(denied.Body) != 0 {
 			t.Fatal("oversized quota denial retained response body bytes")
+		}
+	})
+
+	t.Run("oversized conflict preserves status classification", func(t *testing.T) {
+		err := reserveErrorForTest(t, http.StatusConflict, strings.Repeat("x", (1<<20)+1), "")
+		var conflict *ConflictError
+		if !errors.As(err, &conflict) {
+			t.Fatalf("Reserve error = %T, want status-based conflict", err)
+		}
+		if len(conflict.Body) != 0 {
+			t.Fatal("oversized conflict retained response body bytes")
 		}
 	})
 
@@ -673,6 +700,22 @@ func TestHTTPClientFinalizeReservationTreatsRateLimitAsUnavailable(t *testing.T)
 	var unavailable *UnavailableError
 	if !errors.As(err, &unavailable) {
 		t.Fatalf("FinalizeReservation error = %T, want UnavailableError", err)
+	}
+}
+
+func TestHTTPClientFinalizeReservationPreservesOversizedConflict(t *testing.T) {
+	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return statusJSONResponse(http.StatusConflict, strings.Repeat("x", (1<<20)+1), nil), nil
+	})}
+
+	err := client.FinalizeReservation(context.Background(), Subject{APIKeySubject: "test-subject"}, "test-operation", ReservationStatusCommitted, reservationCommitReason)
+	var conflict *ConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("FinalizeReservation error = %T, want status-based conflict", err)
+	}
+	if len(conflict.Body) != 0 {
+		t.Fatal("oversized finalization conflict retained response body bytes")
 	}
 }
 

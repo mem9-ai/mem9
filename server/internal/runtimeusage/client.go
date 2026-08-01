@@ -94,6 +94,9 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 	defer resp.Body.Close()
 	respBody, err := readBoundedResponseBody(resp.Body)
 	if err != nil {
+		if resp.StatusCode == http.StatusConflict {
+			return newConflictError(resp, nil)
+		}
 		if classifyQuotaStatuses && resp.StatusCode == http.StatusPaymentRequired {
 			return newQuotaDeniedError(resp, nil)
 		}
@@ -109,7 +112,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		return newQuotaDeniedError(resp, respBody)
 	}
 	if resp.StatusCode == http.StatusConflict {
-		return &ConflictError{StatusCode: resp.StatusCode, Body: respBody}
+		return newConflictError(resp, respBody)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return &UnavailableError{Err: fmt.Errorf("runtime usage service returned status %d", resp.StatusCode)}
@@ -128,6 +131,10 @@ func newQuotaDeniedError(resp *http.Response, body []byte) *QuotaDeniedError {
 		Body:       body,
 		RetryAfter: strings.TrimSpace(resp.Header.Get("Retry-After")),
 	}
+}
+
+func newConflictError(resp *http.Response, body []byte) *ConflictError {
+	return &ConflictError{StatusCode: resp.StatusCode, Body: body}
 }
 
 func classifyReservationError(status int, body []byte, retryAfterHeader string) *reservationError {
