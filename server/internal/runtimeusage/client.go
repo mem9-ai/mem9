@@ -138,13 +138,18 @@ func classifyReservationError(status int, body []byte, retryAfterHeader string) 
 	if !known || policy.statusCode != status {
 		return nil
 	}
+	if envelope.Code == reservationErrorCodeOperationConflict {
+		return newReservationError(envelope.Code, false, 0)
+	}
+	if !policy.retryable || !envelope.Details.Retryable {
+		return nil
+	}
 
 	retryAfter := parseRetryAfter(retryAfterHeader)
-	retryable := policy.retryable && envelope.Details.Retryable
-	if envelope.Code == reservationErrorCodeConcurrencyLimited {
-		retryable = retryable && retryAfter > 0
+	if envelope.Code == reservationErrorCodeConcurrencyLimited && retryAfter == 0 {
+		return nil
 	}
-	return newReservationError(envelope.Code, retryable, retryAfter)
+	return newReservationError(envelope.Code, true, retryAfter)
 }
 
 func parseRetryAfter(raw string) time.Duration {

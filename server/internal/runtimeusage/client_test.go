@@ -388,7 +388,7 @@ func TestHTTPClientReserveConcurrencyLimitRequiresPositiveRetryAfter(t *testing.
 	tests := []struct {
 		name           string
 		retryAfter     string
-		wantRetryable  bool
+		wantStructured bool
 		wantRetryAfter time.Duration
 	}{
 		{name: "missing"},
@@ -398,7 +398,7 @@ func TestHTTPClientReserveConcurrencyLimitRequiresPositiveRetryAfter(t *testing.
 		{name: "zero", retryAfter: "0"},
 		{name: "duration overflow", retryAfter: "9223372037"},
 		{name: "integer overflow", retryAfter: "18446744073709551616"},
-		{name: "positive integer seconds", retryAfter: "2", wantRetryable: true, wantRetryAfter: 2 * time.Second},
+		{name: "positive integer seconds", retryAfter: "2", wantStructured: true, wantRetryAfter: 2 * time.Second},
 	}
 
 	for _, tt := range tests {
@@ -417,11 +417,15 @@ func TestHTTPClientReserveConcurrencyLimitRequiresPositiveRetryAfter(t *testing.
 				Units: 1,
 			})
 			var reservationErr *reservationError
-			if !errors.As(err, &reservationErr) {
-				t.Fatalf("Reserve error = %T, want ReservationError", err)
+			if got := errors.As(err, &reservationErr); got != tt.wantStructured {
+				t.Fatalf("structured reservation classification = %v, want %v", got, tt.wantStructured)
 			}
-			if reservationErr.retryable != tt.wantRetryable {
-				t.Fatalf("Retryable = %v, want %v", reservationErr.retryable, tt.wantRetryable)
+			if !tt.wantStructured {
+				var unavailable *UnavailableError
+				if !errors.As(err, &unavailable) {
+					t.Fatalf("Reserve error = %T, want legacy unavailable fallback", err)
+				}
+				return
 			}
 			if reservationErr.retryAfter != tt.wantRetryAfter {
 				t.Fatalf("RetryAfter = %v, want %v", reservationErr.retryAfter, tt.wantRetryAfter)
@@ -488,10 +492,12 @@ func TestHTTPClientReserveRequiresExactReservationRetryContract(t *testing.T) {
 				body += "}"
 				err := reserveErrorForTest(t, code.status, body, code.retryAfter)
 				var reservationErr *reservationError
-				if got := errors.As(err, &reservationErr); got != detail.wantStructured {
-					t.Fatalf("structured reservation classification = %v, want %v", got, detail.wantStructured)
+				wantStructured := detail.wantStructured && (detail.wantRetryable || code.code == reservationErrorCodeOperationConflict)
+				if got := errors.As(err, &reservationErr); got != wantStructured {
+					t.Fatalf("structured reservation classification = %v, want %v", got, wantStructured)
 				}
-				if !detail.wantStructured {
+				if !wantStructured {
+					assertReservationFallbackForStatus(t, err, code.status)
 					return
 				}
 				wantRetryable := detail.wantRetryable && code.code != reservationErrorCodeOperationConflict
