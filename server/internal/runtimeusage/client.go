@@ -94,6 +94,11 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		return &UnavailableError{Err: err}
 	}
 	defer resp.Body.Close()
+	success := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
+	if success && out == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodyBytes+1))
+		return nil
+	}
 	respBody, overflow, err := readBoundedResponseBody(resp.Body)
 	if err != nil || overflow {
 		if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
@@ -119,7 +124,7 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 	if resp.StatusCode == http.StatusConflict {
 		return newConflictError(resp, respBody)
 	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if !success {
 		return &UnavailableError{Err: fmt.Errorf("runtime usage service returned status %d", resp.StatusCode)}
 	}
 	if out != nil && len(respBody) > 0 {

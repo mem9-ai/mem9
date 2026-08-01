@@ -1259,6 +1259,52 @@ func TestManagerRetriedReservationCompletesSuccessLifecycle(t *testing.T) {
 	}
 }
 
+func TestManagerSuccessfulFinalizeBodyFailuresDoNotQueueRetry(t *testing.T) {
+	for _, tt := range successfulFinalizeBodyFailureCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			reserveCalls := 0
+			finalizeCalls := 0
+			client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+			client.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				switch req.Method {
+				case http.MethodPut:
+					reserveCalls++
+					return jsonResponse(`{"status":"reserved"}`), nil
+				case http.MethodPatch:
+					finalizeCalls++
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     make(http.Header),
+						Body:       tt.body(),
+					}, nil
+				default:
+					return nil, errors.New("unexpected runtime usage method")
+				}
+			})}
+			writer := &captureWriter{}
+			outbox := &fakeOutboxStore{}
+			runtimeManager := NewManager(Config{Enabled: true, Outbox: outbox}, client, writer, nil)
+
+			lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+			if err != nil {
+				t.Fatalf("BeforeRecall: %v", err)
+			}
+			if err := runtimeManager.AfterRecallSuccess(context.Background(), lease, RecallResult{AgentName: "test-agent"}); err != nil {
+				t.Fatalf("AfterRecallSuccess: %v", err)
+			}
+			if reserveCalls != 1 || finalizeCalls != 1 {
+				t.Fatalf("runtime usage calls = reserve %d, finalize %d; want 1 each", reserveCalls, finalizeCalls)
+			}
+			if outbox.commitPending != 1 || outbox.retryable != 0 {
+				t.Fatalf("outbox calls = commit pending %d, retryable %d; want 1, 0", outbox.commitPending, outbox.retryable)
+			}
+			if len(writer.events) != 1 {
+				t.Fatalf("metering events = %d, want 1", len(writer.events))
+			}
+		})
+	}
+}
+
 func TestManagerReservationRetryExhaustionAppliesDeploymentPolicy(t *testing.T) {
 	tests := []struct {
 		name     string

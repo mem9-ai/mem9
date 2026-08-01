@@ -40,6 +40,28 @@ func oversizedResponseWithPrefix(prefix string) string {
 	return prefix + strings.Repeat(" ", (1<<20)+1-len(prefix))
 }
 
+type responseBodyCase struct {
+	name string
+	body func() io.ReadCloser
+}
+
+func successfulFinalizeBodyFailureCases() []responseBodyCase {
+	return []responseBodyCase{
+		{
+			name: "read failure",
+			body: func() io.ReadCloser {
+				return failingReadCloser{err: errors.New("finalize response read sentinel")}
+			},
+		},
+		{
+			name: "oversized body",
+			body: func() io.ReadCloser {
+				return io.NopCloser(strings.NewReader(strings.Repeat("x", (1<<20)+1)))
+			},
+		},
+	}
+}
+
 func TestHTTPClientReserveAllowsNullRemainingIncludedUnits(t *testing.T) {
 	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
 	client.client = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -745,6 +767,25 @@ func TestHTTPClientFinalizeReservationTreatsRateLimitAsUnavailable(t *testing.T)
 	var unavailable *UnavailableError
 	if !errors.As(err, &unavailable) {
 		t.Fatalf("FinalizeReservation error = %T, want UnavailableError", err)
+	}
+}
+
+func TestHTTPClientFinalizeReservationIgnoresSuccessfulResponseBodies(t *testing.T) {
+	for _, tt := range successfulFinalizeBodyFailureCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+			client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       tt.body(),
+				}, nil
+			})}
+
+			if err := client.FinalizeReservation(context.Background(), Subject{APIKeySubject: "test-subject"}, "test-operation", ReservationStatusCommitted, reservationCommitReason); err != nil {
+				t.Fatalf("FinalizeReservation: %v", err)
+			}
+		})
 	}
 }
 
