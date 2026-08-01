@@ -1427,7 +1427,7 @@ func TestManagerOversizedQuotaDenialPreservesFailOpenFence(t *testing.T) {
 	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
 	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		attempts++
-		return statusJSONResponse(http.StatusPaymentRequired, strings.Repeat("x", (1<<20)+1), nil), nil
+		return statusJSONResponse(http.StatusPaymentRequired, strings.Repeat("x", maxResponseBodyBytes+1), nil), nil
 	})}
 	runtimeManager := NewManager(Config{Enabled: true, FailOpen: true}, client, &captureWriter{}, nil)
 	runtimeManager.(*manager).wait = func(context.Context, time.Duration) error {
@@ -1481,7 +1481,7 @@ func TestManagerOversizedConflictPreservesFailOpenFence(t *testing.T) {
 	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
 	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		attempts++
-		return statusJSONResponse(http.StatusConflict, strings.Repeat("x", (1<<20)+1), nil), nil
+		return statusJSONResponse(http.StatusConflict, strings.Repeat("x", maxResponseBodyBytes+1), nil), nil
 	})}
 	runtimeManager := NewManager(Config{Enabled: true, FailOpen: true}, client, &captureWriter{}, nil)
 	runtimeManager.(*manager).wait = func(context.Context, time.Duration) error {

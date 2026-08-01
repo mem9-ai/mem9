@@ -37,7 +37,7 @@ var reservationContractCases = []reservationContractCase{
 const postQuotaRateLimitBody = `{"code":"provider_post_quota_throttled","message":"Post-quota rate limit exceeded.","details":{"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`
 
 func oversizedResponseWithPrefix(prefix string) string {
-	return prefix + strings.Repeat(" ", (1<<20)+1-len(prefix))
+	return prefix + strings.Repeat(" ", maxResponseBodyBytes+1-len(prefix))
 }
 
 type responseBodyCase struct {
@@ -56,7 +56,7 @@ func successfulFinalizeBodyFailureCases() []responseBodyCase {
 		{
 			name: "oversized body",
 			body: func() io.ReadCloser {
-				return io.NopCloser(strings.NewReader(strings.Repeat("x", (1<<20)+1)))
+				return io.NopCloser(strings.NewReader(strings.Repeat("x", maxResponseBodyBytes+1)))
 			},
 		},
 	}
@@ -653,8 +653,8 @@ func TestHTTPClientReserveBoundsAndRedactsResponseFailures(t *testing.T) {
 		size           int
 		wantStructured bool
 	}{
-		{name: "response at limit", size: 1 << 20, wantStructured: true},
-		{name: "response above limit", size: (1 << 20) + 1},
+		{name: "response at limit", size: maxResponseBodyBytes, wantStructured: true},
+		{name: "response above limit", size: maxResponseBodyBytes + 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			body := structuredBody + strings.Repeat(" ", tt.size-len(structuredBody))
@@ -673,7 +673,7 @@ func TestHTTPClientReserveBoundsAndRedactsResponseFailures(t *testing.T) {
 	}
 
 	t.Run("oversized quota denial preserves status classification", func(t *testing.T) {
-		err := reserveErrorForTest(t, http.StatusPaymentRequired, strings.Repeat("x", (1<<20)+1), "")
+		err := reserveErrorForTest(t, http.StatusPaymentRequired, strings.Repeat("x", maxResponseBodyBytes+1), "")
 		var denied *QuotaDeniedError
 		if !errors.As(err, &denied) || denied.Status() != http.StatusPaymentRequired {
 			t.Fatalf("Reserve error = %T, want status-based quota denial", err)
@@ -723,7 +723,7 @@ func TestHTTPClientReserveBoundsAndRedactsResponseFailures(t *testing.T) {
 	}
 
 	t.Run("oversized conflict preserves status classification", func(t *testing.T) {
-		err := reserveErrorForTest(t, http.StatusConflict, strings.Repeat("x", (1<<20)+1), "")
+		err := reserveErrorForTest(t, http.StatusConflict, strings.Repeat("x", maxResponseBodyBytes+1), "")
 		var conflict *ConflictError
 		if !errors.As(err, &conflict) {
 			t.Fatalf("Reserve error = %T, want status-based conflict", err)
@@ -792,7 +792,7 @@ func TestHTTPClientFinalizeReservationIgnoresSuccessfulResponseBodies(t *testing
 func TestHTTPClientFinalizeReservationPreservesOversizedConflict(t *testing.T) {
 	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
 	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return statusJSONResponse(http.StatusConflict, strings.Repeat("x", (1<<20)+1), nil), nil
+		return statusJSONResponse(http.StatusConflict, strings.Repeat("x", maxResponseBodyBytes+1), nil), nil
 	})}
 
 	err := client.FinalizeReservation(context.Background(), Subject{APIKeySubject: "test-subject"}, "test-operation", ReservationStatusCommitted, reservationCommitReason)
