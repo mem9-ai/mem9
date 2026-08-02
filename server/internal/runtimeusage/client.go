@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ type HTTPClient struct {
 	internalSecret string
 	client         *http.Client
 }
+
+const maxResponseBodyBytes = 1 << 20
 
 func NewHTTPClient(baseURL, internalSecret string, timeout time.Duration) *HTTPClient {
 	if timeout <= 0 {
@@ -91,19 +94,37 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		return &UnavailableError{Err: err}
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	success := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
+	if success && out == nil {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseBodyBytes+1))
+		return nil
+	}
+	respBody, overflow, err := readBoundedResponseBody(resp.Body)
+	if err != nil || overflow {
+		if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
+			return newQuotaDeniedError(resp, nil)
+		}
+		if resp.StatusCode == http.StatusConflict {
+			return newConflictError(resp, nil)
+		}
+		if err == nil {
+			err = fmt.Errorf("runtime usage response exceeds %d bytes", maxResponseBodyBytes)
+		}
+		return &UnavailableError{Err: err}
+	}
 
-	if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
-		return &QuotaDeniedError{
-			StatusCode: resp.StatusCode,
-			Body:       respBody,
-			RetryAfter: strings.TrimSpace(resp.Header.Get("Retry-After")),
+	if classifyQuotaStatuses {
+		if reservationErr := classifyReservationError(resp.StatusCode, respBody, resp.Header.Get("Retry-After")); reservationErr != nil {
+			return reservationErr
 		}
 	}
-	if resp.StatusCode == http.StatusConflict {
-		return &ConflictError{StatusCode: resp.StatusCode, Body: respBody}
+	if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
+		return newQuotaDeniedError(resp, respBody)
 	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+	if resp.StatusCode == http.StatusConflict {
+		return newConflictError(resp, respBody)
+	}
+	if !success {
 		return &UnavailableError{Err: fmt.Errorf("runtime usage service returned status %d", resp.StatusCode)}
 	}
 	if out != nil && len(respBody) > 0 {
@@ -112,6 +133,76 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		}
 	}
 	return nil
+}
+
+func newQuotaDeniedError(resp *http.Response, body []byte) *QuotaDeniedError {
+	return &QuotaDeniedError{
+		StatusCode: resp.StatusCode,
+		Body:       body,
+		RetryAfter: strings.TrimSpace(resp.Header.Get("Retry-After")),
+	}
+}
+
+func newConflictError(resp *http.Response, body []byte) *ConflictError {
+	return &ConflictError{StatusCode: resp.StatusCode, Body: body}
+}
+
+func classifyReservationError(status int, body []byte, retryAfterHeader string) *reservationError {
+	var envelope struct {
+		Code    reservationErrorCode `json:"code"`
+		Details struct {
+			Retryable bool `json:"retryable"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil
+	}
+
+	policy, known := envelope.Code.policy()
+	if !known || policy.statusCode != status {
+		return nil
+	}
+	if envelope.Code == reservationErrorCodeOperationConflict {
+		return newReservationError(envelope.Code, false, 0)
+	}
+	if !policy.retryable || !envelope.Details.Retryable {
+		return nil
+	}
+
+	retryAfter := parseRetryAfter(retryAfterHeader)
+	if envelope.Code == reservationErrorCodeConcurrencyLimited && retryAfter == 0 {
+		return nil
+	}
+	return newReservationError(envelope.Code, true, retryAfter)
+}
+
+func parseRetryAfter(raw string) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+	for _, digit := range []byte(raw) {
+		if digit < '0' || digit > '9' {
+			return 0
+		}
+	}
+	seconds, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || seconds == 0 || seconds > uint64((1<<63-1)/time.Second) {
+		return 0
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func readBoundedResponseBody(body io.Reader) ([]byte, bool, error) {
+	responseBody, err := io.ReadAll(io.LimitReader(body, maxResponseBodyBytes+1))
+	overflow := len(responseBody) > maxResponseBodyBytes
+	if overflow {
+		responseBody = responseBody[:maxResponseBodyBytes]
+	}
+	if err != nil {
+		return responseBody, overflow, fmt.Errorf("runtime usage read response: %w", err)
+	}
+	return responseBody, overflow, nil
 }
 
 func isRuntimeQuotaDenialResponse(status int, body []byte) bool {
