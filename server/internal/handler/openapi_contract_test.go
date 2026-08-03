@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/reqid"
 )
 
@@ -124,6 +125,15 @@ func TestOpenAPIRecallRequestBudgetContract(t *testing.T) {
 	items := objectValue(t, warnings, "items")
 	if items["$ref"] != "#/components/schemas/RecallWarning" {
 		t.Fatalf("MemoryListResponse.warnings items = %#v", items["$ref"])
+	}
+	warning := objectValue(t, schemas, "RecallWarning")
+	warningProperties := objectValue(t, warning, "properties")
+	warningCode := objectValue(t, warningProperties, "code")
+	codeEnum := stringSlice(t, warningCode["enum"])
+	for _, code := range []string{recallBranchDeadlineCode, domain.RecallWarningFTSCandidateBudgetExhausted} {
+		if !containsString(codeEnum, code) {
+			t.Fatalf("RecallWarning.code enum = %#v, missing %q", codeEnum, code)
+		}
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
 const (
@@ -39,10 +41,7 @@ func (*recallServerDeadlineError) Unwrap() error {
 	return context.DeadlineExceeded
 }
 
-type recallWarning struct {
-	Code   string `json:"code"`
-	Branch string `json:"branch"`
-}
+type recallWarning = domain.RecallWarning
 
 func newRecallRequestBudget(parent context.Context, total, responseReserve time.Duration) (context.Context, context.Context, context.CancelFunc) {
 	totalCtx, cancelTotal := newRecallTotalBudget(parent, total, responseReserve)
