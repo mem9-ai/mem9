@@ -121,7 +121,7 @@ func withRuntimeUsagePostFailureContext(parent context.Context, run func(context
 }
 
 func (s *Server) afterRuntimeUsageRecallFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
-	ctx, cancel := runtimeUsagePostRequestContext(parent)
+	ctx, cancel, _ := runtimeUsageRecallFinalizeContext(parent)
 	go func() {
 		defer cancel()
 		s.runtimeUsage.AfterRecallFailure(ctx, lease, cause)
@@ -147,11 +147,7 @@ func (s *Server) afterRuntimeUsageMemoryDeleteFailure(parent context.Context, le
 }
 
 func runtimeUsagePostRequestContext(parent context.Context) (context.Context, context.CancelFunc) {
-	deadline := time.Now().Add(runtimeUsagePostRequestTimeout)
-	if parentDeadline, ok := parent.Deadline(); ok && parentDeadline.Before(deadline) {
-		deadline = parentDeadline
-	}
-	return context.WithDeadline(context.WithoutCancel(parent), deadline)
+	return context.WithTimeout(context.WithoutCancel(parent), runtimeUsagePostRequestTimeout)
 }
 
 func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {
