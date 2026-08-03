@@ -18,12 +18,24 @@ var tidbCloudInferenceStatusPattern = regexp.MustCompile(
 	`(?i)\btidb cloud inference:\s*(?:status code|status|http status|http)\s*:?\s*([1-5][0-9]{2})\b`,
 )
 
+const statusClientClosedRequest = 499
+
 type internalErrorClassification struct {
 	class          string
 	source         string
 	retryable      bool
 	dbErrorCode    uint16
 	upstreamStatus int
+}
+
+func isClientCanceledRequest(ctx context.Context, err error) bool {
+	return ctx != nil &&
+		errors.Is(ctx.Err(), context.Canceled) &&
+		errors.Is(err, context.Canceled)
+}
+
+func clientCanceledClassification() (class, source string, retryable bool) {
+	return "client_canceled", "request_context", false
 }
 
 func classifyInternalError(err error) internalErrorClassification {

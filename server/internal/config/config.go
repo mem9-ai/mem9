@@ -52,6 +52,8 @@ type Config struct {
 	TenantPoolIdleTimeout    time.Duration
 	TenantPoolTotalLimit     int
 	ChainRecallStopScore     float64
+	RecallRequestTimeout     time.Duration
+	RecallResponseReserve    time.Duration
 
 	// TiDB Cloud Pool configuration
 	TiDBCloudAPIURL                  string
@@ -184,6 +186,14 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 	}
+	recallRequestTimeout, err := envDurationStrict("MNEMO_RECALL_REQUEST_TIMEOUT", time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	recallResponseReserve, err := envDurationStrict("MNEMO_RECALL_RESPONSE_RESERVE", 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
 
 	env := strings.ToLower(strings.TrimSpace(envOr("MNEMO_ENV", envOr("APP_ENV", "development"))))
 	cfg := &Config{
@@ -217,6 +227,8 @@ func Load() (*Config, error) {
 		TenantPoolIdleTimeout:            envDuration("MNEMO_TENANT_POOL_IDLE_TIMEOUT", 10*time.Minute),
 		TenantPoolTotalLimit:             envInt("MNEMO_TENANT_POOL_TOTAL_LIMIT", 200),
 		ChainRecallStopScore:             envFloat("MNEMO_CHAIN_RECALL_STOP_SCORE", 0.8),
+		RecallRequestTimeout:             recallRequestTimeout,
+		RecallResponseReserve:            recallResponseReserve,
 		UploadDir:                        envOr("MNEMO_UPLOAD_DIR", "./uploads"),
 		FTSEnabled:                       envBool("MNEMO_FTS_ENABLED", false),
 		WorkerConcurrency:                envInt("MNEMO_WORKER_CONCURRENCY", 5),
@@ -277,6 +289,15 @@ func Load() (*Config, error) {
 	}
 	if cfg.ChainRecallStopScore < 0 || cfg.ChainRecallStopScore > 1 {
 		return nil, fmt.Errorf("MNEMO_CHAIN_RECALL_STOP_SCORE must be between 0 and 1")
+	}
+	if cfg.RecallRequestTimeout <= 0 {
+		return nil, fmt.Errorf("MNEMO_RECALL_REQUEST_TIMEOUT must be positive")
+	}
+	if cfg.RecallResponseReserve < 0 {
+		return nil, fmt.Errorf("MNEMO_RECALL_RESPONSE_RESERVE must not be negative")
+	}
+	if cfg.RecallResponseReserve >= cfg.RecallRequestTimeout {
+		return nil, fmt.Errorf("MNEMO_RECALL_RESPONSE_RESERVE must be less than MNEMO_RECALL_REQUEST_TIMEOUT")
 	}
 	if cfg.RuntimeUsageNoticeTimeout <= 0 {
 		return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_NOTICE_TIMEOUT must be positive")

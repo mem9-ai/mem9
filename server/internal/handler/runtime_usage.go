@@ -50,6 +50,70 @@ func withRuntimeUsagePostSuccessContext(parent context.Context, run func(context
 	return run(ctx)
 }
 
+func (s *Server) finalizeRuntimeUsageRecallSuccess(
+	parent context.Context,
+	lease *runtimeusage.OperationLease,
+	result runtimeusage.RecallResult,
+) error {
+	ctx, cancel, budgetLimited := runtimeUsageRecallFinalizeContext(parent)
+	done := make(chan error, 1)
+	go func() {
+		done <- s.runtimeUsage.AfterRecallSuccess(ctx, lease, result)
+	}()
+	finishInBackground := func() {
+		go func() {
+			err := <-done
+			cancel()
+			if err != nil {
+				s.logRuntimeUsageBackgroundFinalizeError(
+					context.WithoutCancel(parent),
+					err,
+					runtimeUsageFinalizeErrorDetails(lease),
+				)
+			}
+		}()
+	}
+	select {
+	case err := <-done:
+		cancel()
+		if budgetLimited {
+			if deadlineErr := recallServerDeadlineFromContext(ctx); deadlineErr != nil {
+				return deadlineErr
+			}
+		}
+		return err
+	case <-parent.Done():
+		finishInBackground()
+		if deadlineErr := recallServerDeadlineFromContext(parent); deadlineErr != nil {
+			return deadlineErr
+		}
+		return nil
+	case <-ctx.Done():
+		finishInBackground()
+		if budgetLimited {
+			if deadlineErr := recallServerDeadlineFromContext(ctx); deadlineErr != nil {
+				return deadlineErr
+			}
+		}
+		return ctx.Err()
+	}
+}
+
+func runtimeUsageRecallFinalizeContext(parent context.Context) (context.Context, context.CancelFunc, bool) {
+	deadline := time.Now().Add(runtimeUsagePostRequestTimeout)
+	budgetLimited := false
+	if parentDeadline, ok := parent.Deadline(); ok && parentDeadline.Before(deadline) {
+		deadline = parentDeadline
+		budgetLimited = true
+	}
+	cause := error(context.DeadlineExceeded)
+	if budgetLimited {
+		cause = &recallServerDeadlineError{}
+	}
+	ctx, cancel := context.WithDeadlineCause(context.WithoutCancel(parent), deadline, cause)
+	return ctx, cancel, budgetLimited
+}
+
 func withRuntimeUsagePostFailureContext(parent context.Context, run func(context.Context)) {
 	ctx, cancel := runtimeUsagePostRequestContext(parent)
 	defer cancel()
@@ -57,9 +121,11 @@ func withRuntimeUsagePostFailureContext(parent context.Context, run func(context
 }
 
 func (s *Server) afterRuntimeUsageRecallFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
-	withRuntimeUsagePostFailureContext(parent, func(ctx context.Context) {
+	ctx, cancel, _ := runtimeUsageRecallFinalizeContext(parent)
+	go func() {
+		defer cancel()
 		s.runtimeUsage.AfterRecallFailure(ctx, lease, cause)
-	})
+	}()
 }
 
 func (s *Server) afterRuntimeUsageMemoryCreateFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
@@ -127,7 +193,7 @@ func (s *Server) handleRuntimeUsageError(
 	w http.ResponseWriter,
 	err error,
 	details runtimeUsageErrorDetails,
-) {
+) error {
 	s.logRuntimeUsageError(ctx, err, details, runtimeUsageRoleClientResponse)
 
 	var denied *runtimeusage.QuotaDeniedError
@@ -139,15 +205,14 @@ func (s *Server) handleRuntimeUsageError(
 			w.Header().Set("Retry-After", denied.RetryAfter)
 		}
 		w.WriteHeader(status)
-		_, _ = w.Write(body)
-		return
+		_, writeErr := w.Write(body)
+		return writeErr
 	}
 	status := runtimeusage.HTTPStatus(err)
 	if status == http.StatusBadGateway {
-		respondError(w, status, "runtime usage conflict")
-		return
+		return respondError(w, status, "runtime usage conflict")
 	}
-	respondError(w, status, "runtime usage unavailable")
+	return respondError(w, status, "runtime usage unavailable")
 }
 
 func (s *Server) logRuntimeUsageBackgroundFinalizeError(ctx context.Context, err error, details runtimeUsageErrorDetails) {

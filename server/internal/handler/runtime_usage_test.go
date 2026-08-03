@@ -474,6 +474,34 @@ func TestRuntimeUsagePostRequestContextPreservesValuesAndBoundsLifetime(t *testi
 	}
 }
 
+func TestRuntimeUsagePostRequestContextGetsIndependentWindowAfterParentDeadline(t *testing.T) {
+	t.Parallel()
+
+	parent, cancelParent := context.WithDeadline(
+		reqid.NewContext(context.Background(), "request-expired"),
+		time.Now().Add(-time.Second),
+	)
+	defer cancelParent()
+
+	ctx, cancel := runtimeUsagePostRequestContext(parent)
+	defer cancel()
+
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("detached context error = %v, want nil", err)
+	}
+	if got := reqid.FromContext(ctx); got != "request-expired" {
+		t.Fatalf("request_id = %q, want request-expired", got)
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("detached context deadline is missing")
+	}
+	remaining := time.Until(deadline)
+	if remaining < runtimeUsagePostRequestTimeout-time.Second || remaining > runtimeUsagePostRequestTimeout {
+		t.Fatalf("detached context remaining timeout = %s, want approximately %s", remaining, runtimeUsagePostRequestTimeout)
+	}
+}
+
 func decodeSingleRuntimeUsageLog(t *testing.T, buf *bytes.Buffer) map[string]any {
 	t.Helper()
 	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))

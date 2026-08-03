@@ -30,25 +30,27 @@ import (
 
 // Server holds the HTTP handlers and their dependencies.
 type Server struct {
-	tenant               *service.TenantService
-	chains               *service.SpaceChainService
-	uploadTasks          repository.UploadTaskRepo
-	uploadDir            string
-	embedder             *embed.Embedder
-	llmClient            *llm.Client
-	autoModel            string
-	ftsEnabled           bool
-	ingestMode           service.IngestMode
-	dbBackend            string
-	logger               *slog.Logger
-	metering             metering.Writer
-	runtimeUsage         runtimeusage.Manager
-	webhooks             *webhook.Service
-	activity             *service.ActivityTracker
-	startedAt            time.Time
-	svcCache             sync.Map
-	chainRecallStopScore float64
-	disableSessionSave   bool
+	tenant                *service.TenantService
+	chains                *service.SpaceChainService
+	uploadTasks           repository.UploadTaskRepo
+	uploadDir             string
+	embedder              *embed.Embedder
+	llmClient             *llm.Client
+	autoModel             string
+	ftsEnabled            bool
+	ingestMode            service.IngestMode
+	dbBackend             string
+	logger                *slog.Logger
+	metering              metering.Writer
+	runtimeUsage          runtimeusage.Manager
+	webhooks              *webhook.Service
+	activity              *service.ActivityTracker
+	startedAt             time.Time
+	svcCache              sync.Map
+	chainRecallStopScore  float64
+	disableSessionSave    bool
+	recallRequestTimeout  time.Duration
+	recallResponseReserve time.Duration
 }
 
 // NewServer creates a new HTTP handler server.
@@ -65,18 +67,20 @@ func NewServer(
 	logger *slog.Logger,
 ) *Server {
 	return &Server{
-		tenant:               tenantSvc,
-		uploadTasks:          uploadTasks,
-		uploadDir:            uploadDir,
-		embedder:             embedder,
-		llmClient:            llmClient,
-		autoModel:            autoModel,
-		ftsEnabled:           ftsEnabled,
-		ingestMode:           ingestMode,
-		dbBackend:            dbBackend,
-		logger:               logger,
-		startedAt:            time.Now().UTC(),
-		chainRecallStopScore: 0.8,
+		tenant:                tenantSvc,
+		uploadTasks:           uploadTasks,
+		uploadDir:             uploadDir,
+		embedder:              embedder,
+		llmClient:             llmClient,
+		autoModel:             autoModel,
+		ftsEnabled:            ftsEnabled,
+		ingestMode:            ingestMode,
+		dbBackend:             dbBackend,
+		logger:                logger,
+		startedAt:             time.Now().UTC(),
+		chainRecallStopScore:  0.8,
+		recallRequestTimeout:  defaultRecallRequestTimeout,
+		recallResponseReserve: defaultRecallResponseReserve,
 	}
 }
 
@@ -110,6 +114,12 @@ func (s *Server) WithActivityTracker(tracker *service.ActivityTracker) *Server {
 
 func (s *Server) WithDisableSessionSave(disabled bool) *Server {
 	s.disableSessionSave = disabled
+	return s
+}
+
+func (s *Server) WithRecallRequestBudget(timeout, responseReserve time.Duration) *Server {
+	s.recallRequestTimeout = timeout
+	s.recallResponseReserve = responseReserve
 	return s
 }
 
@@ -195,9 +205,10 @@ func (s *Server) Router(
 	// Global middleware.
 	r.Use(reqid.Middleware)
 	r.Use(requestLogger(s.logger))
+	r.Use(metrics.Middleware)
+	r.Use(s.recallRequestBudgetMiddleware)
 	r.Use(chimw.Recoverer)
 	r.Use(corsMW)
-	r.Use(metrics.Middleware)
 	r.Use(rateLimitMW)
 
 	// Health check.
@@ -297,46 +308,77 @@ func (s *Server) Router(
 }
 
 // respond writes a JSON response.
-func respond(w http.ResponseWriter, status int, data any) {
+func respond(w http.ResponseWriter, status int, data any) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if data != nil {
 		if err := json.NewEncoder(w).Encode(data); err != nil {
-			slog.Error("failed to encode response", "err", err)
+			slog.Warn("failed to encode response", "err", err)
+			return err
 		}
 	}
+	return nil
 }
 
 // respondError writes a JSON error response.
-func respondError(w http.ResponseWriter, status int, msg string) {
-	respond(w, status, map[string]string{"error": msg})
+func respondError(w http.ResponseWriter, status int, msg string) error {
+	return respond(w, status, map[string]string{"error": msg})
 }
 
 // handleError maps domain errors to HTTP status codes.
-func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err error) {
+func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err error) error {
 	var budgetErr *memoryListBudgetExceededError
 	switch {
+	case isRecallServerDeadline(err):
+		attrs := []any{
+			"error_role", "final",
+			"error_class", "server_deadline_exceeded",
+			"error_source", "server_budget",
+			"retryable", true,
+			"http_status", http.StatusGatewayTimeout,
+			"err", err,
+		}
+		if auth := middleware.AuthFromContext(ctx); auth != nil && auth.ClusterID != "" {
+			attrs = append(attrs, "cluster_id", auth.ClusterID)
+		}
+		s.logger.ErrorContext(ctx, "request deadline exceeded", attrs...)
+		return respond(w, http.StatusGatewayTimeout, map[string]string{
+			"error": "recall request deadline exceeded",
+			"code":  recallServerDeadlineCode,
+		})
 	case errors.As(err, &budgetErr):
-		respond(w, http.StatusUnprocessableEntity, map[string]string{
+		return respond(w, http.StatusUnprocessableEntity, map[string]string{
 			"error": memoryListBudgetErrorMessage,
 			"code":  memoryListBudgetErrorCode,
 		})
 	case errors.Is(err, domain.ErrNotFound):
-		respondError(w, http.StatusNotFound, err.Error())
+		return respondError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, domain.ErrWriteConflict):
-		respondError(w, http.StatusServiceUnavailable, err.Error())
+		return respondError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, domain.ErrConflict):
-		respondError(w, http.StatusConflict, err.Error())
+		return respondError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, domain.ErrDuplicateKey):
-		respondError(w, http.StatusConflict, "duplicate key: "+err.Error())
+		return respondError(w, http.StatusConflict, "duplicate key: "+err.Error())
 	case errors.Is(err, domain.ErrValidation):
-		respondError(w, http.StatusBadRequest, err.Error())
+		return respondError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrNotSupported):
-		respondError(w, http.StatusNotImplemented, err.Error())
+		return respondError(w, http.StatusNotImplemented, err.Error())
 	case errors.Is(err, domain.ErrSchemaIncompatible):
-		respondError(w, http.StatusConflict, err.Error())
+		return respondError(w, http.StatusConflict, err.Error())
 	default:
 		classification := classifyInternalError(err)
+		status := http.StatusInternalServerError
+		responseMessage := "internal server error"
+		logMessage := "internal error"
+		logLevel := slog.LevelError
+		clientCanceled := isClientCanceledRequest(ctx, err)
+		if clientCanceled {
+			classification.class, classification.source, classification.retryable = clientCanceledClassification()
+			status = statusClientClosedRequest
+			responseMessage = "client closed request"
+			logMessage = "request canceled"
+			logLevel = slog.LevelInfo
+		}
 		attrs := []slog.Attr{
 			slog.String("error_role", "final"),
 			slog.String("error_class", classification.class),
@@ -350,11 +392,14 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 		if classification.upstreamStatus != 0 {
 			attrs = append(attrs, slog.Int("upstream_status", classification.upstreamStatus))
 		}
+		if clientCanceled {
+			attrs = append(attrs, slog.Int("http_status", statusClientClosedRequest))
+		}
 		if auth := middleware.AuthFromContext(ctx); auth != nil && auth.ClusterID != "" {
 			attrs = append(attrs, slog.String("cluster_id", auth.ClusterID))
 		}
-		s.logger.LogAttrs(ctx, slog.LevelError, "internal error", attrs...)
-		respondError(w, http.StatusInternalServerError, "internal server error")
+		s.logger.LogAttrs(ctx, logLevel, logMessage, attrs...)
+		return respondError(w, status, responseMessage)
 	}
 }
 
@@ -392,8 +437,12 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 					path = pattern
 				}
 			}
+			status := ww.Status()
+			if errors.Is(r.Context().Err(), context.Canceled) && errors.Is(context.Cause(r.Context()), context.Canceled) {
+				status = 499
+			}
 			level := slog.LevelInfo
-			if ww.Status() >= 500 {
+			if status >= 500 {
 				level = slog.LevelError
 			}
 			logger.Log(
@@ -402,7 +451,7 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				"handle request done",
 				"method", r.Method,
 				"path", path,
-				"status", ww.Status(),
+				"status", status,
 				"duration_ms", time.Since(start).Milliseconds(),
 			)
 		})

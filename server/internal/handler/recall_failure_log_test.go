@@ -78,13 +78,16 @@ func TestDefaultConfidenceRecallSearch_LogsPrimaryFailureAndSiblingCancellation(
 
 func TestDefaultConfidenceRecallSearch_LogsRequestCancellationOrigin(t *testing.T) {
 	tests := []struct {
-		name          string
-		newContext    func(context.Context) (context.Context, context.CancelFunc)
-		wantErr       error
-		wantClass     string
-		wantOrigin    string
-		wantOutcome   string
-		wantRetryable bool
+		name           string
+		newContext     func(context.Context) (context.Context, context.CancelFunc)
+		wantErr        error
+		wantClass      string
+		wantOrigin     string
+		wantOutcome    string
+		wantRetryable  bool
+		wantMessage    string
+		wantLevel      string
+		wantHTTPStatus float64
 	}{
 		{
 			name: "client cancellation",
@@ -93,10 +96,13 @@ func TestDefaultConfidenceRecallSearch_LogsRequestCancellationOrigin(t *testing.
 				cancel()
 				return ctx, cancel
 			},
-			wantErr:     context.Canceled,
-			wantClass:   "context_canceled",
-			wantOrigin:  "client",
-			wantOutcome: "canceled",
+			wantErr:        context.Canceled,
+			wantClass:      "client_canceled",
+			wantOrigin:     "client",
+			wantOutcome:    "canceled",
+			wantMessage:    "confidence recall search canceled",
+			wantLevel:      "INFO",
+			wantHTTPStatus: statusClientClosedRequest,
 		},
 		{
 			name: "request deadline",
@@ -108,6 +114,8 @@ func TestDefaultConfidenceRecallSearch_LogsRequestCancellationOrigin(t *testing.
 			wantOrigin:    "deadline",
 			wantOutcome:   "deadline_exceeded",
 			wantRetryable: true,
+			wantMessage:   "confidence recall search failed",
+			wantLevel:     "ERROR",
 		},
 	}
 
@@ -133,6 +141,8 @@ func TestDefaultConfidenceRecallSearch_LogsRequestCancellationOrigin(t *testing.
 			}
 
 			entry := decodeRecallFailureLog(t, logBuf)
+			assertRecallLogField(t, entry, "msg", tt.wantMessage)
+			assertRecallLogField(t, entry, "level", tt.wantLevel)
 			assertRecallLogField(t, entry, "request_id", "request-context")
 			assertRecallLogField(t, entry, "primary_branch", "request")
 			assertRecallLogField(t, entry, "primary_error_class", tt.wantClass)
@@ -142,6 +152,11 @@ func TestDefaultConfidenceRecallSearch_LogsRequestCancellationOrigin(t *testing.
 			assertRecallLogField(t, entry, "pinned_outcome", tt.wantOutcome)
 			assertRecallLogField(t, entry, "insight_outcome", tt.wantOutcome)
 			assertRecallLogField(t, entry, "session_outcome", tt.wantOutcome)
+			if tt.wantHTTPStatus != 0 {
+				assertRecallLogField(t, entry, "http_status", tt.wantHTTPStatus)
+			} else if got, ok := entry["http_status"]; ok {
+				t.Fatalf("http_status = %#v, want field omitted", got)
+			}
 			assertRecallLogStrings(t, entry, "canceled_branches", []string{"pinned", "insight", "session"})
 			assertRecallLogDurations(t, entry)
 		})

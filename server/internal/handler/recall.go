@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
 	"github.com/go-sql-driver/mysql"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/service"
@@ -187,46 +187,90 @@ func (s *Server) defaultConfidenceRecallSearch(
 		sessionResult     = recallBranchResult{name: string(service.RecallSourceSession)}
 	)
 
-	group, groupCtx := errgroup.WithContext(ctx)
-	group.Go(func() error {
+	groupCtx, cancelGroup := context.WithCancelCause(ctx)
+	defer cancelGroup(nil)
+	var group sync.WaitGroup
+	group.Add(3)
+	go func() {
+		defer group.Done()
+		branchCtx, cancelBranch := newRecallBranchContext(groupCtx)
+		defer cancelBranch()
 		branchStart := time.Now()
-		candidates, err := svc.memory.SearchCandidates(groupCtx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
+		candidates, err := svc.memory.SearchCandidates(branchCtx, pinnedFilter, service.RecallSourcePinned, recallCandidateOptions(profile.shape, false))
+		err = normalizeRecallBranchError(branchCtx, err)
 		pinnedResult.duration = time.Since(branchStart)
 		pinnedResult.err = err
 		if err != nil {
-			return err
+			if !recallBranchCanceled(err) {
+				cancelGroup(err)
+			}
+			return
 		}
 		pinnedCandidates = candidates
-		return nil
-	})
-	group.Go(func() error {
+	}()
+	go func() {
+		defer group.Done()
+		branchCtx, cancelBranch := newRecallBranchContext(groupCtx)
+		defer cancelBranch()
 		branchStart := time.Now()
-		candidates, err := svc.memory.SearchCandidates(groupCtx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
+		candidates, err := svc.memory.SearchCandidates(branchCtx, insightFilter, service.RecallSourceInsight, recallCandidateOptions(profile.shape, true))
+		err = normalizeRecallBranchError(branchCtx, err)
 		insightResult.duration = time.Since(branchStart)
 		insightResult.err = err
 		if err != nil {
-			return err
+			if !recallBranchCanceled(err) {
+				cancelGroup(err)
+			}
+			return
 		}
 		insightCandidates = candidates
-		return nil
-	})
-	group.Go(func() error {
+	}()
+	go func() {
+		defer group.Done()
+		branchCtx, cancelBranch := newRecallBranchContext(groupCtx)
+		defer cancelBranch()
 		branchStart := time.Now()
-		candidates, err := svc.session.SearchCandidates(groupCtx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
+		candidates, err := svc.session.SearchCandidates(branchCtx, sessionFilter, service.RecallSourceSession, recallCandidateOptions(profile.shape, false))
+		err = normalizeRecallBranchError(branchCtx, err)
 		sessionResult.duration = time.Since(branchStart)
 		sessionResult.err = err
 		if err != nil {
-			return err
+			if !recallBranchCanceled(err) {
+				cancelGroup(err)
+			}
+			return
 		}
 		sessionCandidates = candidates
-		return nil
-	})
-	if err := group.Wait(); err != nil {
-		s.logConfidenceRecallFailure(ctx, auth.ClusterID, start, err, [3]recallBranchResult{
-			pinnedResult,
-			insightResult,
-			sessionResult,
-		})
+	}()
+	group.Wait()
+	branches := [3]recallBranchResult{pinnedResult, insightResult, sessionResult}
+	var partialWarnings []recallWarning
+	if observation := memoryListObservationFromContext(ctx); observation != nil {
+		observation.recordRecallBranches(branches)
+	}
+
+	if primaryErr := recallGenuineFailure(branches); primaryErr != nil {
+		s.logConfidenceRecallFailure(ctx, auth.ClusterID, start, primaryErr, branches)
+		return nil, 0, primaryErr
+	} else if serverDeadlineErr := recallServerDeadlineFailure(ctx, branches); serverDeadlineErr != nil {
+		if cancellationErr := recallNonServerCancellationFailure(branches); cancellationErr != nil {
+			s.logConfidenceRecallFailure(ctx, auth.ClusterID, start, cancellationErr, branches)
+			return nil, 0, cancellationErr
+		}
+		partialWarnings = recallDeadlineWarnings(branches)
+		if len(partialWarnings) > 0 && recallHasSuccessfulBranch(branches) {
+			if observation := memoryListObservationFromContext(ctx); observation != nil {
+				observation.recordRecallPartial(partialWarnings)
+			}
+		} else {
+			s.logConfidenceRecallFailure(ctx, auth.ClusterID, start, serverDeadlineErr, branches)
+			return nil, 0, serverDeadlineErr
+		}
+	} else if ctx.Err() != nil {
+		s.logConfidenceRecallFailure(ctx, auth.ClusterID, start, ctx.Err(), branches)
+		return nil, 0, ctx.Err()
+	} else if err := recallCancellationFailure(branches); err != nil {
+		s.logConfidenceRecallFailure(ctx, auth.ClusterID, start, err, branches)
 		return nil, 0, err
 	}
 
@@ -240,7 +284,17 @@ func (s *Server) defaultConfidenceRecallSearch(
 	selectionDuration := time.Since(selectionStart)
 
 	memories := append(pinned, mixed...)
-	slog.InfoContext(ctx, "confidence recall search",
+	logger := s.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	message := "confidence recall search"
+	level := slog.LevelInfo
+	if len(partialWarnings) > 0 {
+		message = "confidence recall search partial"
+		level = slog.LevelWarn
+	}
+	attrs := []any{
 		"cluster_id", auth.ClusterID,
 		"query_len", len(filter.Query),
 		"shape", recallQueryShapeLabel(profile.shape),
@@ -261,10 +315,82 @@ func (s *Server) defaultConfidenceRecallSearch(
 		"pinned_ms", pinnedResult.duration.Milliseconds(),
 		"insight_ms", insightResult.duration.Milliseconds(),
 		"session_ms", sessionResult.duration.Milliseconds(),
+		"pinned_outcome", recallBranchOutcome(pinnedResult.err),
+		"insight_outcome", recallBranchOutcome(insightResult.err),
+		"session_outcome", recallBranchOutcome(sessionResult.err),
+		"partial", len(partialWarnings) > 0,
 		"selection_ms", selectionDuration.Milliseconds(),
 		"total_ms", time.Since(start).Milliseconds(),
-	)
+	}
+	if budget, ok := recallBudgetFromContext(ctx); ok {
+		attrs = append(attrs,
+			"budget_ms", budget.total.Milliseconds(),
+			"response_reserve_ms", budget.responseReserve.Milliseconds(),
+		)
+	}
+	logger.Log(ctx, level, message, attrs...)
 	return memories, len(memories), nil
+}
+
+func recallServerDeadlineFailure(ctx context.Context, branches [3]recallBranchResult) error {
+	if err := recallServerDeadlineFromContext(ctx); err != nil {
+		return err
+	}
+	for _, branch := range branches {
+		if isRecallServerDeadline(branch.err) {
+			return branch.err
+		}
+	}
+	return nil
+}
+
+func recallGenuineFailure(branches [3]recallBranchResult) error {
+	for _, branch := range branches {
+		if branch.err != nil && !recallBranchCanceled(branch.err) {
+			return branch.err
+		}
+	}
+	return nil
+}
+
+func recallCancellationFailure(branches [3]recallBranchResult) error {
+	for _, branch := range branches {
+		if branch.err != nil {
+			return branch.err
+		}
+	}
+	return nil
+}
+
+func recallNonServerCancellationFailure(branches [3]recallBranchResult) error {
+	for _, branch := range branches {
+		if branch.err != nil && recallBranchCanceled(branch.err) && !isRecallServerDeadline(branch.err) {
+			return branch.err
+		}
+	}
+	return nil
+}
+
+func recallHasSuccessfulBranch(branches [3]recallBranchResult) bool {
+	for _, branch := range branches {
+		if branch.err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func recallDeadlineWarnings(branches [3]recallBranchResult) []recallWarning {
+	warnings := make([]recallWarning, 0, len(branches))
+	for _, branch := range branches {
+		if isRecallServerDeadline(branch.err) {
+			warnings = append(warnings, recallWarning{
+				Code:   recallBranchDeadlineCode,
+				Branch: branch.name,
+			})
+		}
+	}
+	return warnings
 }
 
 func (s *Server) logConfidenceRecallFailure(
@@ -280,6 +406,9 @@ func (s *Server) logConfidenceRecallFailure(
 	if ctxErr := ctx.Err(); ctxErr != nil && recallBranchCanceled(primaryErr) {
 		primaryBranch = "request"
 		primaryCause = ctxErr
+		if serverDeadlineErr := recallServerDeadlineFromContext(ctx); serverDeadlineErr != nil {
+			primaryCause = serverDeadlineErr
+		}
 		switch {
 		case errors.Is(ctxErr, context.DeadlineExceeded):
 			cancelOrigin = "deadline"
@@ -290,6 +419,15 @@ func (s *Server) logConfidenceRecallFailure(
 		cancelOrigin = "sibling_failure"
 	}
 	classification := classifyRecallError(primaryCause)
+	clientCanceled := cancelOrigin == "client" && isClientCanceledRequest(ctx, primaryCause)
+	if clientCanceled {
+		classification.class, classification.source, classification.retryable = clientCanceledClassification()
+	} else if isRecallServerDeadline(primaryCause) {
+		classification.class = "server_deadline_exceeded"
+		classification.source = "server_budget"
+		classification.retryable = true
+		cancelOrigin = "server_deadline"
+	}
 
 	logger := s.logger
 	if logger == nil {
@@ -304,6 +442,7 @@ func (s *Server) logConfidenceRecallFailure(
 		slog.Bool("primary_retryable", classification.retryable),
 		slog.Any("canceled_branches", recallCanceledBranches(primaryBranch, branches)),
 		slog.String("cancel_origin", cancelOrigin),
+		slog.String("cancel_cause", recallCancelCause(ctx, primaryCause, cancelOrigin)),
 		slog.String("pinned_outcome", recallBranchOutcome(branches[0].err)),
 		slog.Int64("pinned_ms", branches[0].duration.Milliseconds()),
 		slog.String("insight_outcome", recallBranchOutcome(branches[1].err)),
@@ -316,7 +455,46 @@ func (s *Server) logConfidenceRecallFailure(
 	if classification.upstreamStatus != 0 {
 		attrs = append(attrs, slog.Int("primary_upstream_status", classification.upstreamStatus))
 	}
-	logger.LogAttrs(ctx, slog.LevelError, "confidence recall search failed", attrs...)
+	if budget, ok := recallBudgetFromContext(ctx); ok {
+		attrs = append(attrs,
+			slog.Int64("budget_ms", budget.total.Milliseconds()),
+			slog.Int64("response_reserve_ms", budget.responseReserve.Milliseconds()),
+		)
+	}
+	message := "confidence recall search failed"
+	level := slog.LevelError
+	if clientCanceled {
+		attrs = append(attrs, slog.Int("http_status", statusClientClosedRequest))
+		message = "confidence recall search canceled"
+		level = slog.LevelInfo
+	} else if isRecallServerDeadline(primaryCause) {
+		attrs = append(attrs, slog.Int("http_status", http.StatusGatewayTimeout))
+		message = "confidence recall search deadline exceeded"
+	}
+	logger.LogAttrs(ctx, level, message, attrs...)
+}
+
+func recallCancelCause(ctx context.Context, err error, origin string) string {
+	switch origin {
+	case "server_deadline":
+		return "server_budget_exhausted"
+	case "client":
+		return "client_disconnect"
+	case "deadline":
+		return "request_deadline"
+	case "sibling_failure":
+		return "branch_failure"
+	}
+	if isClientCanceledRequest(ctx, err) {
+		return "client_disconnect"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "downstream_deadline"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "downstream_cancellation"
+	}
+	return "none"
 }
 
 func recallPrimaryBranch(primaryErr error, branches [3]recallBranchResult) string {

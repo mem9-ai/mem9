@@ -166,6 +166,77 @@ func TestHandleError_LogsStructuredIncidentClassification(t *testing.T) {
 	}
 }
 
+func TestHandleError_MapsCanceledRequestTo499(t *testing.T) {
+	t.Parallel()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&logBuf, nil)))
+	srv := &Server{logger: logger}
+	recorder := httptest.NewRecorder()
+	err := fmt.Errorf("recall failed: %w", context.Canceled)
+	handler := requestLogger(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := middleware.WithAuthContext(
+			r.Context(),
+			&domain.AuthInfo{ClusterID: "cluster-canceled"},
+		)
+		srv.handleError(ctx, w, err)
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/memories", nil)
+	requestCtx, cancel := context.WithCancel(reqid.NewContext(request.Context(), "request-canceled"))
+	cancel()
+	request = request.WithContext(requestCtx)
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != statusClientClosedRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, statusClientClosedRequest)
+	}
+	if got := recorder.Body.String(); got != "{\"error\":\"client closed request\"}\n" {
+		t.Fatalf("body = %q, want client closed request response", got)
+	}
+
+	entries := decodeHandlerLogs(t, &logBuf)
+	entry := findHandlerLogEntry(t, entries, "request canceled")
+	assertHandlerLogField(t, entry, "level", "INFO")
+	assertHandlerLogField(t, entry, "request_id", "request-canceled")
+	assertHandlerLogField(t, entry, "cluster_id", "cluster-canceled")
+	assertHandlerLogField(t, entry, "error_role", "final")
+	assertHandlerLogField(t, entry, "error_class", "client_canceled")
+	assertHandlerLogField(t, entry, "error_source", "request_context")
+	assertHandlerLogField(t, entry, "retryable", false)
+	assertHandlerLogField(t, entry, "http_status", float64(statusClientClosedRequest))
+	assertHandlerLogField(t, entry, "err", err.Error())
+
+	requestEntry := findHandlerLogEntry(t, entries, "handle request done")
+	assertHandlerLogField(t, requestEntry, "level", "INFO")
+	assertHandlerLogField(t, requestEntry, "request_id", "request-canceled")
+	assertHandlerLogField(t, requestEntry, "status", float64(statusClientClosedRequest))
+}
+
+func TestHandleError_PreservesInternalErrorWhenOnlyRequestContextIsCanceled(t *testing.T) {
+	t.Parallel()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	srv := &Server{logger: logger}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	recorder := httptest.NewRecorder()
+	err := errors.New("database query failed")
+
+	srv.handleError(ctx, recorder, err)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+	entry := findHandlerLogEntry(t, decodeHandlerLogs(t, &logBuf), "internal error")
+	assertHandlerLogField(t, entry, "level", "ERROR")
+	assertHandlerLogField(t, entry, "error_class", "unknown")
+	if got, ok := entry["http_status"]; ok {
+		t.Fatalf("http_status = %#v, want field omitted", got)
+	}
+}
+
 func assertHandlerLogField(t *testing.T, entry map[string]any, key string, want any) {
 	t.Helper()
 	if got := entry[key]; got != want {
