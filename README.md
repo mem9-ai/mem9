@@ -256,6 +256,8 @@ The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations ar
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MNEMO_CHAIN_RECALL_STOP_SCORE` | No | `0.8` | Stop querying later Space Chain nodes only when an eligible query has a top normalized confidence at or above this threshold. Raw search `score` values do not trigger chain stop. Must be between `0` and `1` |
+| `MNEMO_RECALL_REQUEST_TIMEOUT` | No | `1m` | Total server-owned Recall request budget, including response assembly and write time |
+| `MNEMO_RECALL_RESPONSE_RESERVE` | No | `5s` | Time reserved inside the Recall request budget for response assembly and write; must be shorter than `MNEMO_RECALL_REQUEST_TIMEOUT` |
 
 #### Provisioning And Pooling
 

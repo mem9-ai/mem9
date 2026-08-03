@@ -38,6 +38,73 @@ func TestLoad_ChainRecallStopScoreDefaultsToHighConfidence(t *testing.T) {
 	}
 }
 
+func TestLoad_RecallRequestBudgetDefaults(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RecallRequestTimeout != time.Minute {
+		t.Fatalf("RecallRequestTimeout = %v, want 1m", cfg.RecallRequestTimeout)
+	}
+	if cfg.RecallResponseReserve != 5*time.Second {
+		t.Fatalf("RecallResponseReserve = %v, want 5s", cfg.RecallResponseReserve)
+	}
+}
+
+func TestLoad_RecallRequestBudgetOverrides(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_RECALL_REQUEST_TIMEOUT", "90s")
+	t.Setenv("MNEMO_RECALL_RESPONSE_RESERVE", "8s")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RecallRequestTimeout != 90*time.Second {
+		t.Fatalf("RecallRequestTimeout = %v, want 90s", cfg.RecallRequestTimeout)
+	}
+	if cfg.RecallResponseReserve != 8*time.Second {
+		t.Fatalf("RecallResponseReserve = %v, want 8s", cfg.RecallResponseReserve)
+	}
+}
+
+func TestLoad_RecallRequestBudgetValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		timeout    string
+		reserve    string
+		wantSubstr string
+	}{
+		{name: "timeout must be positive", timeout: "0", wantSubstr: "MNEMO_RECALL_REQUEST_TIMEOUT must be positive"},
+		{name: "reserve must not be negative", reserve: "-1s", wantSubstr: "MNEMO_RECALL_RESPONSE_RESERVE must not be negative"},
+		{name: "reserve must be less than timeout", timeout: "5s", reserve: "5s", wantSubstr: "MNEMO_RECALL_RESPONSE_RESERVE must be less than MNEMO_RECALL_REQUEST_TIMEOUT"},
+		{name: "timeout must be a duration", timeout: "5seconds", wantSubstr: "MNEMO_RECALL_REQUEST_TIMEOUT must be a valid duration"},
+		{name: "reserve must be a duration", reserve: "soon", wantSubstr: "MNEMO_RECALL_RESPONSE_RESERVE must be a valid duration"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MNEMO_DSN", "test-dsn")
+			if tt.timeout != "" {
+				t.Setenv("MNEMO_RECALL_REQUEST_TIMEOUT", tt.timeout)
+			}
+			if tt.reserve != "" {
+				t.Setenv("MNEMO_RECALL_RESPONSE_RESERVE", tt.reserve)
+			}
+
+			_, err := Load()
+			if err == nil {
+				t.Fatal("Load error = nil, want validation error")
+			}
+			if !strings.Contains(err.Error(), tt.wantSubstr) {
+				t.Fatalf("Load error = %v, want %q", err, tt.wantSubstr)
+			}
+		})
+	}
+}
+
 func TestLoad_DisableSessionSave(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_DISABLE_SESSION_SAVE", "true")

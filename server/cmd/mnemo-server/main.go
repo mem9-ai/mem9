@@ -285,7 +285,8 @@ func main() {
 		WithRuntimeUsage(runtimeUsageManager).
 		WithWebhookService(webhookSvc).
 		WithActivityTracker(activityTracker).
-		WithDisableSessionSave(cfg.DisableSessionSave)
+		WithDisableSessionSave(cfg.DisableSessionSave).
+		WithRecallRequestBudget(cfg.RecallRequestTimeout, cfg.RecallResponseReserve)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW, middleware.CORS(cfg.CORSAllowedOrigins))
 
 	httpSrv := &http.Server{

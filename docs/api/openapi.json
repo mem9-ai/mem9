@@ -349,6 +349,9 @@
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/RecallGatewayTimeout"
           }
         }
       }
@@ -818,6 +821,9 @@
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/RecallGatewayTimeout"
           }
         }
       }
@@ -2550,6 +2556,16 @@
           }
         }
       },
+      "RecallGatewayTimeout": {
+        "description": "Recall exhausted its server-owned request budget before the outer HTTP timeout.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RecallDeadlineError"
+            }
+          }
+        }
+      },
       "NoContent": {
         "description": "No content."
       },
@@ -3033,6 +3049,50 @@
           }
         }
       },
+      "RecallWarning": {
+        "type": "object",
+        "required": [
+          "code",
+          "branch"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "recall_branch_deadline_exceeded"
+            ]
+          },
+          "branch": {
+            "type": "string",
+            "enum": [
+              "pinned",
+              "insight",
+              "session"
+            ]
+          }
+        }
+      },
+      "RecallDeadlineError": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "recall_server_deadline_exceeded"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "LocalRateLimitError": {
         "allOf": [
           {
@@ -3245,6 +3305,16 @@
           "offset": {
             "type": "integer",
             "minimum": 0
+          },
+          "partial": {
+            "type": "boolean",
+            "description": "True when Recall preserved completed branches after another branch exhausted the server work budget."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecallWarning"
+            }
           },
           "message": {
             "type": "string",

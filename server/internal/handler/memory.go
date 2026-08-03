@@ -716,6 +716,8 @@ type listResponse struct {
 	Total        int                        `json:"total"`
 	Limit        int                        `json:"limit"`
 	Offset       int                        `json:"offset"`
+	Partial      bool                       `json:"partial,omitempty"`
+	Warnings     []recallWarning            `json:"warnings,omitempty"`
 	Message      string                     `json:"message,omitempty"`
 	RuntimeState *runtimeusage.RuntimeState `json:"runtimeState,omitempty"`
 }
@@ -817,33 +819,36 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	)
 	listObservation := newMemoryListObservation(s.logger, auth, filter, contentKeywordSearch)
 	listObservation.startedAt = requestStartedAt
-	listCtx := withMemoryListObservation(r.Context(), listObservation)
+	requestCtx := r.Context()
+	listCtx := withMemoryListObservation(requestCtx, listObservation)
+	cancelRecallBudget := func() {}
 	defer func() {
-		listObservation.finish(r.Context(), err, len(memories), total)
+		listObservation.finish(requestCtx, err, len(memories), total)
+		cancelRecallBudget()
 	}()
 
 	appIDFilter, err := parseAppIDFilter(q)
 	if err != nil {
-		s.handleError(r.Context(), w, err)
+		listObservation.recordResponseWrite(s.handleError(r.Context(), w, err))
 		return
 	}
 	filter.AppID = appIDFilter
 
 	createdAfter, err := parseTimeParam(q.Get("created_after"), "created_after")
 	if err != nil {
-		s.handleError(r.Context(), w, err)
+		listObservation.recordResponseWrite(s.handleError(r.Context(), w, err))
 		return
 	}
 	createdBefore, err := parseTimeParam(q.Get("created_before"), "created_before")
 	if err != nil {
-		s.handleError(r.Context(), w, err)
+		listObservation.recordResponseWrite(s.handleError(r.Context(), w, err))
 		return
 	}
 	if createdAfter != nil && createdBefore != nil && createdAfter.After(*createdBefore) {
 		err = &domain.ValidationError{
 			Field: "created_after", Message: "must not be after created_before",
 		}
-		s.handleError(r.Context(), w, err)
+		listObservation.recordResponseWrite(s.handleError(r.Context(), w, err))
 		return
 	}
 	// The created_at window is consumed only by the session pool. Reject
@@ -854,7 +859,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		err = &domain.ValidationError{
 			Field: "created_after", Message: "time-range filter requires memory_type=session",
 		}
-		s.handleError(r.Context(), w, err)
+		listObservation.recordResponseWrite(s.handleError(r.Context(), w, err))
 		return
 	}
 	filter.CreatedAfter = createdAfter
@@ -863,24 +868,53 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	var recallLease *runtimeusage.OperationLease
 	recallFinalized := false
 	recallSearch := filter.Query != "" && !contentKeywordSearch
+	if recallSearch {
+		if budget, ok := recallBudgetFromContext(r.Context()); ok {
+			budget.handlerReached.Store(true)
+			listObservation.startedAt = budget.startedAt
+			requestCtx, cancelRecallBudget = newRecallHandlerContext(r.Context(), budget)
+			listCtx = r.Context()
+			listObservation.configureRecallBudget(budget.total, budget.responseReserve)
+		} else {
+			requestCtx, listCtx, cancelRecallBudget = newRecallRequestBudget(r.Context(), s.recallRequestTimeout, s.recallResponseReserve)
+			listObservation.configureRecallBudget(s.recallRequestTimeout, s.recallResponseReserve)
+		}
+		listCtx = withMemoryListObservation(listCtx, listObservation)
+	}
+	responseCtx := withMemoryListObservation(requestCtx, listObservation)
+	cancelResponse := func() {}
+	clearWriteDeadline := func() {}
+	if recallSearch {
+		var responseBaseCtx context.Context
+		responseBaseCtx, cancelResponse = newRecallResponseContext(requestCtx)
+		responseCtx = withMemoryListObservation(responseBaseCtx, listObservation)
+		clearWriteDeadline = setRecallResponseWriteDeadline(w, requestCtx)
+	}
+	defer cancelResponse()
+	defer clearWriteDeadline()
 	var recallMetric *memoryRecallMetric
 	if recallSearch {
 		metric := newMemoryRecallMetric(auth, filter)
 		recallMetric = &metric
 		defer func() {
-			recallMetric.observe(r.Context(), err)
+			recallMetric.observe(requestCtx, err)
 		}()
 	}
 
 	if s.runtimeUsageEnabled() && recallSearch {
-		recallLease, err = s.runtimeUsage.BeforeRecall(r.Context(), subjectFromAuth(auth))
+		recallLease, err = s.runtimeUsage.BeforeRecall(listCtx, subjectFromAuth(auth))
 		if err != nil {
-			s.handleRuntimeUsageError(r.Context(), w, err, runtimeUsageReserveErrorDetails(auth, runtimeusage.MeterMemoryRecallRequests))
+			if deadlineErr := recallServerDeadlineFromContext(listCtx); deadlineErr != nil && recallBranchCanceled(err) {
+				err = deadlineErr
+				listObservation.recordResponseWrite(s.handleError(responseCtx, w, err))
+			} else {
+				listObservation.recordResponseWrite(s.handleRuntimeUsageError(responseCtx, w, err, runtimeUsageReserveErrorDetails(auth, runtimeusage.MeterMemoryRecallRequests)))
+			}
 			return
 		}
 		defer func() {
 			if !recallFinalized {
-				s.afterRuntimeUsageRecallFailure(r.Context(), recallLease, context.Canceled)
+				s.afterRuntimeUsageRecallFailure(responseCtx, recallLease, context.Canceled)
 			}
 		}()
 	}
@@ -914,16 +948,21 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	listObservation.queryDuration = time.Since(queryStartedAt)
+	if err != nil && recallSearch {
+		if serverDeadlineErr := recallServerDeadlineFromContext(listCtx); serverDeadlineErr != nil && recallBranchCanceled(err) {
+			err = serverDeadlineErr
+		}
+	}
 	if err == nil {
 		listObservation.recordDirectList(auth, filter, contentKeywordSearch, len(memories))
 	}
 
 	if err != nil {
 		if s.runtimeUsageEnabled() && recallLease != nil {
-			s.afterRuntimeUsageRecallFailure(r.Context(), recallLease, err)
+			s.afterRuntimeUsageRecallFailure(responseCtx, recallLease, err)
 			recallFinalized = true
 		}
-		s.handleError(r.Context(), w, err)
+		listObservation.recordResponseWrite(s.handleError(responseCtx, w, err))
 		return
 	}
 
@@ -936,7 +975,7 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	// untouched, so memory/fact recall is unaffected.
 	if !auth.IsChain() {
 		overlayStartedAt := time.Now()
-		memories = s.resolveServices(auth).session.ApplySessionOverlay(listCtx, memories)
+		memories = s.resolveServices(auth).session.ApplySessionOverlay(responseCtx, memories)
 		listObservation.overlayDuration = time.Since(overlayStartedAt)
 	}
 	if !contentKeywordSearch && rawQuery != "" && classifyRecallQueryShape(rawQuery) == recallQueryShapeTime {
@@ -946,34 +985,61 @@ func (s *Server) listMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	if recallSearch {
 		if s.runtimeUsageEnabled() && recallLease != nil {
-			if finalizeErr := withRuntimeUsagePostSuccessContext(r.Context(), func(ctx context.Context) error {
-				return s.runtimeUsage.AfterRecallSuccess(ctx, recallLease, runtimeusage.RecallResult{
-					MemoryIDs: memoryIDs(memories),
-					AgentName: auth.AgentName,
-				})
-			}); finalizeErr != nil {
-				recallFinalized = true
+			finalizeErr := s.finalizeRuntimeUsageRecallSuccess(responseCtx, recallLease, runtimeusage.RecallResult{
+				MemoryIDs: memoryIDs(memories),
+				AgentName: auth.AgentName,
+			})
+			recallFinalized = true
+			if finalizeErr != nil {
 				err = finalizeErr
-				s.handleRuntimeUsageError(r.Context(), w, finalizeErr, runtimeUsageFinalizeErrorDetails(recallLease))
+				if isRecallServerDeadline(finalizeErr) {
+					listObservation.recordResponseWrite(s.handleError(responseCtx, w, finalizeErr))
+				} else {
+					listObservation.recordResponseWrite(s.handleRuntimeUsageError(responseCtx, w, finalizeErr, runtimeUsageFinalizeErrorDetails(recallLease)))
+				}
 				return
 			}
-			recallFinalized = true
 		}
 		s.recordRecallMetering(auth)
+	}
+	if recallSearch && responseCtx.Err() != nil {
+		if serverDeadlineErr := recallServerDeadlineFromContext(responseCtx); serverDeadlineErr != nil {
+			err = serverDeadlineErr
+		} else {
+			err = responseCtx.Err()
+		}
+		listObservation.recordResponseWrite(s.handleError(responseCtx, w, err))
+		return
 	}
 
 	notice := runtimeResponseNotice{}
 	if recallSearch {
-		notice = s.runtimeResponseNotice(r.Context(), auth)
+		notice = s.runtimeResponseNotice(responseCtx, auth)
+		if responseCtx.Err() != nil {
+			if serverDeadlineErr := recallServerDeadlineFromContext(responseCtx); serverDeadlineErr != nil {
+				err = serverDeadlineErr
+			} else {
+				err = responseCtx.Err()
+			}
+			listObservation.recordResponseWrite(s.handleError(responseCtx, w, err))
+			return
+		}
 	}
-	respond(w, http.StatusOK, listResponse{
+	partial, warnings := listObservation.recallResponseMetadata()
+	writeErr := respond(w, http.StatusOK, listResponse{
 		Memories:     memories,
 		Total:        total,
 		Limit:        limit,
 		Offset:       offset,
+		Partial:      partial,
+		Warnings:     warnings,
 		Message:      notice.Message,
 		RuntimeState: runtimeNoticeState(notice),
 	})
+	listObservation.recordResponseWrite(writeErr)
+	if writeErr != nil && responseCtx.Err() != nil {
+		err = responseCtx.Err()
+	}
 }
 
 func isContentKeywordSearch(q url.Values) bool {

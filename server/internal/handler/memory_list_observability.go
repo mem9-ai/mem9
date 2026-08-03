@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/metrics"
+	"github.com/qiffang/mnemos/server/internal/service"
 )
 
 const memoryListSlowRequestThreshold = 2 * time.Second
@@ -17,29 +20,40 @@ const memoryListSlowRequestThreshold = 2 * time.Second
 type memoryListObservationContextKey struct{}
 
 type memoryListObservation struct {
-	mu                   sync.Mutex
-	logger               *slog.Logger
-	clusterID            string
-	mode                 string
-	memoryType           string
-	scanAll              bool
-	limit                int
-	offset               int
-	startedAt            time.Time
-	queryDuration        time.Duration
-	overlayDuration      time.Duration
-	mergeDuration        time.Duration
-	memoryQueryDuration  time.Duration
-	sessionQueryDuration time.Duration
-	memoryPages          int
-	memoryRows           int
-	sessionPages         int
-	sessionRows          int
-	allTypePages         int
-	allTypeRows          int
-	chainPages           int
-	chainRows            int
-	chainQueryDuration   time.Duration
+	mu                    sync.Mutex
+	logger                *slog.Logger
+	clusterID             string
+	mode                  string
+	memoryType            string
+	scanAll               bool
+	limit                 int
+	offset                int
+	startedAt             time.Time
+	queryDuration         time.Duration
+	overlayDuration       time.Duration
+	mergeDuration         time.Duration
+	memoryQueryDuration   time.Duration
+	sessionQueryDuration  time.Duration
+	memoryPages           int
+	memoryRows            int
+	sessionPages          int
+	sessionRows           int
+	allTypePages          int
+	allTypeRows           int
+	chainPages            int
+	chainRows             int
+	chainQueryDuration    time.Duration
+	recallBudget          time.Duration
+	responseReserve       time.Duration
+	pinnedRecallDuration  time.Duration
+	insightRecallDuration time.Duration
+	sessionRecallDuration time.Duration
+	pinnedRecallOutcome   string
+	insightRecallOutcome  string
+	sessionRecallOutcome  string
+	recallPartial         bool
+	recallWarnings        []recallWarning
+	responseWriteOutcome  string
 }
 
 func newMemoryListObservation(
@@ -56,14 +70,15 @@ func newMemoryListObservation(
 		clusterID = auth.ClusterID
 	}
 	return &memoryListObservation{
-		logger:     logger,
-		clusterID:  clusterID,
-		mode:       memoryListMode(auth, filter, contentKeywordSearch),
-		memoryType: memoryListTypeLabel(filter.MemoryType),
-		scanAll:    filter.ScanAll,
-		limit:      filter.Limit,
-		offset:     filter.Offset,
-		startedAt:  time.Now(),
+		logger:               logger,
+		clusterID:            clusterID,
+		mode:                 memoryListMode(auth, filter, contentKeywordSearch),
+		memoryType:           memoryListTypeLabel(filter.MemoryType),
+		scanAll:              filter.ScanAll,
+		limit:                filter.Limit,
+		offset:               filter.Offset,
+		startedAt:            time.Now(),
+		responseWriteOutcome: "not_attempted",
 	}
 }
 
@@ -146,6 +161,71 @@ func (o *memoryListObservation) recordMerge(duration time.Duration) {
 	o.mergeDuration += duration
 }
 
+func (o *memoryListObservation) configureRecallBudget(total, responseReserve time.Duration) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.recallBudget = total
+	o.responseReserve = responseReserve
+}
+
+func (o *memoryListObservation) recordRecallBranches(branches [3]recallBranchResult) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for _, branch := range branches {
+		switch branch.name {
+		case string(service.RecallSourcePinned):
+			o.pinnedRecallDuration = branch.duration
+			o.pinnedRecallOutcome = recallBranchOutcome(branch.err)
+		case string(service.RecallSourceInsight):
+			o.insightRecallDuration = branch.duration
+			o.insightRecallOutcome = recallBranchOutcome(branch.err)
+		case string(service.RecallSourceSession):
+			o.sessionRecallDuration = branch.duration
+			o.sessionRecallOutcome = recallBranchOutcome(branch.err)
+		}
+	}
+}
+
+func (o *memoryListObservation) recordRecallPartial(warnings []recallWarning) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.recallPartial = true
+	for _, warning := range warnings {
+		seen := false
+		for _, existing := range o.recallWarnings {
+			if existing == warning {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			o.recallWarnings = append(o.recallWarnings, warning)
+		}
+	}
+}
+
+func (o *memoryListObservation) recallResponseMetadata() (bool, []recallWarning) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	warnings := append([]recallWarning(nil), o.recallWarnings...)
+	sort.Slice(warnings, func(i, j int) bool {
+		if warnings[i].Branch != warnings[j].Branch {
+			return warnings[i].Branch < warnings[j].Branch
+		}
+		return warnings[i].Code < warnings[j].Code
+	})
+	return o.recallPartial, warnings
+}
+
+func (o *memoryListObservation) recordResponseWrite(err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.responseWriteOutcome = "success"
+	if err != nil {
+		o.responseWriteOutcome = "failed"
+	}
+}
+
 func (o *memoryListObservation) recordDirectList(auth *domain.AuthInfo, filter domain.MemoryFilter, contentKeywordSearch bool, rows int) {
 	if auth != nil && auth.IsChain() {
 		return
@@ -173,10 +253,11 @@ func (o *memoryListObservation) recordDirectList(auth *domain.AuthInfo, filter d
 func (o *memoryListObservation) finish(ctx context.Context, err error, returned, total int) {
 	duration := time.Since(o.startedAt)
 	status := memoryListStatus(ctx, err)
+	clientCanceled := isClientCanceledRequest(ctx, err)
 	metrics.MemoryListRequestsTotal.WithLabelValues(o.mode, status).Inc()
 	metrics.MemoryListDuration.WithLabelValues(o.mode, status).Observe(duration.Seconds())
 
-	if status == "ok" && duration < memoryListSlowRequestThreshold {
+	if status == "ok" && duration < memoryListSlowRequestThreshold && o.recallBudget == 0 {
 		return
 	}
 
@@ -185,6 +266,14 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 	if pages == 0 && o.chainPages > 0 {
 		pages = o.chainPages
 		rows = o.chainRows
+	}
+	outcome := status
+	cancelOrigin := memoryListCancelOrigin(ctx, err)
+	cancelCause := memoryListCancelCause(ctx, err)
+	if o.recallPartial {
+		outcome = "partial"
+		cancelOrigin = "server_deadline"
+		cancelCause = "server_budget_exhausted"
 	}
 	attrs := []slog.Attr{
 		slog.String("cluster_id", o.clusterID),
@@ -212,8 +301,23 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		slog.Int64("merge_ms", o.mergeDuration.Milliseconds()),
 		slog.Int64("overlay_ms", o.overlayDuration.Milliseconds()),
 		slog.Int64("duration_ms", duration.Milliseconds()),
-		slog.String("outcome", status),
-		slog.String("cancel_origin", memoryListCancelOrigin(ctx, err)),
+		slog.String("outcome", outcome),
+		slog.String("cancel_origin", cancelOrigin),
+		slog.String("cancel_cause", cancelCause),
+	}
+	if o.recallBudget > 0 {
+		attrs = append(attrs,
+			slog.Int64("budget_ms", o.recallBudget.Milliseconds()),
+			slog.Int64("response_reserve_ms", o.responseReserve.Milliseconds()),
+			slog.String("pinned_outcome", o.pinnedRecallOutcome),
+			slog.Int64("pinned_ms", o.pinnedRecallDuration.Milliseconds()),
+			slog.String("insight_outcome", o.insightRecallOutcome),
+			slog.Int64("insight_ms", o.insightRecallDuration.Milliseconds()),
+			slog.String("session_outcome", o.sessionRecallOutcome),
+			slog.Int64("session_ms", o.sessionRecallDuration.Milliseconds()),
+			slog.Bool("partial", o.recallPartial),
+			slog.String("response_write_outcome", o.responseWriteOutcome),
+		)
 	}
 	var budgetErr *memoryListBudgetExceededError
 	if errors.As(err, &budgetErr) {
@@ -223,6 +327,21 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 			slog.String("error_class", "budget_exceeded"),
 			slog.String("error_source", "server_budget"),
 			slog.Bool("retryable", false),
+		)
+	} else if clientCanceled {
+		class, source, retryable := clientCanceledClassification()
+		attrs = append(attrs,
+			slog.String("error_class", class),
+			slog.String("error_source", source),
+			slog.Bool("retryable", retryable),
+			slog.Int("http_status", statusClientClosedRequest),
+		)
+	} else if isRecallServerDeadline(err) {
+		attrs = append(attrs,
+			slog.String("error_class", "server_deadline_exceeded"),
+			slog.String("error_source", "server_budget"),
+			slog.Bool("retryable", true),
+			slog.Int("http_status", http.StatusGatewayTimeout),
 		)
 	} else if status != "ok" {
 		cause := err
@@ -238,10 +357,17 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 	}
 
 	message := "memory list completed"
-	level := slog.LevelWarn
-	if status != "ok" {
+	level := slog.LevelInfo
+	if clientCanceled {
+		message = "memory list canceled"
+		level = slog.LevelInfo
+	} else if o.recallPartial {
+		level = slog.LevelWarn
+	} else if status != "ok" {
 		message = "memory list failed"
 		level = slog.LevelError
+	} else if duration >= memoryListSlowRequestThreshold {
+		level = slog.LevelWarn
 	}
 	o.logger.LogAttrs(ctx, level, message, attrs...)
 }
@@ -255,6 +381,9 @@ func memoryListStatus(ctx context.Context, err error) string {
 }
 
 func memoryListCancelOrigin(ctx context.Context, err error) string {
+	if isRecallServerDeadline(err) {
+		return "server_deadline"
+	}
 	if ctx != nil {
 		switch {
 		case errors.Is(ctx.Err(), context.DeadlineExceeded):
@@ -265,6 +394,25 @@ func memoryListCancelOrigin(ctx context.Context, err error) string {
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return "downstream"
+	}
+	return "none"
+}
+
+func memoryListCancelCause(ctx context.Context, err error) string {
+	if isRecallServerDeadline(err) {
+		return "server_budget_exhausted"
+	}
+	if isClientCanceledRequest(ctx, err) {
+		return "client_disconnect"
+	}
+	if ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return "request_deadline"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "downstream_deadline"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "downstream_cancellation"
 	}
 	return "none"
 }

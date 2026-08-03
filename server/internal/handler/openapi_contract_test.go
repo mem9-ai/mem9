@@ -88,6 +88,45 @@ func TestOpenAPIMemoryListBudgetResponse(t *testing.T) {
 	}
 }
 
+func TestOpenAPIRecallRequestBudgetContract(t *testing.T) {
+	openapi := loadOpenAPI(t)
+	for _, path := range []string{
+		"/v1alpha1/mem9s/{tenantID}/memories",
+		"/v1alpha2/mem9s/memories",
+	} {
+		responses := operationResponses(t, openapi, path, "get")
+		assertResponseRef(t, responses, "504", "#/components/responses/RecallGatewayTimeout")
+	}
+
+	components := objectValue(t, openapi, "components")
+	responses := objectValue(t, components, "responses")
+	schemas := objectValue(t, components, "schemas")
+	response := objectValue(t, responses, "RecallGatewayTimeout")
+	content := objectValue(t, response, "content")
+	jsonContent := objectValue(t, content, "application/json")
+	schema := objectValue(t, jsonContent, "schema")
+	if schema["$ref"] != "#/components/schemas/RecallDeadlineError" {
+		t.Fatalf("recall timeout schema = %#v", schema["$ref"])
+	}
+
+	deadlineError := objectValue(t, schemas, "RecallDeadlineError")
+	allOf := objectSlice(t, deadlineError["allOf"])
+	if !containsRef(allOf, "#/components/schemas/ErrorResponse") || !allOfRequiresProperty(allOf, "code") {
+		t.Fatalf("RecallDeadlineError contract = %#v", allOf)
+	}
+
+	list := objectValue(t, schemas, "MemoryListResponse")
+	properties := objectValue(t, list, "properties")
+	if _, ok := properties["partial"]; !ok {
+		t.Fatal("MemoryListResponse.partial missing")
+	}
+	warnings := objectValue(t, properties, "warnings")
+	items := objectValue(t, warnings, "items")
+	if items["$ref"] != "#/components/schemas/RecallWarning" {
+		t.Fatalf("MemoryListResponse.warnings items = %#v", items["$ref"])
+	}
+}
+
 func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	openapi := loadOpenAPI(t)
 	components := objectValue(t, openapi, "components")

@@ -448,6 +448,9 @@ type captureRuntimeUsageManager struct {
 	beforeRecallSubjects     []runtimeusage.Subject
 	recallResults            []runtimeusage.RecallResult
 	recallSuccessContextErrs []error
+	afterRecallSuccessHook   func(context.Context) error
+	afterRecallFailureHook   func(context.Context)
+	noticeStateHook          func(context.Context) error
 	beforeCreateSubjects     []runtimeusage.Subject
 	createResults            []runtimeusage.MemoryCreateResult
 	createSuccessContextErrs []error
@@ -472,11 +475,16 @@ func (m *captureRuntimeUsageManager) RuntimeState(_ context.Context, subject run
 	}
 	return runtimeusage.RuntimeUsageDisabledState(), nil
 }
-func (m *captureRuntimeUsageManager) RuntimeStateForNotice(_ context.Context, subject runtimeusage.Subject) (runtimeusage.RuntimeState, error) {
+func (m *captureRuntimeUsageManager) RuntimeStateForNotice(ctx context.Context, subject runtimeusage.Subject) (runtimeusage.RuntimeState, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.noticeStateCalls++
 	m.noticeStateSubjects = append(m.noticeStateSubjects, subject)
+	if m.noticeStateHook != nil {
+		if err := m.noticeStateHook(ctx); err != nil {
+			return runtimeusage.RuntimeState{}, err
+		}
+	}
 	if m.runtimeStateErr != nil {
 		return runtimeusage.RuntimeState{}, m.runtimeStateErr
 	}
@@ -494,9 +502,15 @@ func (m *captureRuntimeUsageManager) AfterRecallSuccess(ctx context.Context, _ *
 	m.afterRecallSuccessCalls++
 	m.recallResults = append(m.recallResults, result)
 	m.recallSuccessContextErrs = append(m.recallSuccessContextErrs, ctx.Err())
+	if m.afterRecallSuccessHook != nil {
+		return m.afterRecallSuccessHook(ctx)
+	}
 	return nil
 }
-func (m *captureRuntimeUsageManager) AfterRecallFailure(context.Context, *runtimeusage.OperationLease, error) {
+func (m *captureRuntimeUsageManager) AfterRecallFailure(ctx context.Context, _ *runtimeusage.OperationLease, _ error) {
+	if m.afterRecallFailureHook != nil {
+		m.afterRecallFailureHook(ctx)
+	}
 }
 func (m *captureRuntimeUsageManager) BeforeMemoryCreate(_ context.Context, subject runtimeusage.Subject, _ int64) (*runtimeusage.OperationLease, error) {
 	m.mu.Lock()
@@ -3361,9 +3375,10 @@ func TestBulkCreateMemories_ChainRuntimeUsageUsesResolvedNodeSubject(t *testing.
 	}
 }
 
-func TestListMemories_RuntimeUsageRecallFinalizationIgnoresRequestCancellation(t *testing.T) {
+func TestListMemories_RuntimeUsageRecallHandsOffFinalizationBeforeReturning499ForCanceledRequest(t *testing.T) {
 	now := time.Now()
 	var cancelRequest context.CancelFunc
+	finalized := make(chan struct{})
 	memRepo := &testMemoryRepo{
 		keywordSearchHook: func(_ context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
 			cancelRequest()
@@ -3372,7 +3387,13 @@ func TestListMemories_RuntimeUsageRecallFinalizationIgnoresRequestCancellation(t
 			}, nil
 		},
 	}
-	runtimeUsage := &captureRuntimeUsageManager{enabled: true}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled: true,
+		afterRecallSuccessHook: func(context.Context) error {
+			close(finalized)
+			return nil
+		},
+	}
 	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
 
 	req := makeTenantRequest(t, http.MethodGet, "/memories?q=what%20company%20does%20john%20like&memory_type=pinned&limit=10", nil)
@@ -3387,8 +3408,13 @@ func TestListMemories_RuntimeUsageRecallFinalizationIgnoresRequestCancellation(t
 	if ctx.Err() != context.Canceled {
 		t.Fatal("request context was not canceled during recall")
 	}
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	if rr.Code != statusClientClosedRequest {
+		t.Fatalf("status = %d, want 499: %s", rr.Code, rr.Body.String())
+	}
+	select {
+	case <-finalized:
+	case <-time.After(time.Second):
+		t.Fatal("Recall finalization was not handed off")
 	}
 	if runtimeUsage.afterRecallSuccessCalls != 1 {
 		t.Fatalf("AfterRecallSuccess calls = %d, want 1", runtimeUsage.afterRecallSuccessCalls)

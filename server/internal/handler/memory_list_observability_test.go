@@ -253,18 +253,22 @@ func TestListChainMemories_RecordsNodeWork(t *testing.T) {
 
 func TestListMemories_LogsFailureAndCancellationOrigin(t *testing.T) {
 	tests := []struct {
-		name       string
-		listErr    error
-		cancel     bool
-		deadline   bool
-		wantStatus string
-		wantOrigin string
+		name           string
+		listErr        error
+		cancel         bool
+		deadline       bool
+		wantStatus     string
+		wantOrigin     string
+		wantMessage    string
+		wantLevel      string
+		wantErrorClass string
+		wantHTTPStatus int
 	}{
-		{name: "dependency failure", listErr: errors.New("database unavailable"), wantStatus: "error", wantOrigin: "none"},
-		{name: "dependency cancellation", listErr: context.Canceled, wantStatus: "canceled", wantOrigin: "downstream"},
-		{name: "dependency timeout", listErr: context.DeadlineExceeded, wantStatus: "timeout", wantOrigin: "downstream"},
-		{name: "client cancellation", listErr: context.Canceled, cancel: true, wantStatus: "canceled", wantOrigin: "client"},
-		{name: "request deadline", listErr: context.DeadlineExceeded, deadline: true, wantStatus: "timeout", wantOrigin: "deadline"},
+		{name: "dependency failure", listErr: errors.New("database unavailable"), wantStatus: "error", wantOrigin: "none", wantMessage: "memory list failed", wantLevel: "ERROR", wantErrorClass: "unknown", wantHTTPStatus: http.StatusInternalServerError},
+		{name: "dependency cancellation", listErr: context.Canceled, wantStatus: "canceled", wantOrigin: "downstream", wantMessage: "memory list failed", wantLevel: "ERROR", wantErrorClass: "context_canceled", wantHTTPStatus: http.StatusInternalServerError},
+		{name: "dependency timeout", listErr: context.DeadlineExceeded, wantStatus: "timeout", wantOrigin: "downstream", wantMessage: "memory list failed", wantLevel: "ERROR", wantErrorClass: "context_deadline_exceeded", wantHTTPStatus: http.StatusInternalServerError},
+		{name: "client cancellation", listErr: context.Canceled, cancel: true, wantStatus: "canceled", wantOrigin: "client", wantMessage: "memory list canceled", wantLevel: "INFO", wantErrorClass: "client_canceled", wantHTTPStatus: statusClientClosedRequest},
+		{name: "request deadline", listErr: context.DeadlineExceeded, deadline: true, wantStatus: "timeout", wantOrigin: "deadline", wantMessage: "memory list failed", wantLevel: "ERROR", wantErrorClass: "context_deadline_exceeded", wantHTTPStatus: http.StatusInternalServerError},
 	}
 
 	for _, tt := range tests {
@@ -292,12 +296,17 @@ func TestListMemories_LogsFailureAndCancellationOrigin(t *testing.T) {
 
 			srv.listMemories(rr, req)
 
-			entry := findMemoryListLogEntry(t, &logBuf, "memory list failed")
+			if rr.Code != tt.wantHTTPStatus {
+				t.Fatalf("status = %d, want %d", rr.Code, tt.wantHTTPStatus)
+			}
+			entry := findMemoryListLogEntry(t, &logBuf, tt.wantMessage)
+			assertMemoryListLogField(t, entry, "level", tt.wantLevel)
 			assertMemoryListLogField(t, entry, "request_id", "request-list-failure")
 			assertMemoryListLogField(t, entry, "cluster_id", "cluster-list-failure")
 			assertMemoryListLogField(t, entry, "mode", "all_types_list")
 			assertMemoryListLogField(t, entry, "outcome", tt.wantStatus)
 			assertMemoryListLogField(t, entry, "cancel_origin", tt.wantOrigin)
+			assertMemoryListLogField(t, entry, "error_class", tt.wantErrorClass)
 		})
 	}
 }
