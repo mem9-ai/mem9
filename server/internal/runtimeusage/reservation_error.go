@@ -189,7 +189,7 @@ func (e *reservationStatusError) reservationFailureDetails() ReservationFailure 
 	return e.reservationFailureState.details()
 }
 
-// ReservationFailure describes the bounded provider-contract outcome exposed to handlers and metrics.
+// ReservationFailure describes the bounded provider-contract outcome exposed to handlers and structured logs.
 type ReservationFailure struct {
 	UpstreamStatus   int
 	Code             string

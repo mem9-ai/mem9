@@ -272,17 +272,6 @@ var (
 		[]string{"phase"},
 	)
 
-	// RuntimeUsageReservationFailuresTotal counts fail-closed Reservation
-	// responses using bounded provider-contract and public-mapping labels.
-	RuntimeUsageReservationFailuresTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: "mnemo",
-			Name:      "runtime_usage_reservation_failures_total",
-			Help:      "Fail-closed runtime usage Reservation failures by bounded contract outcome.",
-		},
-		[]string{"upstream_status", "error_code", "retry_decision", "attempt_count", "exhaustion_reason", "public_status"},
-	)
-
 	// RuntimeUsageMeteringDeliveryFailedTotal counts runtime usage service
 	// metering events that reached a terminal failed state.
 	RuntimeUsageMeteringDeliveryFailedTotal = promauto.NewCounterVec(

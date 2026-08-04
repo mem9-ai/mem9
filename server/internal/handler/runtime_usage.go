@@ -7,11 +7,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
-	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
 
@@ -197,7 +195,6 @@ func (s *Server) handleRuntimeUsageError(
 	details runtimeUsageErrorDetails,
 ) error {
 	s.logRuntimeUsageError(ctx, err, details, runtimeUsageRoleClientResponse)
-	recordRuntimeUsageReservationFailure(err)
 
 	var denied *runtimeusage.QuotaDeniedError
 	if errors.As(err, &denied) {
@@ -222,21 +219,6 @@ func (s *Server) handleRuntimeUsageError(
 		return respondError(w, status, "runtime usage conflict")
 	}
 	return respondError(w, status, "runtime usage unavailable")
-}
-
-func recordRuntimeUsageReservationFailure(err error) {
-	failure, ok := runtimeusage.ReservationFailureDetails(err)
-	if !ok {
-		return
-	}
-	metrics.RuntimeUsageReservationFailuresTotal.WithLabelValues(
-		strconv.Itoa(failure.UpstreamStatus),
-		failure.Code,
-		failure.RetryDecision,
-		strconv.Itoa(failure.AttemptCount),
-		failure.ExhaustionReason,
-		strconv.Itoa(runtimeusage.HTTPStatus(err)),
-	).Inc()
 }
 
 func (s *Server) logRuntimeUsageBackgroundFinalizeError(ctx context.Context, err error, details runtimeUsageErrorDetails) {

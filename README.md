@@ -310,7 +310,7 @@ Runtime usage is disabled by default. When enabled, the server reserves quota be
 
 The runtime usage outbox uses the control-plane `runtime_usage_outbox` table for pending reservation finalization and metering delivery. It is enabled by default when runtime usage is enabled.
 
-Reservation retries require one of these exact responses with `details.retryable: true`: `409 registry_conflict`, `409 operation_in_progress`, `429 reservation_concurrency_limited` with a positive decimal integer-seconds `Retry-After`, or `503 unavailable`. Other response shapes retain their existing status handling. Reservation calls make up to three total attempts. The first retry samples from the base delay through the midpoint, and the second samples from the midpoint through the maximum delay. Admission concurrency responses use the greater of the sampled delay and `Retry-After`.
+Reservation retries require one of these exact responses with `details.retryable: true`: `409 registry_conflict`; `429 operation_in_progress`, `429 registry_busy`, or `429 reservation_concurrency_limited` with a positive decimal integer-seconds `Retry-After`; or `503 unavailable`. Reservation calls make up to three total attempts. The first retry samples from the base delay through the midpoint, and the second samples from the midpoint through the maximum delay. Retryable 429 responses use the greater of the sampled delay and `Retry-After`. After fail-closed handling stops, recognized or unknown 429 responses remain 429, while exhausted 409/503 responses, terminal `409 operation_conflict`, and unknown 409 responses become 503.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
