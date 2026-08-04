@@ -36,6 +36,7 @@ var reservationContractCases = []reservationContractCase{
 }
 
 const postQuotaRateLimitBody = `{"code":"provider_post_quota_throttled","message":"Post-quota rate limit exceeded.","details":{"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`
+const overlappingReservationQuotaBody = `{"code":"registry_busy","message":"Post-quota rate limit exceeded.","details":{"retryable":true,"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`
 
 func oversizedResponseWithPrefix(prefix string) string {
 	return prefix + strings.Repeat(" ", maxResponseBodyBytes+1-len(prefix))
@@ -295,6 +296,12 @@ func TestHTTPClientReserveClassifiesQuotaStatuses(t *testing.T) {
 			name:       "post quota rate limit",
 			status:     http.StatusTooManyRequests,
 			body:       `{"code":"provider_post_quota_throttled","message":"Post-quota rate limit exceeded.","details":{"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`,
+			retryAfter: "20",
+		},
+		{
+			name:       "quota shape takes precedence over reservation code",
+			status:     http.StatusTooManyRequests,
+			body:       overlappingReservationQuotaBody,
 			retryAfter: "20",
 		},
 	}

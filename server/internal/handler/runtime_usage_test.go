@@ -8,10 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
@@ -256,6 +260,26 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			wantRetryable:  true,
 			wantStage:      runtimeUsageStageReserve,
 			wantClusterID:  "cluster-reserve",
+			wantMeter:      runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:    "Post-quota rate limit exceeded.",
+			wantRetryAfter: "20",
+		},
+		{
+			name: "quota shape takes precedence over reservation code",
+			err: newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusTooManyRequests,
+				`{"code":"registry_busy","message":"Post-quota rate limit exceeded.","details":{"retryable":true,"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`,
+				"20",
+			),
+			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
+				ClusterID: "cluster-overlapping-quota",
+			}, runtimeusage.MeterMemoryRecallRequests),
+			wantStatus:     http.StatusTooManyRequests,
+			wantClass:      "quota_denied",
+			wantRetryable:  true,
+			wantStage:      runtimeUsageStageReserve,
+			wantClusterID:  "cluster-overlapping-quota",
 			wantMeter:      runtimeusage.MeterMemoryRecallRequests,
 			wantMessage:    "Post-quota rate limit exceeded.",
 			wantRetryAfter: "20",
@@ -518,6 +542,64 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 	}
 }
 
+func TestRuntimeUsageFailuresRecordFinalHTTPStatusMetrics(t *testing.T) {
+	tests := []struct {
+		name           string
+		route          string
+		err            error
+		wantStatus     int
+		wantRetryAfter string
+	}{
+		{
+			name:  "rate limited",
+			route: "/test/runtime-usage/rate-limited",
+			err: newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusTooManyRequests,
+				`{"code":"registry_busy","details":{"retryable":true}}`,
+				"1",
+			),
+			wantStatus:     http.StatusTooManyRequests,
+			wantRetryAfter: "1",
+		},
+		{
+			name:  "unavailable",
+			route: "/test/runtime-usage/unavailable",
+			err: newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusConflict,
+				`{"code":"operation_conflict","details":{"retryable":false}}`,
+			),
+			wantStatus: http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := runtimeUsageHTTPMetricValue(t, tt.route, tt.wantStatus)
+			server := &Server{logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))}
+			router := chi.NewRouter()
+			router.Use(metrics.Middleware)
+			router.Get(tt.route, func(w http.ResponseWriter, r *http.Request) {
+				_ = server.handleRuntimeUsageError(r.Context(), w, tt.err, runtimeUsageErrorDetails{stage: runtimeUsageStageReserve})
+			})
+
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, tt.route, nil))
+
+			if recorder.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
+			}
+			if got := recorder.Header().Get("Retry-After"); got != tt.wantRetryAfter {
+				t.Fatalf("Retry-After = %q, want %q", got, tt.wantRetryAfter)
+			}
+			if after := runtimeUsageHTTPMetricValue(t, tt.route, tt.wantStatus); after != before+1 {
+				t.Fatalf("HTTP request metric = %v, want %v", after, before+1)
+			}
+		})
+	}
+}
+
 func newRuntimeUsageReservationResponseError(t *testing.T, status int, body string, retryAfter ...string) error {
 	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -674,6 +756,23 @@ func assertRuntimeUsageLogField(t *testing.T, entry map[string]any, field string
 	if got := entry[field]; got != want {
 		t.Fatalf("%s = %v, want %v; log = %#v", field, got, want, entry)
 	}
+}
+
+func runtimeUsageHTTPMetricValue(t *testing.T, route string, status int) float64 {
+	t.Helper()
+	counter, err := metrics.HTTPRequestsTotal.GetMetricWithLabelValues(http.MethodGet, route, strconv.Itoa(status))
+	if err != nil {
+		t.Fatalf("get HTTP request metric: %v", err)
+	}
+	metric, ok := counter.(interface{ Write(*dto.Metric) error })
+	if !ok {
+		t.Fatal("HTTP request metric does not implement Write")
+	}
+	var pb dto.Metric
+	if err := metric.Write(&pb); err != nil {
+		t.Fatalf("write HTTP request metric: %v", err)
+	}
+	return pb.GetCounter().GetValue()
 }
 
 func decodeRuntimeQuotaErrorBody(t *testing.T, body []byte) map[string]any {

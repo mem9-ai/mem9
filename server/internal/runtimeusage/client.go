@@ -118,15 +118,15 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		return &UnavailableError{Err: err}
 	}
 
-	if classifyQuotaStatuses {
-		if reservationErr := classifyReservationError(resp.StatusCode, respBody, resp.Header.Get("Retry-After")); reservationErr != nil {
-			return reservationErr
-		}
-	}
+	// Quota detail shape is a fail-closed product denial even when a provider
+	// also supplies a code that overlaps the Reservation retry contract.
 	if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
 		return newQuotaDeniedError(resp, respBody)
 	}
 	if classifyQuotaStatuses {
+		if reservationErr := classifyReservationError(resp.StatusCode, respBody, resp.Header.Get("Retry-After")); reservationErr != nil {
+			return reservationErr
+		}
 		if reservationErr := newUnknownReservationResponseError(resp); reservationErr != nil {
 			return reservationErr
 		}

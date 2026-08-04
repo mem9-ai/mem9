@@ -1606,6 +1606,36 @@ func TestManagerOversizedPostQuotaDenialPreservesFailOpenFence(t *testing.T) {
 	}
 }
 
+func TestManagerQuotaShapeTakesPrecedenceOverReservationCode(t *testing.T) {
+	attempts := 0
+	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts++
+		return statusJSONResponse(
+			http.StatusTooManyRequests,
+			overlappingReservationQuotaBody,
+			http.Header{"Retry-After": []string{"20"}},
+		), nil
+	})}
+	runtimeManager := NewManager(Config{Enabled: true, FailOpen: true}, client, &captureWriter{}, nil)
+	runtimeManager.(*manager).wait = func(context.Context, time.Duration) error {
+		t.Fatal("quota denial entered retry delay")
+		return nil
+	}
+
+	lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+	var denied *QuotaDeniedError
+	if !errors.As(err, &denied) || denied.Status() != http.StatusTooManyRequests {
+		t.Fatalf("BeforeRecall error = %T, want post-quota denial", err)
+	}
+	if lease != nil {
+		t.Fatal("fail-open quota denial returned a lease")
+	}
+	if attempts != 1 {
+		t.Fatalf("Reservation attempts = %d, want 1", attempts)
+	}
+}
+
 func TestManagerOversizedConflictPreservesFailOpenFence(t *testing.T) {
 	attempts := 0
 	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
