@@ -209,6 +209,12 @@ func (s *Server) handleRuntimeUsageError(
 		return writeErr
 	}
 	status := runtimeusage.HTTPStatus(err)
+	if reservationFailure, ok := runtimeusage.ReservationFailureDetails(err); ok && status == http.StatusTooManyRequests {
+		if reservationFailure.RetryAfter != "" {
+			w.Header().Set("Retry-After", reservationFailure.RetryAfter)
+		}
+		return respondError(w, status, "runtime usage rate limited")
+	}
 	if status == http.StatusBadGateway {
 		return respondError(w, status, "runtime usage conflict")
 	}
@@ -245,6 +251,17 @@ func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details ru
 	if details.operationID != "" {
 		attrs = append(attrs, "operation_id", details.operationID)
 	}
+	if reservationFailure, ok := runtimeusage.ReservationFailureDetails(err); ok {
+		attrs = append(attrs,
+			"upstream_status", reservationFailure.UpstreamStatus,
+			"error_code", reservationFailure.Code,
+			"attempt_count", reservationFailure.AttemptCount,
+			"retry_decision", reservationFailure.RetryDecision,
+		)
+		if reservationFailure.ExhaustionReason != "" {
+			attrs = append(attrs, "exhaustion_reason", reservationFailure.ExhaustionReason)
+		}
+	}
 
 	logger := s.logger
 	if logger == nil {
@@ -263,15 +280,15 @@ func classifyRuntimeUsageError(err error) (string, int, bool) {
 	if errors.As(err, &denied) {
 		return "quota_denied", status, status == http.StatusTooManyRequests
 	}
-	var reservationFailure interface {
-		ReservationRetryable() bool
-	}
-	if errors.As(err, &reservationFailure) {
-		var conflict *runtimeusage.ConflictError
-		if errors.As(err, &conflict) {
-			return "conflict", status, false
+	if reservationFailure, ok := runtimeusage.ReservationFailureDetails(err); ok {
+		switch reservationFailure.UpstreamStatus {
+		case http.StatusTooManyRequests:
+			return "rate_limited", status, reservationFailure.Retryable
+		case http.StatusConflict:
+			return "conflict", status, reservationFailure.Retryable
+		default:
+			return "unavailable", status, reservationFailure.Retryable
 		}
-		return "unavailable", status, reservationFailure.ReservationRetryable()
 	}
 	var conflict *runtimeusage.ConflictError
 	if errors.As(err, &conflict) {

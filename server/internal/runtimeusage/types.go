@@ -426,6 +426,12 @@ func HTTPStatus(err error) int {
 	if errors.As(err, &denied) {
 		return denied.Status()
 	}
+	var reservationFailure interface {
+		publicHTTPStatus() int
+	}
+	if errors.As(err, &reservationFailure) {
+		return reservationFailure.publicHTTPStatus()
+	}
 	var conflict *ConflictError
 	if errors.As(err, &conflict) {
 		return http.StatusBadGateway

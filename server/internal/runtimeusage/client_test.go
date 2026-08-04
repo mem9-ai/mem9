@@ -28,13 +28,15 @@ type reservationContractCase struct {
 
 var reservationContractCases = []reservationContractCase{
 	{name: "registry conflict", code: reservationErrorCodeRegistryConflict, status: http.StatusConflict},
-	{name: "operation in progress", code: reservationErrorCodeOperationInProgress, status: http.StatusConflict},
+	{name: "operation in progress", code: reservationErrorCodeOperationInProgress, status: http.StatusTooManyRequests, retryAfter: "1"},
+	{name: "registry busy", code: reservationErrorCodeRegistryBusy, status: http.StatusTooManyRequests, retryAfter: "1"},
 	{name: "concurrency limited", code: reservationErrorCodeConcurrencyLimited, status: http.StatusTooManyRequests, retryAfter: "1"},
 	{name: "unavailable", code: reservationErrorCodeUnavailable, status: http.StatusServiceUnavailable},
 	{name: "operation conflict", code: reservationErrorCodeOperationConflict, status: http.StatusConflict},
 }
 
 const postQuotaRateLimitBody = `{"code":"provider_post_quota_throttled","message":"Post-quota rate limit exceeded.","details":{"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`
+const overlappingReservationQuotaBody = `{"code":"registry_busy","message":"Post-quota rate limit exceeded.","details":{"retryable":true,"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`
 
 func oversizedResponseWithPrefix(prefix string) string {
 	return prefix + strings.Repeat(" ", maxResponseBodyBytes+1-len(prefix))
@@ -296,6 +298,12 @@ func TestHTTPClientReserveClassifiesQuotaStatuses(t *testing.T) {
 			body:       `{"code":"provider_post_quota_throttled","message":"Post-quota rate limit exceeded.","details":{"meter":"memory_recall_requests","quotaGateResult":{"outcome":"rateLimited","mode":"postQuota","reason":"postQuotaRateLimitExceeded"}}}`,
 			retryAfter: "20",
 		},
+		{
+			name:       "quota shape takes precedence over reservation code",
+			status:     http.StatusTooManyRequests,
+			body:       overlappingReservationQuotaBody,
+			retryAfter: "20",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -329,7 +337,7 @@ func TestHTTPClientReserveClassifiesQuotaStatuses(t *testing.T) {
 	}
 }
 
-func TestHTTPClientReserveTreatsGenericRateLimitAsUnavailable(t *testing.T) {
+func TestHTTPClientReserveMapsGenericRateLimitToPublicRateLimit(t *testing.T) {
 	tests := []struct {
 		name   string
 		body   string
@@ -376,6 +384,9 @@ func TestHTTPClientReserveTreatsGenericRateLimitAsUnavailable(t *testing.T) {
 			if !errors.As(err, &unavailable) {
 				t.Fatalf("Reserve error = %T, want UnavailableError", err)
 			}
+			if got := HTTPStatus(err); got != http.StatusTooManyRequests {
+				t.Fatalf("HTTPStatus = %d, want %d", got, http.StatusTooManyRequests)
+			}
 		})
 	}
 }
@@ -397,7 +408,7 @@ func TestHTTPClientReserveClassifiesStructuredReservationErrors(t *testing.T) {
 				t.Fatalf("Retryable = %v, want %v", reservationErr.retryable, wantRetryable)
 			}
 			wantRetryAfter := time.Duration(0)
-			if tt.code == reservationErrorCodeConcurrencyLimited {
+			if tt.status == http.StatusTooManyRequests {
 				wantRetryAfter = time.Second
 			}
 			if reservationErr.retryAfter != wantRetryAfter {
@@ -408,11 +419,18 @@ func TestHTTPClientReserveClassifiesStructuredReservationErrors(t *testing.T) {
 			if got := errors.As(err, &conflict); got != wantConflict {
 				t.Fatalf("ConflictError classification = %v, want %v", got, wantConflict)
 			}
+			wantStatus := http.StatusServiceUnavailable
+			if tt.status == http.StatusTooManyRequests {
+				wantStatus = http.StatusTooManyRequests
+			}
+			if got := HTTPStatus(err); got != wantStatus {
+				t.Fatalf("HTTPStatus = %d, want %d", got, wantStatus)
+			}
 		})
 	}
 }
 
-func TestHTTPClientReserveConcurrencyLimitRequiresPositiveRetryAfter(t *testing.T) {
+func TestHTTPClientReserveRetryableRateLimitsRequirePositiveRetryAfter(t *testing.T) {
 	tests := []struct {
 		name           string
 		retryAfter     string
@@ -429,33 +447,39 @@ func TestHTTPClientReserveConcurrencyLimitRequiresPositiveRetryAfter(t *testing.
 		{name: "positive integer seconds", retryAfter: "2", wantStructured: true, wantRetryAfter: 2 * time.Second},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
-			client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-				return statusJSONResponse(
-					http.StatusTooManyRequests,
-					`{"code":"reservation_concurrency_limited","message":"admission is busy","details":{"retryable":true}}`,
-					http.Header{"Retry-After": []string{tt.retryAfter}},
-				), nil
-			})}
+	for _, code := range []reservationErrorCode{
+		reservationErrorCodeOperationInProgress,
+		reservationErrorCodeRegistryBusy,
+		reservationErrorCodeConcurrencyLimited,
+	} {
+		for _, tt := range tests {
+			t.Run(string(code)+"/"+tt.name, func(t *testing.T) {
+				client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+				client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					return statusJSONResponse(
+						http.StatusTooManyRequests,
+						`{"code":"`+string(code)+`","message":"admission is busy","details":{"retryable":true}}`,
+						http.Header{"Retry-After": []string{tt.retryAfter}},
+					), nil
+				})}
 
-			_, err := client.Reserve(context.Background(), Subject{APIKeySubject: "api-key-subject"}, "op-concurrency", Operation{
-				Meter: MeterMemoryRecallRequests,
-				Units: 1,
+				_, err := client.Reserve(context.Background(), Subject{APIKeySubject: "api-key-subject"}, "op-concurrency", Operation{
+					Meter: MeterMemoryRecallRequests,
+					Units: 1,
+				})
+				var reservationErr *reservationError
+				if got := errors.As(err, &reservationErr); got != tt.wantStructured {
+					t.Fatalf("structured reservation classification = %v, want %v", got, tt.wantStructured)
+				}
+				if !tt.wantStructured {
+					assertReservationFallbackForStatus(t, err, http.StatusTooManyRequests)
+					return
+				}
+				if reservationErr.retryAfter != tt.wantRetryAfter {
+					t.Fatalf("RetryAfter = %v, want %v", reservationErr.retryAfter, tt.wantRetryAfter)
+				}
 			})
-			var reservationErr *reservationError
-			if got := errors.As(err, &reservationErr); got != tt.wantStructured {
-				t.Fatalf("structured reservation classification = %v, want %v", got, tt.wantStructured)
-			}
-			if !tt.wantStructured {
-				assertReservationFallbackForStatus(t, err, http.StatusTooManyRequests)
-				return
-			}
-			if reservationErr.retryAfter != tt.wantRetryAfter {
-				t.Fatalf("RetryAfter = %v, want %v", reservationErr.retryAfter, tt.wantRetryAfter)
-			}
-		})
+		}
 	}
 }
 
@@ -583,13 +607,17 @@ func assertReservationFallbackForStatus(t *testing.T, err error, status int) {
 	t.Helper()
 	if status == http.StatusConflict {
 		var conflict *ConflictError
-		if !errors.As(err, &conflict) || HTTPStatus(err) != http.StatusBadGateway {
-			t.Fatal("generic 409 did not preserve the legacy conflict fallback")
+		if !errors.As(err, &conflict) || HTTPStatus(err) != http.StatusServiceUnavailable {
+			t.Fatal("generic 409 did not map to a public service-unavailable response")
 		}
 		return
 	}
 	var unavailable *UnavailableError
-	if !errors.As(err, &unavailable) || HTTPStatus(err) != http.StatusServiceUnavailable {
+	wantStatus := http.StatusServiceUnavailable
+	if status == http.StatusTooManyRequests {
+		wantStatus = http.StatusTooManyRequests
+	}
+	if !errors.As(err, &unavailable) || HTTPStatus(err) != wantStatus {
 		t.Fatal("generic non-conflict response did not preserve unavailable fallback")
 	}
 }

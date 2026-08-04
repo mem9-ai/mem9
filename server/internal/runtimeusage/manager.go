@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/http"
 	"strings"
 	"time"
 
@@ -287,6 +288,7 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 		var reservationErr *reservationError
 		if errors.As(err, &reservationErr) {
 			if reservationErr.code == reservationErrorCodeOperationConflict {
+				err = withFinalReservationDecision(err, attempt+1, reservationRetryDecisionTerminal, reservationExhaustionContractNotRetryable)
 				return nil, err
 			}
 			if reservationErr.ReservationRetryable() && attempt+1 < reservationMaxAttempts {
@@ -296,12 +298,19 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 				}
 				continue
 			}
+			if reservationErr.ReservationRetryable() {
+				err = withFinalReservationDecision(err, attempt+1, reservationRetryDecisionExhausted, reservationExhaustionMaxAttempts)
+			} else {
+				err = withFinalReservationDecision(err, attempt+1, reservationRetryDecisionTerminal, reservationExhaustionContractNotRetryable)
+			}
 			break
 		}
 		var conflict *ConflictError
 		if errors.As(err, &conflict) {
+			err = withFinalReservationDecision(err, attempt+1, reservationRetryDecisionTerminal, reservationExhaustionUnrecognizedContract)
 			return nil, err
 		}
+		err = withFinalReservationDecision(err, attempt+1, reservationRetryDecisionTerminal, reservationExhaustionUnrecognizedContract)
 		break
 	}
 	if m.cfg.FailOpen {
@@ -333,7 +342,7 @@ func (m *manager) reservationRetryDelay(retry int, reservationErr *reservationEr
 	if width := int64(upper-minimum) + 1; width > 1 {
 		delay += time.Duration(m.randomInt64N(width))
 	}
-	if reservationErr.code == reservationErrorCodeConcurrencyLimited && reservationErr.retryAfter > delay {
+	if reservationErr.upstreamStatus == http.StatusTooManyRequests && reservationErr.retryAfter > delay {
 		return reservationErr.retryAfter
 	}
 	return delay

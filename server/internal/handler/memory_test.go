@@ -40,6 +40,7 @@ type testMemoryRepo struct {
 	bulkCreateHook        func(context.Context)
 	updateCalls           []*domain.Memory
 	vectorSearchResults   []domain.Memory
+	searchCalls           int
 	keywordSearchResults  []domain.Memory
 	keywordSearchHook     func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error)
 	lastKeywordQuery      string
@@ -162,10 +163,16 @@ func (m *testMemoryRepo) BulkCreate(ctx context.Context, _ []*domain.Memory) err
 	return nil
 }
 func (m *testMemoryRepo) VectorSearch(context.Context, []float32, domain.MemoryFilter, int) ([]domain.Memory, error) {
+	m.mu.Lock()
+	m.searchCalls++
+	m.mu.Unlock()
 	return append([]domain.Memory(nil), m.vectorSearchResults...), nil
 }
 
 func (m *testMemoryRepo) AutoVectorSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+	m.mu.Lock()
+	m.searchCalls++
+	m.mu.Unlock()
 	return append([]domain.Memory(nil), m.vectorSearchResults...), nil
 }
 
@@ -184,6 +191,9 @@ func (m *testMemoryRepo) KeywordSearch(ctx context.Context, query string, filter
 }
 
 func (m *testMemoryRepo) FTSSearch(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error) {
+	m.mu.Lock()
+	m.searchCalls++
+	m.mu.Unlock()
 	return nil, nil
 }
 func (m *testMemoryRepo) FTSAvailable() bool { return false }
@@ -445,6 +455,7 @@ type captureRuntimeUsageManager struct {
 	noticeStateSubjects      []runtimeusage.Subject
 	afterCreateSuccessErr    error
 	beforeCreateErrByTenant  map[string]error
+	beforeRecallErr          error
 	beforeRecallSubjects     []runtimeusage.Subject
 	recallResults            []runtimeusage.RecallResult
 	recallSuccessContextErrs []error
@@ -496,6 +507,9 @@ func (m *captureRuntimeUsageManager) RuntimeStateForNotice(ctx context.Context, 
 func (m *captureRuntimeUsageManager) BeforeRecall(_ context.Context, subject runtimeusage.Subject) (*runtimeusage.OperationLease, error) {
 	m.beforeRecallCalls++
 	m.beforeRecallSubjects = append(m.beforeRecallSubjects, subject)
+	if m.beforeRecallErr != nil {
+		return nil, m.beforeRecallErr
+	}
 	return &runtimeusage.OperationLease{OperationID: "op-recall", Reserved: true}, nil
 }
 func (m *captureRuntimeUsageManager) AfterRecallSuccess(ctx context.Context, _ *runtimeusage.OperationLease, result runtimeusage.RecallResult) error {
@@ -2258,6 +2272,69 @@ func TestCreateMemory_RuntimeUsageAllowsPinnedKnownDelta(t *testing.T) {
 	}
 	if memRepo.bulkCreateCalls != 1 {
 		t.Fatalf("bulk create calls = %d, want 1", memRepo.bulkCreateCalls)
+	}
+}
+
+func TestCreateMemory_RuntimeUsageReserveRateLimitStopsTenantWrite(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled: true,
+		beforeCreateErrByTenant: map[string]error{
+			"tenant-a": newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusTooManyRequests,
+				`{"code":"registry_busy","details":{"retryable":true}}`,
+				"1",
+			),
+		},
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+	req := makeTenantRequest(t, http.MethodPost, "/memories", map[string]any{
+		"content":     "must not be written",
+		"memory_type": "pinned",
+	})
+	rr := httptest.NewRecorder()
+
+	srv.createMemory(rr, req)
+
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429: %s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Retry-After") != "1" {
+		t.Fatalf("Retry-After = %q, want 1", rr.Header().Get("Retry-After"))
+	}
+	if memRepo.bulkCreateCalls != 0 || len(memRepo.createCalls) != 0 {
+		t.Fatalf("tenant writes = bulk:%d create:%d, want 0", memRepo.bulkCreateCalls, len(memRepo.createCalls))
+	}
+	if runtimeUsage.afterCreateSuccessCalls != 0 || runtimeUsage.afterCreateFailureCalls != 0 {
+		t.Fatalf("runtime finalization calls = success:%d failure:%d, want 0/0", runtimeUsage.afterCreateSuccessCalls, runtimeUsage.afterCreateFailureCalls)
+	}
+}
+
+func TestListMemories_RuntimeUsageReserveConflictStopsTenantRecall(t *testing.T) {
+	memRepo := &testMemoryRepo{}
+	runtimeUsage := &captureRuntimeUsageManager{
+		enabled: true,
+		beforeRecallErr: newRuntimeUsageReservationResponseError(
+			t,
+			http.StatusConflict,
+			`{"code":"registry_conflict","details":{"retryable":true}}`,
+		),
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+	req := makeTenantRequest(t, http.MethodGet, "/memories?q=must-not-run", nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rr.Code, rr.Body.String())
+	}
+	if memRepo.searchCalls != 0 || memRepo.listCalls != 0 || memRepo.allTypeListCalls != 0 {
+		t.Fatalf("tenant recall calls = search:%d list:%d all:%d, want 0", memRepo.searchCalls, memRepo.listCalls, memRepo.allTypeListCalls)
+	}
+	if runtimeUsage.afterRecallSuccessCalls != 0 {
+		t.Fatalf("AfterRecallSuccess calls = %d, want 0", runtimeUsage.afterRecallSuccessCalls)
 	}
 }
 

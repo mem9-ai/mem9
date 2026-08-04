@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -889,7 +890,7 @@ func TestManagerReservationRetriesKeepStableSerializedHTTPRequest(t *testing.T) 
 	}
 }
 
-func TestManagerReservationConcurrencyLimitUsesGreaterDelay(t *testing.T) {
+func TestManagerReservationRateLimitsUseGreaterDelay(t *testing.T) {
 	tests := []struct {
 		name       string
 		baseDelay  time.Duration
@@ -916,72 +917,83 @@ func TestManagerReservationConcurrencyLimitUsesGreaterDelay(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for _, code := range []reservationErrorCode{
+		reservationErrorCodeOperationInProgress,
+		reservationErrorCodeRegistryBusy,
+		reservationErrorCodeConcurrencyLimited,
+	} {
+		for _, tt := range tests {
+			t.Run(string(code)+"/"+tt.name, func(t *testing.T) {
+				attempts := 0
+				client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+				client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					attempts++
+					if attempts == 1 {
+						return statusJSONResponse(
+							http.StatusTooManyRequests,
+							`{"code":"`+string(code)+`","details":{"retryable":true}}`,
+							http.Header{"Retry-After": []string{tt.retryAfter}},
+						), nil
+					}
+					return jsonResponse(`{"status":"reserved"}`), nil
+				})}
+				runtimeManager := NewManager(Config{
+					Enabled:                   true,
+					ReservationRetryBaseDelay: tt.baseDelay,
+					ReservationRetryMaxDelay:  tt.maxDelay,
+				}, client, &captureWriter{}, nil)
+				concrete := runtimeManager.(*manager)
+				var delays []time.Duration
+				concrete.wait = func(_ context.Context, delay time.Duration) error {
+					delays = append(delays, delay)
+					return nil
+				}
+				concrete.randomInt64N = tt.random
+
+				lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+				if err != nil {
+					t.Fatalf("BeforeRecall: %v", err)
+				}
+				if lease == nil || !lease.Reserved {
+					t.Fatal("BeforeRecall returned no active reservation")
+				}
+				if attempts != 2 {
+					t.Fatalf("Reserve attempts = %d, want 2", attempts)
+				}
+				if len(delays) != 1 || delays[0] != tt.wantDelay {
+					t.Fatalf("retry delays = %v, want [%v]", delays, tt.wantDelay)
+				}
+			})
+		}
+	}
+}
+
+func TestManagerReservationRetriesEachAllowedCode(t *testing.T) {
+	for _, tt := range reservationContractCases {
+		contractPolicy, _ := tt.code.policy()
+		if !contractPolicy.retryable {
+			continue
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			attempts := 0
-			client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
-			client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				attempts++
 				if attempts == 1 {
-					return statusJSONResponse(
-						http.StatusTooManyRequests,
-						`{"code":"reservation_concurrency_limited","details":{"retryable":true}}`,
-						http.Header{"Retry-After": []string{tt.retryAfter}},
-					), nil
+					writeReservationContractError(w, tt)
+					return
 				}
-				return jsonResponse(`{"status":"reserved"}`), nil
-			})}
-			runtimeManager := NewManager(Config{
-				Enabled:                   true,
-				ReservationRetryBaseDelay: tt.baseDelay,
-				ReservationRetryMaxDelay:  tt.maxDelay,
-			}, client, &captureWriter{}, nil)
+				_, _ = io.WriteString(w, `{"status":"reserved"}`)
+			}))
+			defer provider.Close()
+
+			client := NewHTTPClient(provider.URL, "secret", time.Second)
+			runtimeManager := NewManager(Config{Enabled: true}, client, &captureWriter{}, nil)
 			concrete := runtimeManager.(*manager)
 			var delays []time.Duration
 			concrete.wait = func(_ context.Context, delay time.Duration) error {
 				delays = append(delays, delay)
 				return nil
 			}
-			concrete.randomInt64N = tt.random
-
-			lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
-			if err != nil {
-				t.Fatalf("BeforeRecall: %v", err)
-			}
-			if lease == nil || !lease.Reserved {
-				t.Fatal("BeforeRecall returned no active reservation")
-			}
-			if attempts != 2 {
-				t.Fatalf("Reserve attempts = %d, want 2", attempts)
-			}
-			if len(delays) != 1 || delays[0] != tt.wantDelay {
-				t.Fatalf("retry delays = %v, want [%v]", delays, tt.wantDelay)
-			}
-		})
-	}
-}
-
-func TestManagerReservationRetriesEachAllowedCode(t *testing.T) {
-	tests := []struct {
-		name       string
-		code       reservationErrorCode
-		retryAfter time.Duration
-	}{
-		{name: "registry conflict", code: reservationErrorCodeRegistryConflict},
-		{name: "operation in progress", code: reservationErrorCodeOperationInProgress},
-		{name: "reservation concurrency limited", code: reservationErrorCodeConcurrencyLimited, retryAfter: time.Second},
-		{name: "service unavailable", code: reservationErrorCodeUnavailable},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			quota := &fakeQuotaClient{reserveErrs: []error{
-				newReservationError(tt.code, true, tt.retryAfter),
-				nil,
-			}}
-			runtimeManager := NewManager(Config{Enabled: true}, quota, &captureWriter{}, nil)
-			concrete := runtimeManager.(*manager)
-			concrete.wait = func(context.Context, time.Duration) error { return nil }
 
 			lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
 			if err != nil {
@@ -990,8 +1002,11 @@ func TestManagerReservationRetriesEachAllowedCode(t *testing.T) {
 			if lease == nil || !lease.Reserved {
 				t.Fatal("retryable reservation returned no active lease")
 			}
-			if len(quota.reserveOps) != 2 {
-				t.Fatalf("Reserve attempts = %d, want 2", len(quota.reserveOps))
+			if attempts != 2 {
+				t.Fatalf("Reserve attempts = %d, want 2", attempts)
+			}
+			if len(delays) != 1 {
+				t.Fatalf("retry delays = %d, want 1", len(delays))
 			}
 		})
 	}
@@ -1132,6 +1147,12 @@ func TestManagerDefaultReservationRetryJitterRanges(t *testing.T) {
 	}
 	if got := concrete.reservationRetryDelay(1, err); got != time.Second {
 		t.Fatalf("second retry upper bound = %v, want 1s", got)
+	}
+
+	conflictWithRetryAfter := newReservationError(reservationErrorCodeRegistryConflict, true, time.Hour)
+	concrete.randomInt64N = func(int64) int64 { return 0 }
+	if got := concrete.reservationRetryDelay(0, conflictWithRetryAfter); got != 500*time.Millisecond {
+		t.Fatalf("registry conflict retry delay = %v, want jitter-only 500ms", got)
 	}
 }
 
@@ -1306,7 +1327,7 @@ func TestManagerSuccessfulFinalizeBodyFailuresDoNotQueueRetry(t *testing.T) {
 }
 
 func TestManagerReservationRetryExhaustionAppliesDeploymentPolicy(t *testing.T) {
-	tests := []struct {
+	policies := []struct {
 		name     string
 		failOpen bool
 	}{
@@ -1314,39 +1335,148 @@ func TestManagerReservationRetryExhaustionAppliesDeploymentPolicy(t *testing.T) 
 		{name: "fail open", failOpen: true},
 	}
 
+	for _, contract := range reservationContractCases {
+		contractPolicy, _ := contract.code.policy()
+		if !contractPolicy.retryable {
+			continue
+		}
+		for _, policy := range policies {
+			t.Run(contract.name+"/"+policy.name, func(t *testing.T) {
+				attempts := 0
+				provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					attempts++
+					writeReservationContractError(w, contract)
+				}))
+				defer provider.Close()
+
+				client := NewHTTPClient(provider.URL, "secret", time.Second)
+				runtimeManager := NewManager(Config{Enabled: true, FailOpen: policy.failOpen}, client, &captureWriter{}, nil)
+				concrete := runtimeManager.(*manager)
+				var delays []time.Duration
+				concrete.wait = func(_ context.Context, delay time.Duration) error {
+					delays = append(delays, delay)
+					return nil
+				}
+
+				lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+				if policy.failOpen {
+					if err != nil {
+						t.Fatalf("BeforeRecall: %v", err)
+					}
+					if lease == nil || lease.Reserved {
+						t.Fatal("retry exhaustion returned an unexpected fail-open lease state")
+					}
+				} else {
+					var reservationErr *reservationError
+					if !errors.As(err, &reservationErr) {
+						t.Fatalf("BeforeRecall error = %T, want structured reservation error", err)
+					}
+					if lease != nil {
+						t.Fatal("fail-closed retry exhaustion returned a lease")
+					}
+					wantStatus := http.StatusServiceUnavailable
+					if contract.status == http.StatusTooManyRequests {
+						wantStatus = http.StatusTooManyRequests
+					}
+					if got := HTTPStatus(err); got != wantStatus {
+						t.Fatalf("HTTPStatus = %d, want %d", got, wantStatus)
+					}
+					details, ok := ReservationFailureDetails(err)
+					if !ok || details.UpstreamStatus != contract.status || details.Code != string(contract.code) || !details.Retryable || details.AttemptCount != reservationMaxAttempts || details.RetryDecision != string(reservationRetryDecisionExhausted) || details.ExhaustionReason != string(reservationExhaustionMaxAttempts) {
+						t.Fatalf("ReservationFailureDetails = %+v, %v", details, ok)
+					}
+				}
+				if attempts != reservationMaxAttempts {
+					t.Fatalf("Reserve attempts = %d, want %d", attempts, reservationMaxAttempts)
+				}
+				if len(delays) != reservationMaxAttempts-1 {
+					t.Fatalf("retry delays = %d, want %d", len(delays), reservationMaxAttempts-1)
+				}
+			})
+		}
+	}
+}
+
+func writeReservationContractError(w http.ResponseWriter, contract reservationContractCase) {
+	w.Header().Set("Content-Type", "application/json")
+	if contract.retryAfter != "" {
+		w.Header().Set("Retry-After", contract.retryAfter)
+	}
+	w.WriteHeader(contract.status)
+	_, _ = io.WriteString(w, `{"code":"`+string(contract.code)+`","details":{"retryable":true}}`)
+}
+
+func TestManagerUnknownReservationResponsesDoNotRetry(t *testing.T) {
+	tests := []struct {
+		name             string
+		status           int
+		body             string
+		retryAfter       string
+		failOpen         bool
+		wantPublicStatus int
+		wantFailOpen     bool
+	}{
+		{
+			name:             "old operation in progress conflict uses unknown conflict policy",
+			status:           http.StatusConflict,
+			body:             `{"code":"operation_in_progress","details":{"retryable":true}}`,
+			failOpen:         true,
+			wantPublicStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:             "unknown rate limit fails closed as rate limit",
+			status:           http.StatusTooManyRequests,
+			body:             `{"code":"future_rate_limit","details":{"retryable":true}}`,
+			retryAfter:       "2",
+			wantPublicStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:         "unknown rate limit preserves fail open",
+			status:       http.StatusTooManyRequests,
+			body:         `{"code":"future_rate_limit","details":{"retryable":true}}`,
+			retryAfter:   "2",
+			failOpen:     true,
+			wantFailOpen: true,
+		},
+	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			quota := &fakeQuotaClient{reserveErr: newReservationError(reservationErrorCodeUnavailable, true, 0)}
-			runtimeManager := NewManager(Config{Enabled: true, FailOpen: tt.failOpen}, quota, &captureWriter{}, nil)
-			concrete := runtimeManager.(*manager)
-			var delays []time.Duration
-			concrete.wait = func(_ context.Context, delay time.Duration) error {
-				delays = append(delays, delay)
+			attempts := 0
+			client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+			client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				attempts++
+				header := make(http.Header)
+				if tt.retryAfter != "" {
+					header.Set("Retry-After", tt.retryAfter)
+				}
+				return statusJSONResponse(tt.status, tt.body, header), nil
+			})}
+			concrete := NewManager(Config{Enabled: true, FailOpen: tt.failOpen}, client, &captureWriter{}, nil).(*manager)
+			concrete.wait = func(context.Context, time.Duration) error {
+				t.Fatal("unknown Reservation response entered retry delay")
 				return nil
 			}
 
-			lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
-			if tt.failOpen {
-				if err != nil {
-					t.Fatalf("BeforeRecall: %v", err)
-				}
-				if lease == nil || lease.Reserved {
-					t.Fatal("retry exhaustion returned an unexpected fail-open lease state")
-				}
-			} else {
-				var reservationErr *reservationError
-				if !errors.As(err, &reservationErr) {
-					t.Fatalf("BeforeRecall error = %T, want structured reservation error", err)
-				}
-				if lease != nil {
-					t.Fatal("fail-closed retry exhaustion returned a lease")
-				}
+			lease, err := concrete.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+			if attempts != 1 {
+				t.Fatalf("Reserve attempts = %d, want 1", attempts)
 			}
-			if len(quota.reserveOps) != reservationMaxAttempts {
-				t.Fatalf("Reserve attempts = %d, want %d", len(quota.reserveOps), reservationMaxAttempts)
+			if tt.wantFailOpen {
+				if err != nil || lease == nil || lease.Reserved {
+					t.Fatalf("fail-open result = (%v, %v), want unreserved lease", lease, err)
+				}
+				return
 			}
-			if len(delays) != reservationMaxAttempts-1 {
-				t.Fatalf("retry delays = %d, want %d", len(delays), reservationMaxAttempts-1)
+			if err == nil || lease != nil {
+				t.Fatalf("fail-closed result = (%v, %v), want error", lease, err)
+			}
+			if got := HTTPStatus(err); got != tt.wantPublicStatus {
+				t.Fatalf("HTTPStatus = %d, want %d", got, tt.wantPublicStatus)
+			}
+			details, ok := ReservationFailureDetails(err)
+			if !ok || details.Code != "unknown" || details.AttemptCount != 1 || details.RetryDecision != "terminal" || details.ExhaustionReason != "unrecognized_contract" {
+				t.Fatalf("ReservationFailureDetails = %+v, %v", details, ok)
 			}
 		})
 	}
@@ -1470,6 +1600,36 @@ func TestManagerOversizedPostQuotaDenialPreservesFailOpenFence(t *testing.T) {
 	}
 	if lease != nil {
 		t.Fatal("fail-open post-quota denial returned a lease")
+	}
+	if attempts != 1 {
+		t.Fatalf("Reservation attempts = %d, want 1", attempts)
+	}
+}
+
+func TestManagerQuotaShapeTakesPrecedenceOverReservationCode(t *testing.T) {
+	attempts := 0
+	client := NewHTTPClient("https://runtime-usage.example.com", "secret", time.Second)
+	client.client = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		attempts++
+		return statusJSONResponse(
+			http.StatusTooManyRequests,
+			overlappingReservationQuotaBody,
+			http.Header{"Retry-After": []string{"20"}},
+		), nil
+	})}
+	runtimeManager := NewManager(Config{Enabled: true, FailOpen: true}, client, &captureWriter{}, nil)
+	runtimeManager.(*manager).wait = func(context.Context, time.Duration) error {
+		t.Fatal("quota denial entered retry delay")
+		return nil
+	}
+
+	lease, err := runtimeManager.BeforeRecall(context.Background(), Subject{APIKeySubject: "api-key-subject"})
+	var denied *QuotaDeniedError
+	if !errors.As(err, &denied) || denied.Status() != http.StatusTooManyRequests {
+		t.Fatalf("BeforeRecall error = %T, want post-quota denial", err)
+	}
+	if lease != nil {
+		t.Fatal("fail-open quota denial returned a lease")
 	}
 	if attempts != 1 {
 		t.Fatalf("Reservation attempts = %d, want 1", attempts)
