@@ -305,7 +305,7 @@ func (s *SessionService) hybridCandidates(
 }
 
 func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, limit, fetchLimit int) ([]domain.Memory, error) {
-	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
+	results, err := s.repositoryFTSSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("session fts search: %w", err)
 	}
@@ -314,7 +314,7 @@ func (s *SessionService) ftsSearch(ctx context.Context, f domain.MemoryFilter, l
 }
 
 func (s *SessionService) ftsCandidates(ctx context.Context, f domain.MemoryFilter, sourcePool RecallSourcePool, opts RecallCandidateOptions, fetchLimit int) ([]RecallCandidate, error) {
-	results, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
+	results, err := s.repositoryFTSSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("session fts search: %w", err)
 	}
@@ -348,7 +348,7 @@ func (s *SessionService) keywordCandidates(ctx context.Context, f domain.MemoryF
 
 func (s *SessionService) ftsOrKeyword(ctx context.Context, f domain.MemoryFilter, fetchLimit int) ([]domain.Memory, error) {
 	if s.sessions.FTSAvailable() {
-		r, err := s.sessions.FTSSearch(ctx, f.Query, f, fetchLimit)
+		r, err := s.repositoryFTSSearch(ctx, f.Query, f, fetchLimit)
 		if err != nil {
 			return nil, fmt.Errorf("session fts search: %w", err)
 		}

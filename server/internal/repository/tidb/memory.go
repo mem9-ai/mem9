@@ -805,10 +805,13 @@ func ftsSafeLiteral(s string) string {
 func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	start := time.Now()
 	memories, stats, err := r.ftsSearchWithPostFilter(ctx, query, f, limit)
-	if err != nil {
+	if err != nil && !errors.Is(err, domain.ErrFTSSearchTruncated) {
 		stats.stopReason = ftsStopError
 	}
 	logFTSSearchStats(ctx, "fts search done", "memory", r.clusterID, time.Since(start), stats)
+	if errors.Is(err, domain.ErrFTSSearchTruncated) {
+		return memories, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
+	}
 	if err != nil {
 		logSearchError(ctx, "fts search failed", "memory", "fts", r.clusterID, time.Since(start), err)
 		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
@@ -836,7 +839,9 @@ func (r *MemoryRepo) ftsSearchWithPostFilter(ctx context.Context, query string, 
 			return r.fetchFilteredFTSMemories(ctx, candidates, where, args)
 		},
 	)
-	recordFTSCandidateBudgetWarning(ctx, stats, memoryFTSRecallBranch(f.MemoryType))
+	if err == nil {
+		err = ftsCandidateBudgetError(stats)
+	}
 	return memories, stats, err
 }
 

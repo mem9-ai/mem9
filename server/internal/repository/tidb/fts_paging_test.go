@@ -95,13 +95,9 @@ func TestFTSCandidatePagerStopsAtElapsedBudget(t *testing.T) {
 
 func TestAdaptiveFTSSearchPreservesAcceptedResultsAtPageBudget(t *testing.T) {
 	type candidate struct{ id string }
-	var warnings []domain.RecallWarning
-	ctx := domain.WithRecallWarningRecorder(context.Background(), func(warning domain.RecallWarning) {
-		warnings = append(warnings, warning)
-	})
 
 	results, stats, err := runAdaptiveFTSSearch(
-		ctx,
+		context.Background(),
 		2,
 		func(candidate candidate) string { return candidate.id },
 		func(_ context.Context, pageSize, offset int) ([]candidate, error) {
@@ -121,15 +117,14 @@ func TestAdaptiveFTSSearchPreservesAcceptedResultsAtPageBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAdaptiveFTSSearch: %v", err)
 	}
-	recordFTSCandidateBudgetWarning(ctx, stats, string(domain.TypeInsight))
 	if len(results) != 1 || results[0].ID != "candidate-0" {
 		t.Fatalf("results = %+v, want accepted candidate-0", results)
 	}
 	if stats.stopReason != ftsStopPageLimit {
 		t.Fatalf("stop reason = %q, want %q", stats.stopReason, ftsStopPageLimit)
 	}
-	if len(warnings) != 1 || warnings[0].Code != domain.RecallWarningFTSCandidateBudgetExhausted {
-		t.Fatalf("warnings = %+v, want FTS candidate budget warning", warnings)
+	if budgetErr := ftsCandidateBudgetError(stats); !errors.Is(budgetErr, domain.ErrFTSSearchTruncated) {
+		t.Fatalf("budget error = %v, want ErrFTSSearchTruncated", budgetErr)
 	}
 }
 

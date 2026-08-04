@@ -399,10 +399,13 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	start := time.Now()
 	memories, stats, err := r.ftsSearchWithPostFilter(ctx, query, f, limit)
-	if err != nil {
+	if err != nil && !errors.Is(err, domain.ErrFTSSearchTruncated) {
 		stats.stopReason = ftsStopError
 	}
 	logFTSSearchStats(ctx, "sessions fts search done", "session", r.clusterID, time.Since(start), stats)
+	if errors.Is(err, domain.ErrFTSSearchTruncated) {
+		return memories, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
+	}
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
@@ -433,7 +436,9 @@ func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string,
 			return r.fetchFilteredFTSSessions(ctx, candidates, where, args)
 		},
 	)
-	recordFTSCandidateBudgetWarning(ctx, stats, string(domain.TypeSession))
+	if err == nil {
+		err = ftsCandidateBudgetError(stats)
+	}
 	return memories, stats, err
 }
 

@@ -15,9 +15,11 @@ func WithRecallWarningRecorder(ctx context.Context, record func(RecallWarning)) 
 	return context.WithValue(ctx, recallWarningRecorderKey{}, record)
 }
 
-func RecordRecallWarning(ctx context.Context, warning RecallWarning) {
+func RecordRecallWarning(ctx context.Context, warning RecallWarning) bool {
 	record, _ := ctx.Value(recallWarningRecorderKey{}).(func(RecallWarning))
-	if record != nil {
-		record(warning)
+	if record == nil {
+		return false
 	}
+	record(warning)
+	return true
 }

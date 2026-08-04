@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -801,12 +802,19 @@ func TestSessionFTSSearch_StopsAfterRequestedLimitPageWhenFull(t *testing.T) {
 }
 
 func TestMemoryFTSSearch_StopsAtPageBudget(t *testing.T) {
-	pageSizes := []int{1, 2, 4, 8, 16, 32, 64, 128}
+	now := time.Now().UTC().Truncate(time.Second)
+	pageSizes := []int{2, 2, 4, 8, 16, 32, 64, 128}
 	expectations := make([]*queryExpectation, 0, len(pageSizes)*2)
 	offset := 0
 	for page, pageSize := range pageSizes {
 		prefix := fmt.Sprintf("m-cap-%02d", page)
 		candidateArgs := ftsCandidateArgs(prefix, pageSize)
+		var filteredRows [][]driver.Value
+		if page == 0 {
+			filteredRows = [][]driver.Value{
+				memorySearchRow("m-cap-00-0000", "match one", "agent-1", "session-1", "active", []byte(`[]`), now),
+			}
+		}
 		expectations = append(expectations, &queryExpectation{
 			mustContain: []string{
 				"SELECT id, fts_match_word('golang', content) AS fts_score",
@@ -831,6 +839,7 @@ func TestMemoryFTSSearch_StopsAtPageBudget(t *testing.T) {
 			wantArgs:       append(candidateArgs, "active"),
 			rows: &scriptedRows{
 				columns: memorySearchColumns(),
+				values:  filteredRows,
 			},
 		})
 		offset += pageSize
@@ -839,21 +848,14 @@ func TestMemoryFTSSearch_StopsAtPageBudget(t *testing.T) {
 	defer db.Close()
 
 	repo := NewMemoryRepo(db, "", true, "cluster-1")
-	var warnings []domain.RecallWarning
-	ctx := domain.WithRecallWarningRecorder(context.Background(), func(warning domain.RecallWarning) {
-		warnings = append(warnings, warning)
-	})
-	results, err := repo.FTSSearch(ctx, "golang", domain.MemoryFilter{
+	results, err := repo.FTSSearch(context.Background(), "golang", domain.MemoryFilter{
 		State: "active",
-	}, 1)
-	if err != nil {
-		t.Fatalf("FTSSearch: %v", err)
+	}, 2)
+	if !errors.Is(err, domain.ErrFTSSearchTruncated) {
+		t.Fatalf("FTSSearch error = %v, want ErrFTSSearchTruncated", err)
 	}
-	if len(results) != 0 {
-		t.Fatalf("len(results) = %d, want 0", len(results))
-	}
-	if len(warnings) != 1 || warnings[0].Code != domain.RecallWarningFTSCandidateBudgetExhausted || warnings[0].Branch != string(domain.TypePinned) {
-		t.Fatalf("warnings = %+v, want pinned FTS candidate budget warning", warnings)
+	if len(results) != 1 || results[0].ID != "m-cap-00-0000" {
+		t.Fatalf("results = %+v, want preserved m-cap-00-0000", results)
 	}
 }
 
@@ -900,8 +902,8 @@ func TestSessionFTSSearch_StopsAtPageBudget(t *testing.T) {
 	results, err := repo.FTSSearch(context.Background(), "golang", domain.MemoryFilter{
 		State: "active",
 	}, 1)
-	if err != nil {
-		t.Fatalf("FTSSearch: %v", err)
+	if !errors.Is(err, domain.ErrFTSSearchTruncated) {
+		t.Fatalf("FTSSearch error = %v, want ErrFTSSearchTruncated", err)
 	}
 	if len(results) != 0 {
 		t.Fatalf("len(results) = %d, want 0", len(results))

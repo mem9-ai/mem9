@@ -319,7 +319,7 @@ func (s *MemoryService) ftsOnlySearch(ctx context.Context, filter domain.MemoryF
 	}
 	fetchLimit := limit * 3
 
-	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+	ftsResults, err := s.repositoryFTSSearch(ctx, filter.Query, filter, fetchLimit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("FTS search: %w", err)
 	}
@@ -501,7 +501,7 @@ func (s *MemoryService) ftsOnlyCandidates(ctx context.Context, filter domain.Mem
 	limit := normalizeRecallLimit(filter.Limit, 10)
 	fetchLimit := limit * normalizeRecallFetchMultiplier(opts.FetchMultiplier, 3)
 
-	ftsResults, err := s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+	ftsResults, err := s.repositoryFTSSearch(ctx, filter.Query, filter, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("FTS search: %w", err)
 	}
@@ -570,7 +570,7 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 	var kwResults []domain.Memory
 	if s.memories.FTSAvailable() {
 		var kwErr error
-		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+		kwResults, kwErr = s.repositoryFTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if kwErr != nil {
 			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
 		}
@@ -619,7 +619,7 @@ func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.Memo
 
 	var kwResults []domain.Memory
 	if s.memories.FTSAvailable() {
-		kwResults, err = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+		kwResults, err = s.repositoryFTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if err != nil {
 			return nil, fmt.Errorf("FTS search: %w", err)
 		}
@@ -674,7 +674,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 	var kwResults []domain.Memory
 	if s.memories.FTSAvailable() {
 		var kwErr error
-		kwResults, kwErr = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+		kwResults, kwErr = s.repositoryFTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if kwErr != nil {
 			return nil, 0, fmt.Errorf("FTS search: %w", kwErr)
 		}
@@ -747,7 +747,7 @@ func (s *MemoryService) autoHybridCandidates(
 	var kwResults []domain.Memory
 	keywordStart := time.Now()
 	if s.memories.FTSAvailable() {
-		kwResults, err = s.memories.FTSSearch(ctx, filter.Query, filter, fetchLimit)
+		kwResults, err = s.repositoryFTSSearch(ctx, filter.Query, filter, fetchLimit)
 		if err != nil {
 			return nil, fmt.Errorf("FTS search: %w", err)
 		}

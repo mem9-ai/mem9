@@ -251,19 +251,11 @@ func logFTSSearchStats(ctx context.Context, message, resource, clusterID string,
 	)
 }
 
-func recordFTSCandidateBudgetWarning(ctx context.Context, stats ftsSearchStats, branch string) {
+func ftsCandidateBudgetError(stats ftsSearchStats) error {
 	switch stats.stopReason {
 	case ftsStopCandidateLimit, ftsStopPageLimit, ftsStopElapsedLimit:
-		domain.RecordRecallWarning(ctx, domain.RecallWarning{
-			Code:   domain.RecallWarningFTSCandidateBudgetExhausted,
-			Branch: branch,
-		})
+		return domain.ErrFTSSearchTruncated
+	default:
+		return nil
 	}
-}
-
-func memoryFTSRecallBranch(memoryType string) string {
-	if memoryType == string(domain.TypeInsight) {
-		return string(domain.TypeInsight)
-	}
-	return string(domain.TypePinned)
 }

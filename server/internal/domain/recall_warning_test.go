@@ -15,7 +15,9 @@ func TestRecordRecallWarningUsesContextRecorder(t *testing.T) {
 		got = append(got, warning)
 	})
 
-	RecordRecallWarning(ctx, want)
+	if !RecordRecallWarning(ctx, want) {
+		t.Fatal("RecordRecallWarning() = false, want true")
+	}
 
 	if len(got) != 1 || got[0] != want {
 		t.Fatalf("warnings = %+v, want [%+v]", got, want)
@@ -23,8 +25,10 @@ func TestRecordRecallWarningUsesContextRecorder(t *testing.T) {
 }
 
 func TestRecordRecallWarningWithoutRecorderIsNoOp(t *testing.T) {
-	RecordRecallWarning(context.Background(), RecallWarning{
+	if RecordRecallWarning(context.Background(), RecallWarning{
 		Code:   RecallWarningFTSCandidateBudgetExhausted,
 		Branch: string(TypePinned),
-	})
+	}) {
+		t.Fatal("RecordRecallWarning() = true, want false")
+	}
 }
