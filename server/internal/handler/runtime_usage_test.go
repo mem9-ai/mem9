@@ -8,10 +8,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
@@ -217,21 +220,24 @@ func TestNormalizeRuntimeQuotaErrorBodyUsesStatusMessageFallbackWithDetails(t *t
 }
 
 func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
-		name           string
-		err            error
-		details        runtimeUsageErrorDetails
-		wantStatus     int
-		wantClass      string
-		wantRetryable  bool
-		wantStage      string
-		wantClusterID  string
-		wantMeter      string
-		wantOperation  string
-		wantMessage    string
-		wantRetryAfter string
+		name                 string
+		err                  error
+		details              runtimeUsageErrorDetails
+		wantStatus           int
+		wantClass            string
+		wantRetryable        bool
+		wantStage            string
+		wantClusterID        string
+		wantMeter            string
+		wantOperation        string
+		wantMessage          string
+		wantRetryAfter       string
+		wantUpstreamStatus   int
+		wantErrorCode        string
+		wantAttemptCount     int
+		wantRetryDecision    string
+		wantExhaustionReason string
 	}{
 		{
 			name: "quota rate limit during reserve",
@@ -309,8 +315,57 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			wantMessage:   "runtime usage conflict",
 		},
 		{
-			name: "exhausted retryable reservation response",
+			name: "reservation rate limit",
 			err: newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusTooManyRequests,
+				`{"code":"registry_busy","details":{"retryable":true}}`,
+				"1",
+			),
+			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
+				ClusterID: "cluster-reserve-rate-limit",
+			}, runtimeusage.MeterMemoryRecallRequests),
+			wantStatus:         http.StatusTooManyRequests,
+			wantClass:          "rate_limited",
+			wantRetryable:      true,
+			wantStage:          runtimeUsageStageReserve,
+			wantClusterID:      "cluster-reserve-rate-limit",
+			wantMeter:          runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:        "runtime usage rate limited",
+			wantRetryAfter:     "1",
+			wantUpstreamStatus: http.StatusTooManyRequests,
+			wantErrorCode:      "registry_busy",
+			wantAttemptCount:   1,
+			wantRetryDecision:  "retryable",
+		},
+		{
+			name: "unknown reservation rate limit",
+			err: newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusTooManyRequests,
+				`{"code":"future_rate_limit","details":{"retryable":true}}`,
+				"2",
+			),
+			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
+				ClusterID: "cluster-unknown-rate-limit",
+			}, runtimeusage.MeterMemoryWriteRequests),
+			wantStatus:           http.StatusTooManyRequests,
+			wantClass:            "rate_limited",
+			wantRetryable:        false,
+			wantStage:            runtimeUsageStageReserve,
+			wantClusterID:        "cluster-unknown-rate-limit",
+			wantMeter:            runtimeusage.MeterMemoryWriteRequests,
+			wantMessage:          "runtime usage rate limited",
+			wantRetryAfter:       "2",
+			wantUpstreamStatus:   http.StatusTooManyRequests,
+			wantErrorCode:        "unknown",
+			wantAttemptCount:     1,
+			wantRetryDecision:    "terminal",
+			wantExhaustionReason: "unrecognized_contract",
+		},
+		{
+			name: "exhausted retryable reservation response",
+			err: newExhaustedRuntimeUsageReservationResponseError(
 				t,
 				http.StatusServiceUnavailable,
 				`{"code":"unavailable","details":{"retryable":true}}`,
@@ -318,13 +373,18 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
 				ClusterID: "cluster-reserve",
 			}, runtimeusage.MeterMemoryRecallRequests),
-			wantStatus:    http.StatusServiceUnavailable,
-			wantClass:     "unavailable",
-			wantRetryable: true,
-			wantStage:     runtimeUsageStageReserve,
-			wantClusterID: "cluster-reserve",
-			wantMeter:     runtimeusage.MeterMemoryRecallRequests,
-			wantMessage:   "runtime usage unavailable",
+			wantStatus:           http.StatusServiceUnavailable,
+			wantClass:            "unavailable",
+			wantRetryable:        true,
+			wantStage:            runtimeUsageStageReserve,
+			wantClusterID:        "cluster-reserve",
+			wantMeter:            runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:          "runtime usage unavailable",
+			wantUpstreamStatus:   http.StatusServiceUnavailable,
+			wantErrorCode:        "unavailable",
+			wantAttemptCount:     3,
+			wantRetryDecision:    "exhausted",
+			wantExhaustionReason: "max_attempts",
 		},
 		{
 			name: "permanent reservation operation conflict",
@@ -336,27 +396,62 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
 				ClusterID: "cluster-reserve-conflict",
 			}, runtimeusage.MeterMemoryWriteRequests),
-			wantStatus:    http.StatusBadGateway,
-			wantClass:     "conflict",
-			wantRetryable: false,
-			wantStage:     runtimeUsageStageReserve,
-			wantClusterID: "cluster-reserve-conflict",
-			wantMeter:     runtimeusage.MeterMemoryWriteRequests,
-			wantMessage:   "runtime usage conflict",
+			wantStatus:           http.StatusServiceUnavailable,
+			wantClass:            "conflict",
+			wantRetryable:        false,
+			wantStage:            runtimeUsageStageReserve,
+			wantClusterID:        "cluster-reserve-conflict",
+			wantMeter:            runtimeusage.MeterMemoryWriteRequests,
+			wantMessage:          "runtime usage unavailable",
+			wantUpstreamStatus:   http.StatusConflict,
+			wantErrorCode:        "operation_conflict",
+			wantAttemptCount:     1,
+			wantRetryDecision:    "terminal",
+			wantExhaustionReason: "contract_not_retryable",
+		},
+		{
+			name: "unknown reservation conflict",
+			err: newRuntimeUsageReservationResponseError(
+				t,
+				http.StatusConflict,
+				`{"code":"future_conflict","details":{"retryable":true}}`,
+			),
+			details: runtimeUsageReserveErrorDetails(&domain.AuthInfo{
+				ClusterID: "cluster-unknown-conflict",
+			}, runtimeusage.MeterMemoryRecallRequests),
+			wantStatus:           http.StatusServiceUnavailable,
+			wantClass:            "conflict",
+			wantRetryable:        false,
+			wantStage:            runtimeUsageStageReserve,
+			wantClusterID:        "cluster-unknown-conflict",
+			wantMeter:            runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:          "runtime usage unavailable",
+			wantUpstreamStatus:   http.StatusConflict,
+			wantErrorCode:        "unknown",
+			wantAttemptCount:     1,
+			wantRetryDecision:    "terminal",
+			wantExhaustionReason: "unrecognized_contract",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
 			var logBuf bytes.Buffer
 			logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&logBuf, nil)))
 			server := &Server{logger: logger}
 			recorder := httptest.NewRecorder()
 			ctx := reqid.NewContext(context.Background(), "request-runtime-usage")
+			metricBefore := float64(0)
+			if tt.wantUpstreamStatus != 0 {
+				metricBefore = runtimeUsageReservationFailureMetric(t, tt)
+			}
 
 			server.handleRuntimeUsageError(ctx, recorder, tt.err, tt.details)
+			if tt.wantUpstreamStatus != 0 {
+				if metricAfter := runtimeUsageReservationFailureMetric(t, tt); metricAfter != metricBefore+1 {
+					t.Fatalf("reservation failure metric = %v, want %v", metricAfter, metricBefore+1)
+				}
+			}
 
 			if recorder.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)
@@ -381,6 +476,19 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 				t.Fatalf("mapped_status = %v, want field omitted", entry["mapped_status"])
 			}
 			assertRuntimeUsageLogField(t, entry, "retryable", tt.wantRetryable)
+			if tt.wantUpstreamStatus != 0 {
+				assertRuntimeUsageLogField(t, entry, "upstream_status", float64(tt.wantUpstreamStatus))
+				assertRuntimeUsageLogField(t, entry, "error_code", tt.wantErrorCode)
+				assertRuntimeUsageLogField(t, entry, "attempt_count", float64(tt.wantAttemptCount))
+				assertRuntimeUsageLogField(t, entry, "retry_decision", tt.wantRetryDecision)
+				if tt.wantExhaustionReason == "" {
+					if _, ok := entry["exhaustion_reason"]; ok {
+						t.Fatalf("exhaustion_reason = %v, want field omitted", entry["exhaustion_reason"])
+					}
+				} else {
+					assertRuntimeUsageLogField(t, entry, "exhaustion_reason", tt.wantExhaustionReason)
+				}
+			}
 			assertRuntimeUsageLogField(t, entry, "cluster_id", tt.wantClusterID)
 			assertRuntimeUsageLogField(t, entry, "meter", tt.wantMeter)
 			if tt.wantOperation == "" {
@@ -397,10 +505,55 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 	}
 }
 
-func newRuntimeUsageReservationResponseError(t *testing.T, status int, body string) error {
+func runtimeUsageReservationFailureMetric(t *testing.T, tt struct {
+	name                 string
+	err                  error
+	details              runtimeUsageErrorDetails
+	wantStatus           int
+	wantClass            string
+	wantRetryable        bool
+	wantStage            string
+	wantClusterID        string
+	wantMeter            string
+	wantOperation        string
+	wantMessage          string
+	wantRetryAfter       string
+	wantUpstreamStatus   int
+	wantErrorCode        string
+	wantAttemptCount     int
+	wantRetryDecision    string
+	wantExhaustionReason string
+}) float64 {
+	t.Helper()
+	counter, err := metrics.RuntimeUsageReservationFailuresTotal.GetMetricWithLabelValues(
+		strconv.Itoa(tt.wantUpstreamStatus),
+		tt.wantErrorCode,
+		tt.wantRetryDecision,
+		strconv.Itoa(tt.wantAttemptCount),
+		tt.wantExhaustionReason,
+		strconv.Itoa(tt.wantStatus),
+	)
+	if err != nil {
+		t.Fatalf("get runtime usage reservation failure metric: %v", err)
+	}
+	metric, ok := counter.(interface{ Write(*dto.Metric) error })
+	if !ok {
+		t.Fatal("runtime usage reservation failure metric does not implement Write")
+	}
+	var pb dto.Metric
+	if err := metric.Write(&pb); err != nil {
+		t.Fatalf("write runtime usage reservation failure metric: %v", err)
+	}
+	return pb.GetCounter().GetValue()
+}
+
+func newRuntimeUsageReservationResponseError(t *testing.T, status int, body string, retryAfter ...string) error {
 	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if len(retryAfter) > 0 {
+			w.Header().Set("Retry-After", retryAfter[0])
+		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
 	}))
@@ -413,6 +566,28 @@ func newRuntimeUsageReservationResponseError(t *testing.T, status int, body stri
 	})
 	if err == nil {
 		t.Fatal("Reserve error = nil")
+	}
+	return err
+}
+
+func newExhaustedRuntimeUsageReservationResponseError(t *testing.T, status int, body string) error {
+	t.Helper()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer upstream.Close()
+
+	client := runtimeusage.NewHTTPClient(upstream.URL, "test-secret", time.Second)
+	manager := runtimeusage.NewManager(runtimeusage.Config{
+		Enabled:                   true,
+		ReservationRetryBaseDelay: time.Nanosecond,
+		ReservationRetryMaxDelay:  time.Nanosecond,
+	}, client, nil, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
+	lease, err := manager.BeforeRecall(context.Background(), runtimeusage.Subject{APIKeySubject: "test-subject"})
+	if err == nil || lease != nil {
+		t.Fatalf("BeforeRecall = (%v, %v), want exhausted failure", lease, err)
 	}
 	return err
 }

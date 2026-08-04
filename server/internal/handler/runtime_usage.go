@@ -7,9 +7,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
 
@@ -195,6 +197,7 @@ func (s *Server) handleRuntimeUsageError(
 	details runtimeUsageErrorDetails,
 ) error {
 	s.logRuntimeUsageError(ctx, err, details, runtimeUsageRoleClientResponse)
+	recordRuntimeUsageReservationFailure(err)
 
 	var denied *runtimeusage.QuotaDeniedError
 	if errors.As(err, &denied) {
@@ -209,10 +212,31 @@ func (s *Server) handleRuntimeUsageError(
 		return writeErr
 	}
 	status := runtimeusage.HTTPStatus(err)
+	if reservationFailure, ok := runtimeusage.ReservationFailureDetails(err); ok && status == http.StatusTooManyRequests {
+		if reservationFailure.RetryAfter != "" {
+			w.Header().Set("Retry-After", reservationFailure.RetryAfter)
+		}
+		return respondError(w, status, "runtime usage rate limited")
+	}
 	if status == http.StatusBadGateway {
 		return respondError(w, status, "runtime usage conflict")
 	}
 	return respondError(w, status, "runtime usage unavailable")
+}
+
+func recordRuntimeUsageReservationFailure(err error) {
+	failure, ok := runtimeusage.ReservationFailureDetails(err)
+	if !ok {
+		return
+	}
+	metrics.RuntimeUsageReservationFailuresTotal.WithLabelValues(
+		strconv.Itoa(failure.UpstreamStatus),
+		failure.Code,
+		failure.RetryDecision,
+		strconv.Itoa(failure.AttemptCount),
+		failure.ExhaustionReason,
+		strconv.Itoa(runtimeusage.HTTPStatus(err)),
+	).Inc()
 }
 
 func (s *Server) logRuntimeUsageBackgroundFinalizeError(ctx context.Context, err error, details runtimeUsageErrorDetails) {
@@ -245,6 +269,17 @@ func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details ru
 	if details.operationID != "" {
 		attrs = append(attrs, "operation_id", details.operationID)
 	}
+	if reservationFailure, ok := runtimeusage.ReservationFailureDetails(err); ok {
+		attrs = append(attrs,
+			"upstream_status", reservationFailure.UpstreamStatus,
+			"error_code", reservationFailure.Code,
+			"attempt_count", reservationFailure.AttemptCount,
+			"retry_decision", reservationFailure.RetryDecision,
+		)
+		if reservationFailure.ExhaustionReason != "" {
+			attrs = append(attrs, "exhaustion_reason", reservationFailure.ExhaustionReason)
+		}
+	}
 
 	logger := s.logger
 	if logger == nil {
@@ -263,15 +298,15 @@ func classifyRuntimeUsageError(err error) (string, int, bool) {
 	if errors.As(err, &denied) {
 		return "quota_denied", status, status == http.StatusTooManyRequests
 	}
-	var reservationFailure interface {
-		ReservationRetryable() bool
-	}
-	if errors.As(err, &reservationFailure) {
-		var conflict *runtimeusage.ConflictError
-		if errors.As(err, &conflict) {
-			return "conflict", status, false
+	if reservationFailure, ok := runtimeusage.ReservationFailureDetails(err); ok {
+		switch reservationFailure.UpstreamStatus {
+		case http.StatusTooManyRequests:
+			return "rate_limited", status, reservationFailure.Retryable
+		case http.StatusConflict:
+			return "conflict", status, reservationFailure.Retryable
+		default:
+			return "unavailable", status, reservationFailure.Retryable
 		}
-		return "unavailable", status, reservationFailure.ReservationRetryable()
 	}
 	var conflict *runtimeusage.ConflictError
 	if errors.As(err, &conflict) {

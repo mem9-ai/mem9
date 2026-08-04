@@ -104,6 +104,11 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
 			return newQuotaDeniedError(resp, nil)
 		}
+		if classifyQuotaStatuses {
+			if reservationErr := newUnknownReservationResponseError(resp); reservationErr != nil {
+				return reservationErr
+			}
+		}
 		if resp.StatusCode == http.StatusConflict {
 			return newConflictError(resp, nil)
 		}
@@ -121,6 +126,11 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 	if classifyQuotaStatuses && isRuntimeQuotaDenialResponse(resp.StatusCode, respBody) {
 		return newQuotaDeniedError(resp, respBody)
 	}
+	if classifyQuotaStatuses {
+		if reservationErr := newUnknownReservationResponseError(resp); reservationErr != nil {
+			return reservationErr
+		}
+	}
 	if resp.StatusCode == http.StatusConflict {
 		return newConflictError(resp, respBody)
 	}
@@ -133,6 +143,24 @@ func (c *HTTPClient) doJSON(ctx context.Context, method, path string, subject Su
 		}
 	}
 	return nil
+}
+
+func newUnknownReservationResponseError(resp *http.Response) error {
+	if resp == nil {
+		return nil
+	}
+	switch resp.StatusCode {
+	case http.StatusConflict:
+		return newReservationStatusError(resp.StatusCode, 0, newConflictError(resp, nil))
+	case http.StatusTooManyRequests:
+		return newReservationStatusError(
+			resp.StatusCode,
+			parseRetryAfter(resp.Header.Get("Retry-After")),
+			&UnavailableError{Err: fmt.Errorf("runtime usage service returned status %d", resp.StatusCode)},
+		)
+	default:
+		return nil
+	}
 }
 
 func newQuotaDeniedError(resp *http.Response, body []byte) *QuotaDeniedError {
@@ -170,7 +198,7 @@ func classifyReservationError(status int, body []byte, retryAfterHeader string) 
 	}
 
 	retryAfter := parseRetryAfter(retryAfterHeader)
-	if envelope.Code == reservationErrorCodeConcurrencyLimited && retryAfter == 0 {
+	if policy.statusCode == http.StatusTooManyRequests && retryAfter == 0 {
 		return nil
 	}
 	return newReservationError(envelope.Code, true, retryAfter)
