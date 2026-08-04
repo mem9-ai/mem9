@@ -492,6 +492,10 @@ Phase 2 prompt uses integer IDs (0, 1, 2...) mapped to real UUIDs server-side. I
 
 ### 11.1 Phase 1a: Fact Extraction Prompt
 
+Runtime defaults to extracting facts only from user turns. Set
+`MNEMO_FACT_EXTRACTION_INCLUDE_ASSISTANT=true` to also admit concrete, durable
+facts asserted in assistant turns; system and tool turns remain excluded.
+
 **System prompt:**
 
 ```
@@ -909,6 +913,7 @@ New server environment variables:
 | `MNEMO_LLM_BASE_URL` | No | `https://api.openai.com/v1` | LLM endpoint |
 | `MNEMO_LLM_MODEL` | No | `gpt-4o-mini` | Model for extraction/reconciliation |
 | `MNEMO_INGEST_MODE` | No | `smart` | Default ingest mode |
+| `MNEMO_FACT_EXTRACTION_INCLUDE_ASSISTANT` | No | `false` | Include durable assistant-turn facts during smart ingest |
 | `MNEMO_DIGEST_TTL_DAYS` | No | `30` | Days before digests auto-archive |
 
 **LLM is optional**: Without `MNEMO_LLM_API_KEY`, ingest falls back to `raw` mode (current behavior). This preserves backward compatibility.

@@ -40,6 +40,10 @@ type Config struct {
 	LLMTemperature float64
 	IngestMode     string
 
+	// FactExtractionIncludeAssistant allows smart ingest to extract durable facts
+	// from assistant turns in addition to user turns. Disabled by default.
+	FactExtractionIncludeAssistant bool
+
 	// DisableSessionSave skips raw session row persistence for message ingest.
 	// Smart ingest still extracts and reconciles facts into insight memories.
 	DisableSessionSave bool
@@ -214,6 +218,7 @@ func Load() (*Config, error) {
 		LLMModel:                         envOr("MNEMO_LLM_MODEL", "gpt-4o-mini"),
 		LLMTemperature:                   envFloat("MNEMO_LLM_TEMPERATURE", 0.1),
 		IngestMode:                       envOr("MNEMO_INGEST_MODE", "smart"),
+		FactExtractionIncludeAssistant:   envBool("MNEMO_FACT_EXTRACTION_INCLUDE_ASSISTANT", false),
 		DisableSessionSave:               envBool("MNEMO_DISABLE_SESSION_SAVE", false),
 		TiDBZeroEnabled:                  envBool("MNEMO_TIDB_ZERO_ENABLED", true),
 		TiDBZeroAPIURL:                   envOr("MNEMO_TIDB_ZERO_API_URL", "https://zero.tidbapi.com/v1alpha1"),

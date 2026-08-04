@@ -112,11 +112,23 @@ type MemoryChange struct {
 
 // IngestService orchestrates the two-phase smart memory pipeline.
 type IngestService struct {
-	memories  repository.MemoryRepo
-	llm       *llm.Client
-	embedder  *embed.Embedder
-	autoModel string
-	mode      IngestMode
+	memories              repository.MemoryRepo
+	llm                   *llm.Client
+	embedder              *embed.Embedder
+	autoModel             string
+	mode                  IngestMode
+	includeAssistantFacts bool
+}
+
+// IngestOption configures smart ingest behavior.
+type IngestOption func(*IngestService)
+
+// WithAssistantFactExtraction includes assistant turns as eligible fact sources.
+// User turns remain eligible in both modes; system and tool turns never are.
+func WithAssistantFactExtraction(enabled bool) IngestOption {
+	return func(service *IngestService) {
+		service.includeAssistantFacts = enabled
+	}
 }
 
 // NewIngestService creates a new IngestService.
@@ -126,17 +138,24 @@ func NewIngestService(
 	embedder *embed.Embedder,
 	autoModel string,
 	defaultMode IngestMode,
+	options ...IngestOption,
 ) *IngestService {
 	if defaultMode == "" {
 		defaultMode = ModeSmart
 	}
-	return &IngestService{
+	service := &IngestService{
 		memories:  memories,
 		llm:       llmClient,
 		embedder:  embedder,
 		autoModel: autoModel,
 		mode:      defaultMode,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service
 }
 
 // Ingest runs the pipeline: extract facts from conversation, reconcile with existing memories.
@@ -200,7 +219,7 @@ func (s *IngestService) HasLLM() bool {
 
 // Phase1Result holds the output of ExtractPhase1.
 type Phase1Result struct {
-	Facts       []ExtractedFact // atomic facts extracted from user messages, each with LLM-assigned tags
+	Facts       []ExtractedFact // atomic facts extracted from eligible source messages, each with LLM-assigned tags
 	MessageTags [][]string      // per-message tags parallel to input messages; missing entries = []
 }
 
@@ -309,13 +328,18 @@ func hasSocialNarrativeCue(text string) bool {
 }
 
 type preparedExtractionInput struct {
-	messages        []IngestMessage
-	originalIndices []int
-	formatted       string
+	messages              []IngestMessage
+	originalIndices       []int
+	formatted             string
+	includeAssistantFacts bool
 }
 
 func prepareExtractionInput(messages []IngestMessage, maxConversationRunes int) preparedExtractionInput {
-	input := preparedExtractionInput{}
+	return prepareExtractionInputWithPolicy(messages, maxConversationRunes, false)
+}
+
+func prepareExtractionInputWithPolicy(messages []IngestMessage, maxConversationRunes int, includeAssistantFacts bool) preparedExtractionInput {
+	input := preparedExtractionInput{includeAssistantFacts: includeAssistantFacts}
 	for idx, msg := range messages {
 		content := strings.TrimSpace(msg.Content)
 		if content == "" {
@@ -336,7 +360,22 @@ func prepareExtractionInput(messages []IngestMessage, maxConversationRunes int) 
 }
 
 func prepareExtractionInputFromConversation(conversation string, maxConversationRunes int) preparedExtractionInput {
-	return prepareExtractionInput(parseConversationMessages(conversation), maxConversationRunes)
+	return prepareExtractionInputFromConversationWithPolicy(conversation, maxConversationRunes, false)
+}
+
+func prepareExtractionInputFromConversationWithPolicy(conversation string, maxConversationRunes int, includeAssistantFacts bool) preparedExtractionInput {
+	return prepareExtractionInputWithPolicy(parseConversationMessages(conversation), maxConversationRunes, includeAssistantFacts)
+}
+
+func factSourceRoleAllowed(role string, includeAssistantFacts bool) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "user":
+		return true
+	case "assistant":
+		return includeAssistantFacts
+	default:
+		return false
+	}
 }
 
 func parseConversationMessages(conversation string) []IngestMessage {
@@ -472,6 +511,17 @@ This extends the surrounding output schema only by adding optional "route_target
 If the surrounding output schema includes "message_tags", keep returning it unchanged.`, string(targetsJSON))
 }
 
+func factExtractionSourceRule(includeAssistantFacts bool) string {
+	if !includeAssistantFacts {
+		return "1. Extract facts ONLY from the user's messages. Ignore assistant, system, and tool messages entirely."
+	}
+	return `1. Extract durable facts from both user and assistant messages. Ignore system and tool messages entirely.
+   Assistant messages are eligible only for concrete, durable assertions about the user's world,
+   ongoing projects, systems, decisions, or confirmed outcomes.
+   Do not extract assistant speculation, proposals, generic advice, questions, acknowledgements,
+   or self-referential chatter. Never infer personal facts about the user from an assistant statement alone.`
+}
+
 func normalizeReconciledTemporalContent(content string) (string, *TemporalMetadata) {
 	content = StripTemporalProjection(content)
 	return NormalizeStandaloneTemporalContent(content, time.Now())
@@ -488,7 +538,7 @@ func (s *IngestService) ExtractPhase1WithRouting(ctx context.Context, messages [
 		return &Phase1Result{}, nil
 	}
 
-	input := prepareExtractionInput(messages, maxExtractionConversationRunes)
+	input := prepareExtractionInputWithPolicy(messages, maxExtractionConversationRunes, s.includeAssistantFacts)
 	if input.formatted == "" {
 		return &Phase1Result{}, nil
 	}
@@ -781,7 +831,7 @@ func (s *IngestService) extractFactsWithRouting(ctx context.Context, conversatio
 	if s.llm == nil || conversation == "" {
 		return nil, nil
 	}
-	input := prepareExtractionInputFromConversation(conversation, maxExtractionConversationRunes)
+	input := prepareExtractionInputFromConversationWithPolicy(conversation, maxExtractionConversationRunes, s.includeAssistantFacts)
 	if input.formatted == "" {
 		return nil, nil
 	}
@@ -791,7 +841,7 @@ atomic facts from a conversation.
 
 ## Rules
 
-1. Extract facts ONLY from the user's messages. Ignore assistant and system messages entirely.
+` + factExtractionSourceRule(s.includeAssistantFacts) + `
 2. Each fact must be a single, self-contained statement (one idea per fact).
    Exception: when facts are semantically dependent (cause-effect, event-reason,
    condition-outcome, temporal dependency), keep them as ONE fact preserving the
@@ -805,13 +855,14 @@ atomic facts from a conversation.
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
-4. Preserve the user's original language.
+4. Preserve the original language of the source message.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
    ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), omit it from the facts array entirely.
-   Only store what the user STATED about themselves, their work, or their world.
-   Heuristic: if the fact can only be known because the user asked, it is query_intent.
+   Only store what an eligible source message STATED about the user, their work, or their world.
+   Heuristic: the user's question itself is query_intent. Evaluate an eligible assistant answer
+   independently under Rule 1 instead of turning the question into a fact.
    If it reveals something stable about the user independently, it is a fact.
    Examples to skip (query_intent):
      - "User asked about the history of the Ming dynasty"
@@ -844,8 +895,8 @@ atomic facts from a conversation.
    because they contain today/yesterday/tomorrow, ate/had/went, or plans/will. If the
    statement describes a person, place, relationship, project, trip, event, or commitment
    that may be useful later, keep it as fact.
-9. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
-	 when they describe an ongoing condition rather than a one-off log line. These signals can have lasting value.
+9. Keep concrete concerns, risks, and worries stated in eligible messages about ongoing work,
+   systems, platforms, or operations when they describe a durable condition rather than a one-off log line.
    Examples to keep:
       - "小红书账号最近数据不好，担心可能被封号"
      - "The API keeps returning 500s, something might be broken upstream"
@@ -873,8 +924,8 @@ atomic facts from a conversation.
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
 13. Prefer returning a faithful, minimally rewritten fact over returning an empty array
-   when the user stated durable information.
-14. Return an empty facts array when the user's messages contain no retrievable durable
+   when an eligible source message stated durable information.
+14. Return an empty facts array when eligible source messages contain no retrievable durable
    information, such as pure greetings, acknowledgements, filler, short-lived state, or one-off logs.
 15. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
@@ -963,7 +1014,7 @@ func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation st
 }
 
 func (s *IngestService) extractFactsAndTagsWithRouting(ctx context.Context, conversation string, messageCount int, routingTargets []RoutingTarget) ([]ExtractedFact, [][]string, error) {
-	input := prepareExtractionInputFromConversation(conversation, maxExtractionConversationRunes)
+	input := prepareExtractionInputFromConversationWithPolicy(conversation, maxExtractionConversationRunes, s.includeAssistantFacts)
 	if input.formatted == "" {
 		return nil, normalizeMessageTags(nil, messageCount), nil
 	}
@@ -973,7 +1024,7 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 
 ## Rules — facts
 
-1. Extract facts ONLY from the user's messages. Ignore assistant and system messages entirely.
+` + factExtractionSourceRule(s.includeAssistantFacts) + `
 2. Each fact must be a single, self-contained statement (one idea per fact).
    Exception: when facts are semantically dependent (cause-effect, event-reason,
    condition-outcome, temporal dependency), keep them as ONE fact preserving the
@@ -987,13 +1038,14 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
 3. Prefer specific details over vague summaries.
    - Good: "Uses Go 1.22 for backend services"
    - Bad: "Knows some programming languages"
-4. Preserve the user's original language.
+4. Preserve the original language of the source message.
 5. Omit pure greetings, filler, and debugging chatter with no lasting value.
 6. Do NOT extract search queries or lookup questions as facts.
    If the user is asking the assistant to find, explain, or look something up
    ("who is X", "how do I Y", "what does Z mean", "X是谁", "如何做Y", "Z是什么意思"), omit it from the facts array entirely.
-   Only store what the user STATED about themselves, their work, or their world.
-   Heuristic: if the fact can only be known because the user asked, it is query_intent.
+   Only store what an eligible source message STATED about the user, their work, or their world.
+   Heuristic: the user's question itself is query_intent. Evaluate an eligible assistant answer
+   independently under Rule 1 instead of turning the question into a fact.
    If it reveals something stable about the user independently, it is a fact.
    Examples to skip (query_intent):
      - "User asked about the history of the Ming dynasty"
@@ -1026,8 +1078,8 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    because they contain today/yesterday/tomorrow, ate/had/went, or plans/will. If the
    statement describes a person, place, relationship, project, trip, event, or commitment
    that may be useful later, keep it as fact.
-9. Keep concerns, risks, and worries the user expresses about their work, systems, platforms, or ongoing operations,
-	 when they describe an ongoing condition rather than a one-off log line. These signals can have lasting value.
+9. Keep concrete concerns, risks, and worries stated in eligible messages about ongoing work,
+   systems, platforms, or operations when they describe a durable condition rather than a one-off log line.
    Examples to keep:
      - "小红书账号最近数据不好，担心可能被封号"
      - "The API keeps returning 500s, something might be broken upstream"
@@ -1055,8 +1107,8 @@ atomic facts from a conversation AND assign short descriptive tags to each messa
    - Good: "小强今天去彩排了"
    - Bad: "他今天去彩排了"
 13. Prefer returning a faithful, minimally rewritten fact over returning an empty array
-   when the user stated durable information.
-14. Return an empty facts array when the user's messages contain no retrievable durable
+   when an eligible source message stated durable information.
+14. Return an empty facts array when eligible source messages contain no retrievable durable
    information, such as pure greetings, acknowledgements, filler, short-lived state, or one-off logs.
 15. Assign 1-3 short lowercase tags to each extracted fact describing its topic or
    category. Examples: "tech", "personal", "preference", "work", "location", "habit",
@@ -1116,7 +1168,7 @@ Output: {"facts": [], "message_tags": [["fitness", "diet", "timeline"], ["answer
 Return ONLY valid JSON. No markdown fences, no explanation.
 
 The "facts" array must contain durable facts only. Return an empty array when all
-user content is non-durable, while still returning message_tags for every message.
+eligible source content is non-durable, while still returning message_tags for every message.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}], "message_tags": [["tag1", "tag2"], ["tag3"]]}`
 	systemPrompt += routingPromptSection(routingTargets)

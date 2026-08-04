@@ -49,6 +49,7 @@ type Server struct {
 	svcCache              sync.Map
 	chainRecallStopScore  float64
 	disableSessionSave    bool
+	includeAssistantFacts bool
 	recallRequestTimeout  time.Duration
 	recallResponseReserve time.Duration
 }
@@ -117,6 +118,11 @@ func (s *Server) WithDisableSessionSave(disabled bool) *Server {
 	return s
 }
 
+func (s *Server) WithAssistantFactExtraction(enabled bool) *Server {
+	s.includeAssistantFacts = enabled
+	return s
+}
+
 func (s *Server) WithRecallRequestBudget(timeout, responseReserve time.Duration) *Server {
 	s.recallRequestTimeout = timeout
 	s.recallResponseReserve = responseReserve
@@ -143,9 +149,10 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 		schemaReady := s.ensureTenantRuntimeSchema(auth)
 		memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 		sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
+		ingestOption := service.WithAssistantFactExtraction(s.includeAssistantFacts)
 		svc := resolvedSvc{
-			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
-			ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
+			memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, ingestOption),
+			ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, ingestOption),
 			session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 		}
 		if !schemaReady {
@@ -161,9 +168,10 @@ func (s *Server) resolveServices(auth *domain.AuthInfo) resolvedSvc {
 	schemaReady := s.ensureTenantRuntimeSchema(auth)
 	memRepo := repository.NewMemoryRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
 	sessRepo := repository.NewSessionRepo(s.dbBackend, auth.TenantDB, s.autoModel, s.ftsEnabled, auth.ClusterID)
+	ingestOption := service.WithAssistantFactExtraction(s.includeAssistantFacts)
 	svc := resolvedSvc{
-		memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
-		ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode),
+		memory:  service.NewMemoryService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, ingestOption),
+		ingest:  service.NewIngestService(memRepo, s.llmClient, s.embedder, s.autoModel, s.ingestMode, ingestOption),
 		session: service.NewSessionService(sessRepo, s.embedder, s.autoModel),
 	}
 	if !schemaReady {

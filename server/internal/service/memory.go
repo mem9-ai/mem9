@@ -52,12 +52,12 @@ type memoryEmbeddingLookup interface {
 	GetEmbeddingsByID(ctx context.Context, ids []string) (map[string][]float32, error)
 }
 
-func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode) *MemoryService {
+func NewMemoryService(memories repository.MemoryRepo, llmClient *llm.Client, embedder *embed.Embedder, autoModel string, ingestMode IngestMode, ingestOptions ...IngestOption) *MemoryService {
 	return &MemoryService{
 		memories:  memories,
 		embedder:  embedder,
 		autoModel: autoModel,
-		ingest:    NewIngestService(memories, llmClient, embedder, autoModel, ingestMode),
+		ingest:    NewIngestService(memories, llmClient, embedder, autoModel, ingestMode, ingestOptions...),
 	}
 }
 
