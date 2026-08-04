@@ -18,6 +18,7 @@ import (
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/metrics"
+	"github.com/qiffang/mnemos/server/internal/middleware"
 )
 
 type failingJSONResponseWriter struct {
@@ -69,9 +70,11 @@ func TestRecallRequestBudgetStartsBeforeGlobalRateLimitMiddleware(t *testing.T) 
 	}
 }
 
-func TestRecallRequestBudgetMapsPreHandlerDeadlineTo504(t *testing.T) {
+func TestRecallRequestBudgetMapsServerDeadlinesToSame504Contract(t *testing.T) {
 	metrics.HTTPRequestsTotal.Reset()
+	var preHandlerLogBuf bytes.Buffer
 	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).WithRecallRequestBudget(120*time.Millisecond, 60*time.Millisecond)
+	srv.logger = slog.New(slog.NewJSONHandler(&preHandlerLogBuf, nil))
 	rateLimit := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			<-r.Context().Done()
@@ -84,22 +87,77 @@ func TestRecallRequestBudgetMapsPreHandlerDeadlineTo504(t *testing.T) {
 
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusGatewayTimeout {
-		t.Fatalf("status = %d, want 504: %s", rr.Code, rr.Body.String())
+	preHandlerResponse := assertRecallDeadlineResponse(t, rr)
+	assertRecallHTTPMetric(t, "unmatched", http.StatusGatewayTimeout)
+	assertRecallRequestLog(t, &preHandlerLogBuf, http.StatusGatewayTimeout, "ERROR")
+
+	metrics.HTTPRequestsTotal.Reset()
+	waitForDeadline := func(ctx context.Context) ([]domain.Memory, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
-	var response map[string]string
-	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
-		t.Fatalf("decode response: %v", err)
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(ctx context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return waitForDeadline(ctx)
+		},
 	}
-	if response["code"] != recallServerDeadlineCode {
-		t.Fatalf("code = %q, want %q", response["code"], recallServerDeadlineCode)
+	sessRepo := &testSessionRepo{
+		keywordSearchHook: func(ctx context.Context, _ string, _ domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			return waitForDeadline(ctx)
+		},
 	}
-	assertRecallHTTPMetric(t, http.StatusGatewayTimeout)
+	var handlerLogBuf bytes.Buffer
+	srv = newTestServer(memRepo, sessRepo).WithRecallRequestBudget(120*time.Millisecond, 60*time.Millisecond)
+	srv.logger = slog.New(slog.NewJSONHandler(&handlerLogBuf, nil))
+	apiKey := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := middleware.WithAuthContext(r.Context(), &domain.AuthInfo{AgentName: "test-agent"})
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+	handler = srv.Router(identityMiddleware, identityMiddleware, apiKey, identityMiddleware)
+	req = httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories?q=project", nil)
+	rr = httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	handlerResponse := assertRecallDeadlineResponse(t, rr)
+	assertRecallHTTPMetric(t, "/v1alpha2/mem9s/memories", http.StatusGatewayTimeout)
+	assertRecallRequestLog(t, &handlerLogBuf, http.StatusGatewayTimeout, "ERROR")
+	if handlerResponse != preHandlerResponse {
+		t.Fatalf("handler response = %#v, want pre-handler response %#v", handlerResponse, preHandlerResponse)
+	}
+}
+
+func TestRecallRequestBudgetRecordsPreHandlerDeadlineWriteFailure(t *testing.T) {
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{}).WithRecallRequestBudget(120*time.Millisecond, 60*time.Millisecond)
+	srv.logger = logger
+	rateLimit := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+			http.Error(w, "rate limit dependency timed out", http.StatusServiceUnavailable)
+		})
+	}
+	handler := srv.Router(identityMiddleware, rateLimit, identityMiddleware, identityMiddleware)
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories?q=project", nil)
+	w := &failingJSONResponseWriter{header: make(http.Header)}
+
+	handler.ServeHTTP(w, req)
+
+	if w.status != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want 504", w.status)
+	}
+	entry := findHandlerLogEntry(t, decodeHandlerLogs(t, &logBuf), "recall request deadline exceeded before handler")
+	assertHandlerLogField(t, entry, "response_write_outcome", "failed")
 }
 
 func TestRecallRequestBudgetMapsPreHandlerClientCancellationTo499(t *testing.T) {
 	metrics.HTTPRequestsTotal.Reset()
+	var logBuf bytes.Buffer
 	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	srv.logger = slog.New(slog.NewJSONHandler(&logBuf, nil))
 	rateLimit := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			<-r.Context().Done()
@@ -118,12 +176,76 @@ func TestRecallRequestBudgetMapsPreHandlerClientCancellationTo499(t *testing.T) 
 	if rr.Code != statusClientClosedRequest {
 		t.Fatalf("status = %d, want 499: %s", rr.Code, rr.Body.String())
 	}
-	assertRecallHTTPMetric(t, statusClientClosedRequest)
+	assertRecallHTTPMetric(t, "unmatched", statusClientClosedRequest)
+	assertRecallRequestLog(t, &logBuf, statusClientClosedRequest, "INFO")
 }
 
-func assertRecallHTTPMetric(t *testing.T, status int) {
+func TestRecallRequestBudgetPreservesCommitted500AfterClientCancellation(t *testing.T) {
+	metrics.HTTPRequestsTotal.Reset()
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	srv.logger = logger
+
+	req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories?q=project", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	req = req.WithContext(ctx)
+	rateLimit := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			respondError(w, http.StatusInternalServerError, "dependency failed")
+			cancel()
+		})
+	}
+	handler := srv.Router(identityMiddleware, rateLimit, identityMiddleware, identityMiddleware)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500: %s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "{\"error\":\"dependency failed\"}\n" {
+		t.Fatalf("body = %q, want committed 500 response", got)
+	}
+	assertRecallHTTPMetric(t, "unmatched", http.StatusInternalServerError)
+	entries := decodeHandlerLogs(t, &logBuf)
+	for _, entry := range entries {
+		if entry["msg"] == "recall request canceled before handler" {
+			t.Fatal("logged synthetic 499 after response was committed")
+		}
+	}
+	entry := findHandlerLogEntry(t, entries, "handle request done")
+	assertHandlerLogField(t, entry, "status", float64(http.StatusInternalServerError))
+	assertHandlerLogField(t, entry, "level", "ERROR")
+}
+
+func assertRecallDeadlineResponse(t *testing.T, rr *httptest.ResponseRecorder) [2]string {
 	t.Helper()
-	counter, err := metrics.HTTPRequestsTotal.GetMetricWithLabelValues(http.MethodGet, "unmatched", strconv.Itoa(status))
+	if rr.Code != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want 504: %s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	var response map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response) != 2 {
+		t.Fatalf("response = %#v, want code and error", response)
+	}
+	if response["code"] != recallServerDeadlineCode {
+		t.Fatalf("code = %q, want %q", response["code"], recallServerDeadlineCode)
+	}
+	if response["error"] != recallServerDeadlineMessage {
+		t.Fatalf("error = %q, want %q", response["error"], recallServerDeadlineMessage)
+	}
+	return [2]string{response["code"], response["error"]}
+}
+
+func assertRecallHTTPMetric(t *testing.T, route string, status int) {
+	t.Helper()
+	counter, err := metrics.HTTPRequestsTotal.GetMetricWithLabelValues(http.MethodGet, route, strconv.Itoa(status))
 	if err != nil {
 		t.Fatalf("get HTTP request metric: %v", err)
 	}
@@ -138,6 +260,13 @@ func assertRecallHTTPMetric(t *testing.T, status int) {
 	if pb.Counter == nil || pb.Counter.GetValue() != 1 {
 		t.Fatalf("HTTP %d request metric = %#v, want 1", status, pb.Counter)
 	}
+}
+
+func assertRecallRequestLog(t *testing.T, logBuf *bytes.Buffer, status int, level string) {
+	t.Helper()
+	entry := findHandlerLogEntry(t, decodeHandlerLogs(t, logBuf), "handle request done")
+	assertHandlerLogField(t, entry, "status", float64(status))
+	assertHandlerLogField(t, entry, "level", level)
 }
 
 func TestRecallRequestBudgetMiddlewareSkipsKeywordSearch(t *testing.T) {

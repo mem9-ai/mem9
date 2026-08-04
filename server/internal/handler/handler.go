@@ -342,10 +342,7 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 			attrs = append(attrs, "cluster_id", auth.ClusterID)
 		}
 		s.logger.ErrorContext(ctx, "request deadline exceeded", attrs...)
-		return respond(w, http.StatusGatewayTimeout, map[string]string{
-			"error": "recall request deadline exceeded",
-			"code":  recallServerDeadlineCode,
-		})
+		return respond(w, http.StatusGatewayTimeout, recallServerDeadlinePayload())
 	case errors.As(err, &budgetErr):
 		return respond(w, http.StatusUnprocessableEntity, map[string]string{
 			"error": memoryListBudgetErrorMessage,
@@ -438,8 +435,8 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				}
 			}
 			status := ww.Status()
-			if errors.Is(r.Context().Err(), context.Canceled) && errors.Is(context.Cause(r.Context()), context.Canceled) {
-				status = 499
+			if status == 0 && errors.Is(r.Context().Err(), context.Canceled) && errors.Is(context.Cause(r.Context()), context.Canceled) {
+				status = statusClientClosedRequest
 			}
 			level := slog.LevelInfo
 			if status >= 500 {

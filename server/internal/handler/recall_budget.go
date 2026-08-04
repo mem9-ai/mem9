@@ -14,6 +14,7 @@ const (
 	defaultRecallRequestTimeout  = time.Minute
 	defaultRecallResponseReserve = 5 * time.Second
 	recallServerDeadlineCode     = "recall_server_deadline_exceeded"
+	recallServerDeadlineMessage  = "recall request deadline exceeded"
 	recallBranchDeadlineCode     = "recall_branch_deadline_exceeded"
 )
 
@@ -32,7 +33,7 @@ type recallBudgetContext struct {
 type recallServerDeadlineError struct{}
 
 func (*recallServerDeadlineError) Error() string {
-	return "recall request deadline exceeded"
+	return recallServerDeadlineMessage
 }
 
 func (*recallServerDeadlineError) Unwrap() error {
@@ -195,7 +196,7 @@ func (w *recallBudgetResponseWriter) Write(payload []byte) (int, error) {
 }
 
 func (w *recallBudgetResponseWriter) shouldOverride() bool {
-	return w.terminalStatus() != 0
+	return !w.wroteHeader && w.terminalStatus() != 0
 }
 
 func (w *recallBudgetResponseWriter) completeDeadlineResponse() {
@@ -227,16 +228,22 @@ func (w *recallBudgetResponseWriter) writeDeadlineResponse() {
 	}
 	w.wroteHeader = true
 	w.Header().Del("Content-Length")
-	w.Header().Set("Content-Type", "application/json")
-	w.ResponseWriter.WriteHeader(w.overrideStatus)
-	payload := "{\"error\":\"client closed request\"}\n"
+	var err error
 	if w.overrideStatus == http.StatusGatewayTimeout {
-		payload = "{\"code\":\"" + recallServerDeadlineCode + "\",\"error\":\"recall request deadline exceeded\"}\n"
+		err = respond(w.ResponseWriter, w.overrideStatus, recallServerDeadlinePayload())
+	} else {
+		err = respondError(w.ResponseWriter, w.overrideStatus, "client closed request")
 	}
-	_, err := w.ResponseWriter.Write([]byte(payload))
 	w.writeOutcome = "success"
 	if err != nil {
 		w.writeOutcome = "failed"
+	}
+}
+
+func recallServerDeadlinePayload() map[string]string {
+	return map[string]string{
+		"code":  recallServerDeadlineCode,
+		"error": recallServerDeadlineMessage,
 	}
 }
 
