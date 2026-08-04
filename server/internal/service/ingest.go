@@ -1528,6 +1528,7 @@ type existingMemoryCandidate struct {
 type factSearchResult struct {
 	attempts   int
 	candidates []existingMemoryCandidate
+	fatalErr   error
 	successes  int
 }
 
@@ -1597,6 +1598,9 @@ func (s *IngestService) gatherExistingMemories(ctx context.Context, agentID, app
 
 	var searchAttempts, searchSuccesses int
 	for _, searchResult := range searchResults {
+		if searchResult.fatalErr != nil {
+			return nil, fmt.Errorf("existing memory FTS search incomplete: %w", searchResult.fatalErr)
+		}
 		searchAttempts += searchResult.attempts
 		searchSuccesses += searchResult.successes
 		addUnseen(searchResult.candidates)
@@ -1644,6 +1648,9 @@ func (s *IngestService) searchExistingMemoriesForFact(
 			kwMatches, kwErr = s.memories.KeywordSearch(ctx, fact, filter, perFactLimit)
 		}
 		if kwErr != nil {
+			if errors.Is(kwErr, domain.ErrFTSSearchTruncated) {
+				result.fatalErr = kwErr
+			}
 			slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact_len", len(fact), "err", kwErr)
 			return result
 		}
@@ -1699,6 +1706,9 @@ func (s *IngestService) searchExistingMemoriesForFact(
 		kwMatches, kwErr = s.memories.KeywordSearch(ctx, fact, filter, perFactLimit)
 	}
 	if kwErr != nil {
+		if errors.Is(kwErr, domain.ErrFTSSearchTruncated) {
+			result.fatalErr = kwErr
+		}
 		slog.Warn("gatherExistingMemories: keyword/FTS search failed for fact, skipping", "fact_len", len(fact), "err", kwErr)
 	} else {
 		result.successes++

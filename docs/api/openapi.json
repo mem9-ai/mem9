@@ -3059,7 +3059,8 @@
           "code": {
             "type": "string",
             "enum": [
-              "recall_branch_deadline_exceeded"
+              "recall_branch_deadline_exceeded",
+              "fts_candidate_budget_exhausted"
             ]
           },
           "branch": {
@@ -3308,7 +3309,7 @@
           },
           "partial": {
             "type": "boolean",
-            "description": "True when Recall preserved completed branches after another branch exhausted the server work budget."
+            "description": "True when Recall preserved accepted results after a branch deadline or FTS candidate budget was exhausted."
           },
           "warnings": {
             "type": "array",

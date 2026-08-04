@@ -49,6 +49,24 @@ func TestMemoryListMode(t *testing.T) {
 	}
 }
 
+func TestMemoryListObservationRecordsRepositoryRecallWarning(t *testing.T) {
+	observation := newMemoryListObservation(nil, nil, domain.MemoryFilter{Query: "term"}, false)
+	ctx := withMemoryListObservation(context.Background(), observation)
+
+	domain.RecordRecallWarning(ctx, domain.RecallWarning{
+		Code:   domain.RecallWarningFTSCandidateBudgetExhausted,
+		Branch: string(domain.TypeInsight),
+	})
+
+	partial, warnings := observation.recallResponseMetadata()
+	if !partial {
+		t.Fatal("partial = false, want true")
+	}
+	if len(warnings) != 1 || warnings[0].Code != domain.RecallWarningFTSCandidateBudgetExhausted || warnings[0].Branch != string(domain.TypeInsight) {
+		t.Fatalf("warnings = %+v, want insight FTS candidate budget warning", warnings)
+	}
+}
+
 func TestListMemories_RecordsMemoryListMetrics(t *testing.T) {
 	tests := []struct {
 		name       string

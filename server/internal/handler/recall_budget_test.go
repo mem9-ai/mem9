@@ -408,6 +408,50 @@ func TestListMemories_RecallDeadlinePreservesCompletedBranches(t *testing.T) {
 	}
 }
 
+func TestListMemories_FTSCandidateBudgetPreservesAcceptedResults(t *testing.T) {
+	now := time.Now()
+	memRepo := &testMemoryRepo{
+		keywordSearchHook: func(ctx context.Context, _ string, filter domain.MemoryFilter, _ int) ([]domain.Memory, error) {
+			if filter.MemoryType != string(domain.TypeInsight) {
+				return nil, nil
+			}
+			domain.RecordRecallWarning(ctx, domain.RecallWarning{
+				Code:   domain.RecallWarningFTSCandidateBudgetExhausted,
+				Branch: string(domain.TypeInsight),
+			})
+			return []domain.Memory{{
+				ID:         "insight-1",
+				Content:    "project-1234",
+				MemoryType: domain.TypeInsight,
+				State:      domain.StateActive,
+				UpdatedAt:  now,
+			}}, nil
+		},
+	}
+	srv := newTestServer(memRepo, &testSessionRepo{})
+	req := makeRequest(t, http.MethodGet, "/memories?q="+url.QueryEscape("project-1234"), nil)
+	rr := httptest.NewRecorder()
+
+	srv.listMemories(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var response listResponse
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !response.Partial {
+		t.Fatal("partial = false, want true")
+	}
+	if len(response.Memories) != 1 || response.Memories[0].ID != "insight-1" {
+		t.Fatalf("memories = %+v, want accepted insight result", response.Memories)
+	}
+	if len(response.Warnings) != 1 || response.Warnings[0].Code != domain.RecallWarningFTSCandidateBudgetExhausted || response.Warnings[0].Branch != string(domain.TypeInsight) {
+		t.Fatalf("warnings = %+v, want insight FTS candidate budget warning", response.Warnings)
+	}
+}
+
 func TestDefaultConfidenceRecallSearch_PropagatesBranchDeadlineToRepositories(t *testing.T) {
 	deadlines := make(chan time.Time, 16)
 	recordDeadline := func(ctx context.Context) ([]domain.Memory, error) {

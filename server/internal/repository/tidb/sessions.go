@@ -398,7 +398,14 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 
 func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
 	start := time.Now()
-	memories, err := r.ftsSearchWithPostFilter(ctx, query, f, limit)
+	memories, stats, err := r.ftsSearchWithPostFilter(ctx, query, f, limit)
+	if err != nil && !errors.Is(err, domain.ErrFTSSearchTruncated) {
+		stats.stopReason = ftsStopError
+	}
+	logFTSSearchStats(ctx, "sessions fts search done", "session", r.clusterID, time.Since(start), stats)
+	if errors.Is(err, domain.ErrFTSSearchTruncated) {
+		return memories, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
+	}
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
@@ -406,7 +413,6 @@ func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.Memo
 		logSearchError(ctx, "sessions fts search failed", "session", "fts", r.clusterID, time.Since(start), err)
 		return nil, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
 	}
-	slog.DebugContext(ctx, "sessions fts search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
 	return memories, nil
 }
 
@@ -415,51 +421,25 @@ type sessionFTSCandidate struct {
 	score float64
 }
 
-func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, error) {
-	if limit <= 0 {
-		return nil, nil
-	}
-
+func (r *SessionRepo) ftsSearchWithPostFilter(ctx context.Context, query string, f domain.MemoryFilter, limit int) ([]domain.Memory, ftsSearchStats, error) {
 	conds, args := r.buildSessionFilterConds(f)
 	where := strings.Join(conds, " AND ")
 	safeQ := ftsSafeLiteral(query)
-
-	filtered := make([]domain.Memory, 0, min(limit, maxFTSFallbackCandidateLimit))
-	initialCandidateLimit := min(limit, maxFTSCandidatePageLimit)
-	candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, initialCandidateLimit, 0)
-	if err != nil {
-		return nil, err
+	memories, stats, err := runAdaptiveFTSSearch(
+		ctx,
+		limit,
+		func(candidate sessionFTSCandidate) string { return candidate.id },
+		func(ctx context.Context, pageSize, offset int) ([]sessionFTSCandidate, error) {
+			return r.fetchSessionFTSCandidates(ctx, safeQ, pageSize, offset)
+		},
+		func(ctx context.Context, candidates []sessionFTSCandidate) ([]domain.Memory, error) {
+			return r.fetchFilteredFTSSessions(ctx, candidates, where, args)
+		},
+	)
+	if err == nil {
+		err = ftsCandidateBudgetError(stats)
 	}
-	exhausted, err := appendFilteredFTSPage(ctx, candidates, where, args, &filtered, r.fetchFilteredFTSSessions)
-	if err != nil {
-		return nil, err
-	}
-	if len(filtered) >= limit {
-		return filtered[:limit], nil
-	}
-	if exhausted || len(candidates) < initialCandidateLimit {
-		return filtered, nil
-	}
-
-	offset := initialCandidateLimit
-	for page := 0; page < maxFTSFallbackPages; page++ {
-		candidates, err := r.fetchSessionFTSCandidates(ctx, safeQ, maxFTSCandidatePageLimit, offset)
-		if err != nil {
-			return nil, err
-		}
-		exhausted, err := appendFilteredFTSPage(ctx, candidates, where, args, &filtered, r.fetchFilteredFTSSessions)
-		if err != nil {
-			return nil, err
-		}
-		if len(filtered) >= limit {
-			return filtered[:limit], nil
-		}
-		if exhausted || len(candidates) < maxFTSCandidatePageLimit {
-			return filtered, nil
-		}
-		offset += maxFTSCandidatePageLimit
-	}
-	return filtered, nil
+	return memories, stats, err
 }
 
 func (r *SessionRepo) fetchSessionFTSCandidates(ctx context.Context, safeQ string, limit, offset int) ([]sessionFTSCandidate, error) {

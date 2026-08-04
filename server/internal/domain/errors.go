@@ -11,6 +11,7 @@ var (
 	ErrNotSupported            = errors.New("not supported")
 	ErrAutoVectorSearchSkipped = errors.New("auto vector search skipped")
 	ErrSchemaIncompatible      = errors.New("schema incompatible")
+	ErrFTSSearchTruncated      = errors.New("fts search truncated")
 )
 
 // ValidationError wraps ErrValidation with a field-level message.

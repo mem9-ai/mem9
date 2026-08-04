@@ -127,7 +127,10 @@ func memoryListTypeLabel(memoryType string) string {
 }
 
 func withMemoryListObservation(ctx context.Context, observation *memoryListObservation) context.Context {
-	return context.WithValue(ctx, memoryListObservationContextKey{}, observation)
+	ctx = context.WithValue(ctx, memoryListObservationContextKey{}, observation)
+	return domain.WithRecallWarningRecorder(ctx, func(warning domain.RecallWarning) {
+		observation.recordRecallPartial([]recallWarning{warning})
+	})
 }
 
 func memoryListObservationFromContext(ctx context.Context) *memoryListObservation {

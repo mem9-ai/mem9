@@ -2984,6 +2984,29 @@ func TestGatherExistingMemoriesPartialLegFailureContinues(t *testing.T) {
 	}
 }
 
+func TestGatherExistingMemoriesFTSTruncationReturnsError(t *testing.T) {
+	t.Parallel()
+
+	highScore := 0.8
+	memRepo := &memoryRepoMock{
+		ftsAvail: true,
+		ftsErr:   domain.ErrFTSSearchTruncated,
+		vectorResults: []domain.Memory{
+			{ID: "vec-1", Content: "from vector", MemoryType: domain.TypeInsight, State: domain.StateActive, Score: &highScore},
+		},
+	}
+
+	svc := NewIngestService(memRepo, nil, nil, "auto-model", ModeSmart)
+
+	result, err := svc.gatherExistingMemories(context.Background(), "agent-1", "", []string{"test fact"})
+	if !errors.Is(err, domain.ErrFTSSearchTruncated) {
+		t.Fatalf("gatherExistingMemories() error = %v, want ErrFTSSearchTruncated", err)
+	}
+	if result != nil {
+		t.Fatalf("result = %+v, want nil", result)
+	}
+}
+
 // TestGatherExistingMemoriesFTSOnlyTotalOutage verifies the no-vector path
 // also detects total outage when all keyword/FTS searches fail.
 func TestGatherExistingMemoriesFTSOnlyTotalOutage(t *testing.T) {
