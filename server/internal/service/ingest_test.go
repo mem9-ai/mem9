@@ -145,6 +145,25 @@ func TestNormalizeTemporalFacts_ResolvesNextMonthAgainstTimestamp(t *testing.T) 
 	}
 }
 
+func TestNormalizeTemporalFacts_UsesAssistantTimestampWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInputWithPolicy([]IngestMessage{
+		{Role: "user", Content: "When is the mem9 migration scheduled?"},
+		{Role: "assistant", Content: "[1:14 pm on 25 May, 2023] The mem9 migration is scheduled next month."},
+	}, maxExtractionConversationRunes, true)
+
+	got := normalizeTemporalFacts(input, []ExtractedFact{
+		{Text: "The mem9 migration is scheduled next month", Tags: []string{"work", "timeline"}},
+	})
+	if len(got) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(got))
+	}
+	if got[0].Text != "The mem9 migration is scheduled in June 2023" {
+		t.Fatalf("normalized fact = %q, want %q", got[0].Text, "The mem9 migration is scheduled in June 2023")
+	}
+}
+
 func TestNormalizeTemporalFacts_ResolvesLastYearAgainstTimestamp(t *testing.T) {
 	t.Parallel()
 
@@ -385,6 +404,69 @@ func TestExtractPhase1FactTagsPopulated(t *testing.T) {
 	}
 }
 
+func TestExtractPhase1IncludesAssistantFactsWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	var systemPrompt string
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode llm request: %v", err)
+		}
+		if len(req.Messages) > 0 {
+			systemPrompt = req.Messages[0].Content
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"facts": [{"text": "The mem9 Go API is the source of truth for memory data", "tags": ["architecture"]}], "message_tags": [["question"], ["architecture"]]}`}},
+			},
+		})
+	}))
+	defer mockLLM.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: mockLLM.URL, Model: "test-model"})
+	svc := NewIngestService(
+		&memoryRepoMock{},
+		llmClient,
+		nil,
+		"auto-model",
+		ModeSmart,
+		WithAssistantFactExtraction(true),
+	)
+
+	result, err := svc.ExtractPhase1(context.Background(), []IngestMessage{
+		{Role: "user", Content: "Which component is authoritative?", Seq: intPtr(10)},
+		{Role: "assistant", Content: "The mem9 Go API is the source of truth for memory data.", Seq: intPtr(11)},
+	})
+	if err != nil {
+		t.Fatalf("ExtractPhase1() error = %v", err)
+	}
+	if !strings.Contains(systemPrompt, "Extract durable facts from both user and assistant messages") {
+		t.Fatalf("assistant extraction rule missing from prompt:\n%s", systemPrompt)
+	}
+	if strings.Contains(systemPrompt, "Extract facts ONLY from the user's messages") {
+		t.Fatalf("user-only extraction rule should be disabled:\n%s", systemPrompt)
+	}
+	if len(result.Facts) != 1 {
+		t.Fatalf("expected 1 fact, got %d", len(result.Facts))
+	}
+	if !reflect.DeepEqual(result.Facts[0].SourceSeqs, []int{11}) {
+		t.Fatalf("source seqs = %v, want [11]", result.Facts[0].SourceSeqs)
+	}
+	if len(result.Facts[0].SourceTurns) != 1 {
+		t.Fatalf("source turns = %+v, want one assistant turn", result.Facts[0].SourceTurns)
+	}
+	turn := result.Facts[0].SourceTurns[0]
+	if turn.Seq != 11 || turn.Role != "assistant" || turn.Content != "The mem9 Go API is the source of truth for memory data." {
+		t.Fatalf("source turn = %+v, want assistant seq 11", turn)
+	}
+}
+
 func TestExtractPhase1WithoutRoutingOmitsRoutingPrompt(t *testing.T) {
 	var systemPrompt string
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -420,6 +502,12 @@ func TestExtractPhase1WithoutRoutingOmitsRoutingPrompt(t *testing.T) {
 	}
 	if strings.Contains(systemPrompt, "route_targets") {
 		t.Fatalf("route_targets should be omitted without routing targets")
+	}
+	if !strings.Contains(systemPrompt, "Extract facts ONLY from the user's messages") {
+		t.Fatalf("default extraction prompt must remain user-only:\n%s", systemPrompt)
+	}
+	if strings.Contains(systemPrompt, "Extract durable facts from both user and assistant messages") {
+		t.Fatalf("assistant extraction must remain opt-in:\n%s", systemPrompt)
 	}
 }
 

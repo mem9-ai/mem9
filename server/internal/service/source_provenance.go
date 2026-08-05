@@ -29,6 +29,7 @@ var sourceProvenanceStopwords = map[string]struct{}{
 
 type sourceTurnMetadata struct {
 	Seq     int    `json:"seq"`
+	Role    string `json:"role,omitempty"`
 	Content string `json:"content"`
 }
 
@@ -42,11 +43,11 @@ func annotateFactsWithSourceSeqs(input preparedExtractionInput, facts []Extracte
 		if len(out[i].SourceSeqs) > 0 {
 			out[i].SourceSeqs = normalizeSourceSeqs(out[i].SourceSeqs)
 		} else if strings.EqualFold(out[i].FactType, factTypeRawFallback) {
-			out[i].SourceSeqs = messageSourceSeqs(input.messages)
+			out[i].SourceSeqs = messageSourceSeqs(input.messages, input.includeAssistantFacts)
 		} else {
-			out[i].SourceSeqs = inferSourceSeqs(out[i].Text, input.messages)
+			out[i].SourceSeqs = inferSourceSeqs(out[i].Text, input.messages, input.includeAssistantFacts)
 		}
-		out[i].SourceTurns = sourceTurnsFromMessages(input.messages, out[i].SourceSeqs)
+		out[i].SourceTurns = sourceTurnsFromMessages(input.messages, out[i].SourceSeqs, input.includeAssistantFacts)
 	}
 	return out
 }
@@ -287,7 +288,7 @@ func sourceTurnsForReconcileText(text string, facts []ExtractedFact) []sourceTur
 	return normalizeSourceTurns(nil, turns)
 }
 
-func inferSourceSeqs(text string, messages []IngestMessage) []int {
+func inferSourceSeqs(text string, messages []IngestMessage, includeAssistantFacts bool) []int {
 	query := sourceTokenSet(text)
 	if len(query) == 0 {
 		return nil
@@ -300,7 +301,7 @@ func inferSourceSeqs(text string, messages []IngestMessage) []int {
 	var candidates []candidate
 	maxHits := 0
 	for _, msg := range messages {
-		if msg.Seq == nil || !strings.EqualFold(msg.Role, "user") {
+		if msg.Seq == nil || !factSourceRoleAllowed(msg.Role, includeAssistantFacts) {
 			continue
 		}
 		hits := countTokenOverlap(query, sourceTokenSet(msg.Content))
@@ -382,10 +383,10 @@ func countTokenOverlap(left, right map[string]struct{}) int {
 	return hits
 }
 
-func messageSourceSeqs(messages []IngestMessage) []int {
+func messageSourceSeqs(messages []IngestMessage, includeAssistantFacts bool) []int {
 	seqs := make([]int, 0, len(messages))
 	for _, msg := range messages {
-		if msg.Seq == nil || !strings.EqualFold(msg.Role, "user") {
+		if msg.Seq == nil || !factSourceRoleAllowed(msg.Role, includeAssistantFacts) {
 			continue
 		}
 		seqs = append(seqs, *msg.Seq)
@@ -396,33 +397,37 @@ func messageSourceSeqs(messages []IngestMessage) []int {
 	return normalizeSourceSeqs(seqs)
 }
 
-func sourceTurnsFromMessages(messages []IngestMessage, seqs []int) []sourceTurnMetadata {
+func sourceTurnsFromMessages(messages []IngestMessage, seqs []int, includeAssistantFacts bool) []sourceTurnMetadata {
 	seqs = normalizeSourceSeqs(seqs)
 	if len(seqs) == 0 {
 		return nil
 	}
-	contentsBySeq := make(map[int]string, len(messages))
+	turnsBySeq := make(map[int]sourceTurnMetadata, len(messages))
 	for _, msg := range messages {
-		if msg.Seq == nil || !strings.EqualFold(msg.Role, "user") {
+		if msg.Seq == nil || !factSourceRoleAllowed(msg.Role, includeAssistantFacts) {
 			continue
 		}
 		content := strings.TrimSpace(msg.Content)
 		if content == "" {
 			continue
 		}
-		if _, exists := contentsBySeq[*msg.Seq]; exists {
+		if _, exists := turnsBySeq[*msg.Seq]; exists {
 			continue
 		}
-		contentsBySeq[*msg.Seq] = content
+		role := ""
+		if strings.EqualFold(strings.TrimSpace(msg.Role), "assistant") {
+			role = "assistant"
+		}
+		turnsBySeq[*msg.Seq] = sourceTurnMetadata{Seq: *msg.Seq, Role: role, Content: content}
 	}
 
 	turns := make([]sourceTurnMetadata, 0, len(seqs))
 	for _, seq := range seqs {
-		content, ok := contentsBySeq[seq]
+		turn, ok := turnsBySeq[seq]
 		if !ok {
 			continue
 		}
-		turns = append(turns, sourceTurnMetadata{Seq: seq, Content: content})
+		turns = append(turns, turn)
 	}
 	return normalizeSourceTurns(seqs, turns)
 }
@@ -514,6 +519,11 @@ func normalizeSourceTurns(seqs []int, turns []sourceTurnMetadata) []sourceTurnMe
 		turn.Content = strings.TrimSpace(turn.Content)
 		if turn.Content == "" {
 			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(turn.Role), "assistant") {
+			turn.Role = "assistant"
+		} else {
+			turn.Role = ""
 		}
 		if _, ok := seen[turn.Seq]; ok {
 			continue

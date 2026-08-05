@@ -221,7 +221,7 @@ func normalizeTemporalFacts(input preparedExtractionInput, facts []ExtractedFact
 }
 
 func normalizeTemporalFactsAt(input preparedExtractionInput, facts []ExtractedFact, now time.Time) []ExtractedFact {
-	anchors := buildTemporalAnchorCandidates(input.messages)
+	anchors := buildTemporalAnchorCandidates(input.messages, input.includeAssistantFacts)
 	out := make([]ExtractedFact, 0, len(facts))
 	for _, fact := range facts {
 		if strings.EqualFold(fact.FactType, factTypeQueryIntent) {
@@ -243,7 +243,7 @@ func normalizeRawFallbackFacts(input preparedExtractionInput, facts []ExtractedF
 }
 
 func normalizeRawFallbackFactsAt(input preparedExtractionInput, facts []ExtractedFact, now time.Time) []ExtractedFact {
-	anchors := buildTemporalAnchorCandidates(input.messages)
+	anchors := buildTemporalAnchorCandidates(input.messages, input.includeAssistantFacts)
 	out := make([]ExtractedFact, 0, len(facts))
 	for _, fact := range facts {
 		out = append(out, normalizeRawFallbackFact(fact, anchors, now))
@@ -298,10 +298,10 @@ func normalizeTemporalFactContent(text string, anchors []temporalAnchorCandidate
 	return cleaned, nil
 }
 
-func buildTemporalAnchorCandidates(messages []IngestMessage) []temporalAnchorCandidate {
+func buildTemporalAnchorCandidates(messages []IngestMessage, includeAssistantFacts bool) []temporalAnchorCandidate {
 	anchors := make([]temporalAnchorCandidate, 0, len(messages))
 	for _, msg := range messages {
-		if !strings.EqualFold(strings.TrimSpace(msg.Role), "user") {
+		if !factSourceRoleAllowed(msg.Role, includeAssistantFacts) {
 			continue
 		}
 		anchor, body, ok := extractTemporalAnchor(msg.Content)

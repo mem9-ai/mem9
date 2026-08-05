@@ -186,7 +186,11 @@ func formatSearchMemoryWithSourceTurns(content string, turns []sourceTurnMetadat
 	}
 	parts := make([]string, 0, len(turns))
 	for _, turn := range turns {
-		parts = append(parts, turn.Content)
+		content := turn.Content
+		if turn.Role == "assistant" {
+			content = "Assistant: " + content
+		}
+		parts = append(parts, content)
 	}
 	return content + "\n[source-turns]\n" + strings.Join(parts, "\n")
 }

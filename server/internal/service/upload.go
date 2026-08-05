@@ -114,6 +114,7 @@ type UploadWorker struct {
 	concurrency  int
 	encryptor    encrypt.Encryptor
 	activity     *ActivityTracker
+	ingestOpts   []IngestOption
 }
 
 // NewUploadWorker creates a new UploadWorker.
@@ -132,6 +133,7 @@ func NewUploadWorker(
 	concurrency int,
 	encryptor encrypt.Encryptor,
 	activity *ActivityTracker,
+	ingestOptions ...IngestOption,
 ) *UploadWorker {
 	if logger == nil {
 		logger = slog.Default()
@@ -155,6 +157,7 @@ func NewUploadWorker(
 		concurrency:  concurrency,
 		encryptor:    encryptor,
 		activity:     activity,
+		ingestOpts:   append([]IngestOption(nil), ingestOptions...),
 	}
 }
 
@@ -246,7 +249,7 @@ func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) 
 	}
 
 	memRepo := repository.NewMemoryRepo(w.pool.Backend(), db, w.autoModel, w.ftsEnabled, tenantInfo.ClusterID)
-	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode)
+	ingestSvc := NewIngestService(memRepo, w.llmClient, w.embedder, w.autoModel, w.mode, w.ingestOpts...)
 
 	data, err := os.ReadFile(task.FilePath)
 	if err != nil {

@@ -118,6 +118,19 @@ func TestLoad_DisableSessionSave(t *testing.T) {
 	}
 }
 
+func TestLoad_FactExtractionIncludesAssistant(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_FACT_EXTRACTION_INCLUDE_ASSISTANT", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.FactExtractionIncludeAssistant {
+		t.Fatal("FactExtractionIncludeAssistant = false, want true")
+	}
+}
+
 func TestLoad_TiDBCloudPrivateLinkConfig(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 	t.Setenv("MNEMO_TIDBCLOUD_PREFER_PRIVATELINK", "true")

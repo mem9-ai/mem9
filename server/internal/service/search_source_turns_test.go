@@ -9,6 +9,18 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
 
+func TestFormatSearchMemoryWithSourceTurnsLabelsAssistant(t *testing.T) {
+	t.Parallel()
+
+	got := formatSearchMemoryWithSourceTurns("The API is authoritative", []sourceTurnMetadata{
+		{Seq: 2, Role: "assistant", Content: "The mem9 Go API is authoritative."},
+	})
+	want := "The API is authoritative\n[source-turns]\nAssistant: The mem9 Go API is authoritative."
+	if got != want {
+		t.Fatalf("formatted source turns = %q, want %q", got, want)
+	}
+}
+
 func withSearchEnv(t *testing.T, values map[string]string, fn func()) {
 	t.Helper()
 	previous := make(map[string]string, len(values))

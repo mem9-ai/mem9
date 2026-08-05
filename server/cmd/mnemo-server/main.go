@@ -286,6 +286,7 @@ func main() {
 		WithWebhookService(webhookSvc).
 		WithActivityTracker(activityTracker).
 		WithDisableSessionSave(cfg.DisableSessionSave).
+		WithAssistantFactExtraction(cfg.FactExtractionIncludeAssistant).
 		WithRecallRequestBudget(cfg.RecallRequestTimeout, cfg.RecallResponseReserve)
 	router := srv.Router(tenantMW, rateMW, apiKeyMW, middleware.CORS(cfg.CORSAllowedOrigins))
 
@@ -315,6 +316,7 @@ func main() {
 		cfg.WorkerConcurrency,
 		encryptor,
 		activityTracker,
+		service.WithAssistantFactExtraction(cfg.FactExtractionIncludeAssistant),
 	)
 	go func() {
 		if err := uploadWorker.Run(workerCtx); err != nil {
