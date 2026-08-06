@@ -22,11 +22,6 @@ type OnboardingCommandParts = {
   url: string | null;
   suffix: string;
 };
-type TopBannerDismissal = {
-  noticeId: string;
-  dismissedAt: number;
-};
-
 const ONBOARDING_COMMAND_URL_PATTERN = /https:\/\/\S+/u;
 const PUBLIC_SKILL_ORIGIN = 'https://mem9.ai';
 const PUBLIC_SKILL_URLS = [
@@ -34,8 +29,6 @@ const PUBLIC_SKILL_URLS = [
   'https://mem9.ai/beta/SKILL.md',
 ];
 const TRACKED_SKILL_PATHS = new Set(['/SKILL.md', '/beta/SKILL.md']);
-const TOP_BANNER_DISMISS_STORAGE_KEY = 'mem9.topBanner.dismissal';
-
 function getValue(dictionary: SiteDictionary, path: string): unknown {
   return path.split('.').reduce<unknown>((current, segment) => {
     if (current === null || current === undefined) {
@@ -844,57 +837,6 @@ function initOnboardingVersionControls(): void {
   });
 
   applyOnboardingVersion('stable');
-}
-
-function initTopBannerDismissal(): void {
-  const banner = document.querySelector<HTMLElement>('[data-top-banner]');
-  if (!banner) {
-    return;
-  }
-
-  const dismissButton = banner.querySelector<HTMLButtonElement>('[data-top-banner-dismiss]');
-  const noticeId = banner.dataset.noticeId;
-  const ttlMS = Number(banner.dataset.dismissTtlMs);
-  if (!dismissButton || !noticeId || !Number.isFinite(ttlMS) || ttlMS <= 0) {
-    return;
-  }
-
-  try {
-    const stored = localStorage.getItem(TOP_BANNER_DISMISS_STORAGE_KEY);
-    const dismissal = stored ? JSON.parse(stored) as Partial<TopBannerDismissal> : null;
-    const ageMS = Date.now() - (dismissal?.dismissedAt ?? 0);
-    if (
-      dismissal?.noticeId === noticeId
-      && typeof dismissal.dismissedAt === 'number'
-      && ageMS >= 0
-      && ageMS < ttlMS
-    ) {
-      banner.hidden = true;
-      return;
-    }
-
-    if (stored) {
-      localStorage.removeItem(TOP_BANNER_DISMISS_STORAGE_KEY);
-    }
-  } catch {
-    // Ignore storage failures and keep the banner visible.
-  }
-
-  dismissButton.addEventListener('click', () => {
-    try {
-      localStorage.setItem(
-        TOP_BANNER_DISMISS_STORAGE_KEY,
-        JSON.stringify({
-          noticeId,
-          dismissedAt: Date.now(),
-        } satisfies TopBannerDismissal),
-      );
-    } catch {
-      // Ignore storage failures and still dismiss the banner for this page view.
-    }
-
-    banner.hidden = true;
-  });
 }
 
 function normalizeDocsTocQuery(value: string): string[] {
@@ -2260,7 +2202,6 @@ export function initSiteUI(): void {
   initSystemThemeListener();
   initCopyButton();
   initOnboardingVersionControls();
-  initTopBannerDismissal();
   setOpenMenu(null);
 
   if (isDocsPage()) {
