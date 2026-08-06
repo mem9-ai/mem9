@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -239,7 +240,79 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 		wantAttemptCount     int
 		wantRetryDecision    string
 		wantExhaustionReason string
+		cancelContext        bool
+		wantSource           string
 	}{
+		{
+			name:          "caller cancellation during reserve",
+			err:           &runtimeusage.UnavailableError{Err: fmt.Errorf("reserve request: %w", context.Canceled)},
+			details:       runtimeUsageErrorDetails{stage: runtimeUsageStageReserve, clusterID: "cluster-canceled", meter: runtimeusage.MeterMemoryRecallRequests},
+			wantStatus:    statusClientClosedRequest,
+			wantClass:     "client_canceled",
+			wantRetryable: false,
+			wantStage:     runtimeUsageStageReserve,
+			wantClusterID: "cluster-canceled",
+			wantMeter:     runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:   "client closed request",
+			cancelContext: true,
+			wantSource:    "request_context",
+		},
+		{
+			name: "caller cancellation takes precedence over quota denial",
+			err: errors.Join(
+				fmt.Errorf("reserve request: %w", context.Canceled),
+				&runtimeusage.QuotaDeniedError{StatusCode: http.StatusTooManyRequests, RetryAfter: "20"},
+			),
+			details:       runtimeUsageErrorDetails{stage: runtimeUsageStageReserve, clusterID: "cluster-canceled-quota", meter: runtimeusage.MeterMemoryRecallRequests},
+			wantStatus:    statusClientClosedRequest,
+			wantClass:     "client_canceled",
+			wantRetryable: false,
+			wantStage:     runtimeUsageStageReserve,
+			wantClusterID: "cluster-canceled-quota",
+			wantMeter:     runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:   "client closed request",
+			cancelContext: true,
+			wantSource:    "request_context",
+		},
+		{
+			name:          "canceled request with independent provider failure",
+			err:           &runtimeusage.UnavailableError{Err: errors.New("provider timeout")},
+			details:       runtimeUsageErrorDetails{stage: runtimeUsageStageReserve, clusterID: "cluster-independent", meter: runtimeusage.MeterMemoryRecallRequests},
+			wantStatus:    http.StatusServiceUnavailable,
+			wantClass:     "unavailable",
+			wantRetryable: true,
+			wantStage:     runtimeUsageStageReserve,
+			wantClusterID: "cluster-independent",
+			wantMeter:     runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:   "runtime usage unavailable",
+			cancelContext: true,
+		},
+		{
+			name:          "active request with wrapped cancellation",
+			err:           &runtimeusage.UnavailableError{Err: fmt.Errorf("provider request: %w", context.Canceled)},
+			details:       runtimeUsageErrorDetails{stage: runtimeUsageStageReserve, clusterID: "cluster-active", meter: runtimeusage.MeterMemoryRecallRequests},
+			wantStatus:    http.StatusServiceUnavailable,
+			wantClass:     "unavailable",
+			wantRetryable: true,
+			wantStage:     runtimeUsageStageReserve,
+			wantClusterID: "cluster-active",
+			wantMeter:     runtimeusage.MeterMemoryRecallRequests,
+			wantMessage:   "runtime usage unavailable",
+		},
+		{
+			name:          "caller cancellation-shaped finalization failure",
+			err:           &runtimeusage.UnavailableError{Err: fmt.Errorf("finalize request: %w", context.Canceled)},
+			details:       runtimeUsageErrorDetails{stage: runtimeUsageStageFinalize, clusterID: "cluster-finalize-canceled", meter: runtimeusage.MeterMemoryWriteRequests, operationID: "operation-finalize-canceled"},
+			wantStatus:    http.StatusServiceUnavailable,
+			wantClass:     "unavailable",
+			wantRetryable: true,
+			wantStage:     runtimeUsageStageFinalize,
+			wantClusterID: "cluster-finalize-canceled",
+			wantMeter:     runtimeusage.MeterMemoryWriteRequests,
+			wantOperation: "operation-finalize-canceled",
+			wantMessage:   "runtime usage unavailable",
+			cancelContext: true,
+		},
 		{
 			name: "quota rate limit during reserve",
 			err: &runtimeusage.QuotaDeniedError{
@@ -486,7 +559,12 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&logBuf, nil)))
 			server := &Server{logger: logger}
 			recorder := httptest.NewRecorder()
-			ctx := reqid.NewContext(context.Background(), "request-runtime-usage")
+			ctx := context.Context(reqid.NewContext(context.Background(), "request-runtime-usage"))
+			if tt.cancelContext {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			}
 
 			server.handleRuntimeUsageError(ctx, recorder, tt.err, tt.details)
 
@@ -505,7 +583,11 @@ func TestHandleRuntimeUsageErrorLogsStableClassification(t *testing.T) {
 			assertRuntimeUsageLogField(t, entry, "msg", "runtime usage request failed")
 			assertRuntimeUsageLogField(t, entry, "request_id", "request-runtime-usage")
 			assertRuntimeUsageLogField(t, entry, "error_class", tt.wantClass)
-			assertRuntimeUsageLogField(t, entry, "error_source", "runtime_usage")
+			wantSource := tt.wantSource
+			if wantSource == "" {
+				wantSource = "runtime_usage"
+			}
+			assertRuntimeUsageLogField(t, entry, "error_source", wantSource)
 			assertRuntimeUsageLogField(t, entry, "error_role", runtimeUsageRoleClientResponse)
 			assertRuntimeUsageLogField(t, entry, "stage", tt.wantStage)
 			assertRuntimeUsageLogField(t, entry, "http_status", float64(tt.wantStatus))
@@ -549,7 +631,15 @@ func TestRuntimeUsageFailuresRecordFinalHTTPStatusMetrics(t *testing.T) {
 		err            error
 		wantStatus     int
 		wantRetryAfter string
+		cancelContext  bool
 	}{
+		{
+			name:          "caller canceled",
+			route:         "/test/runtime-usage/client-canceled",
+			err:           &runtimeusage.UnavailableError{Err: fmt.Errorf("reserve request: %w", context.Canceled)},
+			wantStatus:    statusClientClosedRequest,
+			cancelContext: true,
+		},
 		{
 			name:  "rate limited",
 			route: "/test/runtime-usage/rate-limited",
@@ -585,7 +675,13 @@ func TestRuntimeUsageFailuresRecordFinalHTTPStatusMetrics(t *testing.T) {
 			})
 
 			recorder := httptest.NewRecorder()
-			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, tt.route, nil))
+			request := httptest.NewRequest(http.MethodGet, tt.route, nil)
+			if tt.cancelContext {
+				ctx, cancel := context.WithCancel(request.Context())
+				cancel()
+				request = request.WithContext(ctx)
+			}
+			router.ServeHTTP(recorder, request)
 
 			if recorder.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", recorder.Code, tt.wantStatus)

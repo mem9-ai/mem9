@@ -195,6 +195,9 @@ func (s *Server) handleRuntimeUsageError(
 	details runtimeUsageErrorDetails,
 ) error {
 	s.logRuntimeUsageError(ctx, err, details, runtimeUsageRoleClientResponse)
+	if isRuntimeUsageReserveClientCanceled(ctx, err, details) {
+		return respondError(w, statusClientClosedRequest, "client closed request")
+	}
 
 	var denied *runtimeusage.QuotaDeniedError
 	if errors.As(err, &denied) {
@@ -227,6 +230,11 @@ func (s *Server) logRuntimeUsageBackgroundFinalizeError(ctx context.Context, err
 
 func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details runtimeUsageErrorDetails, errorRole string) {
 	errorClass, status, retryable := classifyRuntimeUsageError(err)
+	errorSource := "runtime_usage"
+	if errorRole == runtimeUsageRoleClientResponse && isRuntimeUsageReserveClientCanceled(ctx, err, details) {
+		errorClass, errorSource, retryable = clientCanceledClassification()
+		status = statusClientClosedRequest
+	}
 	statusField := "http_status"
 	message := "runtime usage request failed"
 	if errorRole == runtimeUsageRoleBackground {
@@ -235,7 +243,7 @@ func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details ru
 	}
 	attrs := []any{
 		"error_class", errorClass,
-		"error_source", "runtime_usage",
+		"error_source", errorSource,
 		"error_role", errorRole,
 		"stage", details.stage,
 		statusField, status,
@@ -268,10 +276,16 @@ func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details ru
 		logger = slog.Default()
 	}
 	level := slog.LevelError
-	if errorClass == "quota_denied" {
+	if errorClass == "client_canceled" {
+		level = slog.LevelInfo
+	} else if errorClass == "quota_denied" {
 		level = slog.LevelWarn
 	}
 	logger.Log(ctx, level, message, attrs...)
+}
+
+func isRuntimeUsageReserveClientCanceled(ctx context.Context, err error, details runtimeUsageErrorDetails) bool {
+	return details.stage == runtimeUsageStageReserve && isClientCanceledRequest(ctx, err)
 }
 
 func classifyRuntimeUsageError(err error) (string, int, bool) {
