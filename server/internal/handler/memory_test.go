@@ -2338,6 +2338,127 @@ func TestListMemories_RuntimeUsageReserveConflictStopsTenantRecall(t *testing.T)
 	}
 }
 
+func TestRuntimeUsageReserveCallerCancellationReturns499(t *testing.T) {
+	tests := []struct {
+		name              string
+		request           func(*testing.T) *http.Request
+		run               func(*Server, http.ResponseWriter, *http.Request)
+		assertTenantFence func(*testing.T, *testMemoryRepo)
+	}{
+		{
+			name: "recall",
+			request: func(t *testing.T) *http.Request {
+				return makeTenantRequest(t, http.MethodGet, "/memories?q=must-not-run", nil)
+			},
+			run: func(srv *Server, w http.ResponseWriter, r *http.Request) {
+				srv.listMemories(w, r)
+			},
+			assertTenantFence: func(t *testing.T, repo *testMemoryRepo) {
+				if repo.searchCalls != 0 || repo.listCalls != 0 || repo.allTypeListCalls != 0 {
+					t.Fatalf("tenant recall calls = search:%d list:%d all:%d, want 0", repo.searchCalls, repo.listCalls, repo.allTypeListCalls)
+				}
+			},
+		},
+		{
+			name: "write",
+			request: func(t *testing.T) *http.Request {
+				return makeTenantRequest(t, http.MethodPost, "/memories", map[string]any{
+					"content":     "must not be written",
+					"memory_type": "pinned",
+				})
+			},
+			run: func(srv *Server, w http.ResponseWriter, r *http.Request) {
+				srv.createMemory(w, r)
+			},
+			assertTenantFence: func(t *testing.T, repo *testMemoryRepo) {
+				if repo.bulkCreateCalls != 0 || len(repo.createCalls) != 0 {
+					t.Fatalf("tenant writes = bulk:%d create:%d, want 0", repo.bulkCreateCalls, len(repo.createCalls))
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logBuf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+			reserveStarted := make(chan struct{}, 1)
+			releaseProvider := make(chan struct{})
+			var providerRequests atomic.Int32
+			provider := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				providerRequests.Add(1)
+				select {
+				case reserveStarted <- struct{}{}:
+				default:
+				}
+				select {
+				case <-r.Context().Done():
+				case <-releaseProvider:
+				}
+			}))
+			defer provider.Close()
+			defer close(releaseProvider)
+
+			meteringWriter := &captureMeteringWriter{}
+			runtimeUsage := runtimeusage.NewManager(
+				runtimeusage.Config{Enabled: true},
+				runtimeusage.NewHTTPClient(provider.URL, "test-secret", time.Second),
+				meteringWriter,
+				logger,
+			)
+			memRepo := &testMemoryRepo{}
+			srv := newTestServer(memRepo, &testSessionRepo{}).WithRuntimeUsage(runtimeUsage)
+			srv.logger = logger
+			req := tt.request(t)
+			ctx, cancel := context.WithCancel(req.Context())
+			defer cancel()
+			req = req.WithContext(ctx)
+			rr := httptest.NewRecorder()
+			done := make(chan struct{})
+
+			go func() {
+				defer close(done)
+				tt.run(srv, rr, req)
+			}()
+
+			select {
+			case <-reserveStarted:
+			case <-time.After(time.Second):
+				t.Fatal("Runtime Usage Reserve did not start")
+			}
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("handler did not return after caller cancellation")
+			}
+
+			if rr.Code != statusClientClosedRequest {
+				t.Fatalf("status = %d, want 499: %s", rr.Code, rr.Body.String())
+			}
+			if got := rr.Body.String(); got != "{\"error\":\"client closed request\"}\n" {
+				t.Fatalf("body = %q, want client closed request response", got)
+			}
+			tt.assertTenantFence(t, memRepo)
+			if got := providerRequests.Load(); got != 1 {
+				t.Fatalf("Runtime Usage provider requests = %d, want 1 Reserve and no Finalize", got)
+			}
+			if got := len(meteringWriter.snapshot()); got != 0 {
+				t.Fatalf("Runtime Usage metering events = %d, want 0", got)
+			}
+
+			entry := findHandlerLogEntry(t, decodeHandlerLogs(t, &logBuf), "runtime usage request failed")
+			assertHandlerLogField(t, entry, "level", "INFO")
+			assertHandlerLogField(t, entry, "error_class", "client_canceled")
+			assertHandlerLogField(t, entry, "error_source", "request_context")
+			assertHandlerLogField(t, entry, "error_role", runtimeUsageRoleClientResponse)
+			assertHandlerLogField(t, entry, "stage", runtimeUsageStageReserve)
+			assertHandlerLogField(t, entry, "http_status", float64(statusClientClosedRequest))
+			assertHandlerLogField(t, entry, "retryable", false)
+		})
+	}
+}
+
 func TestCreateMemory_RuntimeUsageNoticeAddsTopLevelFieldsToCreatedMemory(t *testing.T) {
 	memRepo := &testMemoryRepo{}
 	runtimeUsage := &captureRuntimeUsageManager{
