@@ -57,6 +57,10 @@
       "description": "API-key raw session message API."
     },
     {
+      "name": "Space Chains v1alpha2",
+      "description": "Space Chain management and knowledge extraction routing endpoints."
+    },
+    {
       "name": "Webhooks v1alpha2",
       "description": "API-key and Space Chain webhook management endpoints."
     }
@@ -1558,6 +1562,66 @@
         }
       }
     },
+    "/v1alpha2/space-chains/{chainID}/nodes/{nodeID}/routing-policy": {
+      "put": {
+        "tags": [
+          "Space Chains v1alpha2"
+        ],
+        "operationId": "updateSpaceChainNodeRoutingPolicy",
+        "summary": "Update a Space Chain knowledge extraction policy",
+        "description": "Configures a non-first target node for smart ingest routing. The node must have a non-empty external_space_id; nodes without one are not eligible routing targets. mem9 evaluates the natural-language prompt against each extracted fact and routes matching facts to this node. This policy controls extracted-fact writes; it does not filter recall queries. The first node cannot have a routing policy.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSpaceChainNodeRoutingPolicyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated Space Chain node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpaceChainNode"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChainID"
+        },
+        {
+          "$ref": "#/components/parameters/NodeID"
+        }
+      ]
+    },
     "/v1alpha2/space-chains/{chainID}/webhooks": {
       "get": {
         "tags": [
@@ -2177,6 +2241,15 @@
         "name": "chainID",
         "in": "path",
         "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "NodeID": {
+        "name": "nodeID",
+        "in": "path",
+        "required": true,
+        "description": "Target Space Chain node id. The first node cannot have a routing policy.",
         "schema": {
           "type": "string"
         }
@@ -3698,6 +3771,84 @@
           "session",
           "memory"
         ]
+      },
+      "UpdateSpaceChainNodeRoutingPolicyRequest": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether this node participates in knowledge extraction routing."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 1200,
+            "description": "Natural-language matching rule. Required when enabled is true."
+          },
+          "webhook_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SpaceChainNode": {
+        "type": "object",
+        "required": [
+          "id",
+          "chain_id",
+          "tenant_id",
+          "position",
+          "routing_policy_enabled",
+          "routing_policy_webhook_only",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chain_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "external_space_id": {
+            "type": "string",
+            "description": "Required for an enabled knowledge extraction routing target. Nodes without an external_space_id are skipped by routing."
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based node position."
+          },
+          "routing_policy_enabled": {
+            "type": "boolean"
+          },
+          "routing_policy_prompt": {
+            "type": "string"
+          },
+          "routing_policy_webhook_only": {
+            "type": "boolean",
+            "description": "Whether matching facts are delivered only through Space Chain webhooks."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
       },
       "WebhookEventType": {
         "type": "string",

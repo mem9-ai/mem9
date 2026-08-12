@@ -137,6 +137,59 @@ func TestOpenAPIRecallRequestBudgetContract(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpaceChainKnowledgeExtractionPolicy(t *testing.T) {
+	openapi := loadOpenAPI(t)
+	paths := objectValue(t, openapi, "paths")
+	pathItem := objectValue(t, paths, "/v1alpha2/space-chains/{chainID}/nodes/{nodeID}/routing-policy")
+	operation := objectValue(t, pathItem, "put")
+	if got := operation["operationId"]; got != "updateSpaceChainNodeRoutingPolicy" {
+		t.Fatalf("routing policy operationId = %#v", got)
+	}
+
+	requestBody := objectValue(t, operation, "requestBody")
+	content := objectValue(t, requestBody, "content")
+	jsonContent := objectValue(t, content, "application/json")
+	requestSchema := objectValue(t, jsonContent, "schema")
+	if got := requestSchema["$ref"]; got != "#/components/schemas/UpdateSpaceChainNodeRoutingPolicyRequest" {
+		t.Fatalf("routing policy request schema = %#v", got)
+	}
+
+	responses := objectValue(t, operation, "responses")
+	responseOK := objectValue(t, responses, "200")
+	responseContent := objectValue(t, responseOK, "content")
+	responseJSON := objectValue(t, responseContent, "application/json")
+	responseSchema := objectValue(t, responseJSON, "schema")
+	if got := responseSchema["$ref"]; got != "#/components/schemas/SpaceChainNode" {
+		t.Fatalf("routing policy response schema = %#v", got)
+	}
+
+	components := objectValue(t, openapi, "components")
+	schemas := objectValue(t, components, "schemas")
+	policy := objectValue(t, schemas, "UpdateSpaceChainNodeRoutingPolicyRequest")
+	if !containsString(stringSlice(t, policy["required"]), "enabled") {
+		t.Fatal("routing policy request must require enabled")
+	}
+	properties := objectValue(t, policy, "properties")
+	prompt := objectValue(t, properties, "prompt")
+	if got := prompt["maxLength"]; got != float64(1200) {
+		t.Fatalf("routing policy prompt maxLength = %#v, want 1200", got)
+	}
+
+	node := objectValue(t, schemas, "SpaceChainNode")
+	nodeRequired := stringSlice(t, node["required"])
+	for _, field := range []string{"routing_policy_enabled", "routing_policy_webhook_only"} {
+		if !containsString(nodeRequired, field) {
+			t.Fatalf("SpaceChainNode required fields missing %q", field)
+		}
+	}
+	nodeProperties := objectValue(t, node, "properties")
+	externalSpaceID := objectValue(t, nodeProperties, "external_space_id")
+	externalSpaceIDDescription, _ := externalSpaceID["description"].(string)
+	if !strings.Contains(externalSpaceIDDescription, "Required") || !strings.Contains(externalSpaceIDDescription, "skipped") {
+		t.Fatalf("SpaceChainNode.external_space_id must document routing eligibility: %q", externalSpaceIDDescription)
+	}
+}
+
 func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {
 	openapi := loadOpenAPI(t)
 	components := objectValue(t, openapi, "components")
