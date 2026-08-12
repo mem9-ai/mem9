@@ -1269,10 +1269,6 @@ const spaceChainNodesBodyFields: SiteApiFieldCopy[] = [
   { name: 'nodes[].display_name', description: 'Optional display name for the node.' },
 ];
 
-const spaceChainNodesResponseFields: SiteApiFieldCopy[] = [
-  { name: 'nodes', description: 'Ordered node list. Positions are zero-based.', required: true },
-];
-
 const spaceChainRoutingPolicyPathFields: SiteApiFieldCopy[] = [
   { name: 'chain_id', description: 'Space Chain id.', required: true },
   { name: 'node_id', description: 'Target node id. The first node cannot have a routing policy.', required: true },
@@ -1307,6 +1303,11 @@ const spaceChainNodeResponseFields: SiteApiFieldCopy[] = [
   },
   { name: 'created_at', description: 'Creation timestamp.', required: true },
   { name: 'updated_at', description: 'Last update timestamp.', required: true },
+];
+
+const spaceChainNodesResponseFields: SiteApiFieldCopy[] = [
+  { name: 'nodes', description: 'Ordered node list. Positions are zero-based.', required: true },
+  ...spaceChainNodeResponseFields.map((field) => ({ ...field, name: `nodes[].${field.name}` })),
 ];
 
 const spaceChainBindingsResponseFields: SiteApiFieldCopy[] = [
