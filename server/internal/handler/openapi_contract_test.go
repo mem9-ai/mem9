@@ -182,6 +182,12 @@ func TestOpenAPISpaceChainKnowledgeExtractionPolicy(t *testing.T) {
 			t.Fatalf("SpaceChainNode required fields missing %q", field)
 		}
 	}
+	nodeProperties := objectValue(t, node, "properties")
+	externalSpaceID := objectValue(t, nodeProperties, "external_space_id")
+	externalSpaceIDDescription, _ := externalSpaceID["description"].(string)
+	if !strings.Contains(externalSpaceIDDescription, "Required") || !strings.Contains(externalSpaceIDDescription, "skipped") {
+		t.Fatalf("SpaceChainNode.external_space_id must document routing eligibility: %q", externalSpaceIDDescription)
+	}
 }
 
 func TestOpenAPIRuntimeQuotaSchemas(t *testing.T) {

@@ -1569,7 +1569,7 @@
         ],
         "operationId": "updateSpaceChainNodeRoutingPolicy",
         "summary": "Update a Space Chain knowledge extraction policy",
-        "description": "Configures a non-first target node for smart ingest routing. mem9 evaluates the natural-language prompt against each extracted fact and routes matching facts to this node. This policy controls extracted-fact writes; it does not filter recall queries. The first node cannot have a routing policy.",
+        "description": "Configures a non-first target node for smart ingest routing. The node must have a non-empty external_space_id; nodes without one are not eligible routing targets. mem9 evaluates the natural-language prompt against each extracted fact and routes matching facts to this node. This policy controls extracted-fact writes; it does not filter recall queries. The first node cannot have a routing policy.",
         "security": [
           {
             "ApiKeyAuth": []
@@ -3818,7 +3818,8 @@
             "type": "string"
           },
           "external_space_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Required for an enabled knowledge extraction routing target. Nodes without an external_space_id are skipped by routing."
           },
           "display_name": {
             "type": "string"
