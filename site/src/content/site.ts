@@ -549,6 +549,10 @@ const replaceSpaceChainNodesCode = `curl -sX PUT "$CHAIN_API/{chain_id}/nodes" \
   -H "Content-Type: application/json" \\
   -H "X-API-Key: $CHAIN_API_KEY" \\
   -d '{"nodes":[{"tenant_id":"space_key_a","display_name":"Team"},{"tenant_id":"space_key_b","display_name":"Company"}]}'`;
+const updateSpaceChainRoutingPolicyCode = `curl -sX PUT "$CHAIN_API/{chain_id}/nodes/{node_id}/routing-policy" \\
+  -H "Content-Type: application/json" \\
+  -H "X-API-Key: $CHAIN_API_KEY" \\
+  -d '{"enabled":true,"prompt":"Facts about billing, plans, or usage limits","webhook_only":false}'`;
 const listSpaceChainBindingsCode = 'curl -s -H "X-API-Key: $CHAIN_API_KEY" "$CHAIN_API/{chain_id}/bindings"';
 const createSpaceChainBindingCode = `curl -sX POST "$CHAIN_API/{chain_id}/bindings" \\
   -H "Content-Type: application/json" \\
@@ -1269,6 +1273,42 @@ const spaceChainNodesResponseFields: SiteApiFieldCopy[] = [
   { name: 'nodes', description: 'Ordered node list. Positions are zero-based.', required: true },
 ];
 
+const spaceChainRoutingPolicyPathFields: SiteApiFieldCopy[] = [
+  { name: 'chain_id', description: 'Space Chain id.', required: true },
+  { name: 'node_id', description: 'Target node id. The first node cannot have a routing policy.', required: true },
+];
+
+const spaceChainRoutingPolicyBodyFields: SiteApiFieldCopy[] = [
+  { name: 'enabled', description: 'Whether this node participates in knowledge extraction routing.', required: true },
+  {
+    name: 'prompt',
+    description: 'Natural-language matching rule. Required when enabled is true; maximum 1,200 characters.',
+  },
+  {
+    name: 'webhook_only',
+    description:
+      'When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space.',
+  },
+];
+
+const spaceChainNodeResponseFields: SiteApiFieldCopy[] = [
+  { name: 'id', description: 'Space Chain node id.', required: true },
+  { name: 'chain_id', description: 'Space Chain id.', required: true },
+  { name: 'tenant_id', description: 'Target Space API key / tenant id.', required: true },
+  { name: 'external_space_id', description: 'Console Space id used as the routing target identifier when present.' },
+  { name: 'display_name', description: 'Display name for the target Space when present.' },
+  { name: 'position', description: 'Zero-based node position.', required: true },
+  { name: 'routing_policy_enabled', description: 'Whether knowledge extraction routing is enabled.', required: true },
+  { name: 'routing_policy_prompt', description: 'Natural-language matching rule when configured.' },
+  {
+    name: 'routing_policy_webhook_only',
+    description: 'Whether matching facts are delivered only through Space Chain webhooks.',
+    required: true,
+  },
+  { name: 'created_at', description: 'Creation timestamp.', required: true },
+  { name: 'updated_at', description: 'Last update timestamp.', required: true },
+];
+
 const spaceChainBindingsResponseFields: SiteApiFieldCopy[] = [
   { name: 'bindings', description: 'Array of Space Chain API key bindings.', required: true },
 ];
@@ -1481,6 +1521,18 @@ const spaceChainEndpointGroup: SiteApiEndpointGroupCopy = {
       bodyFields: spaceChainNodesBodyFields,
       responseFields: spaceChainNodesResponseFields,
       examples: [{ label: 'Replace nodes', code: replaceSpaceChainNodesCode }],
+    },
+    {
+      method: 'PUT',
+      path: '/v1alpha2/space-chains/{chain_id}/nodes/{node_id}/routing-policy',
+      summary: 'Update a Space Chain knowledge extraction policy.',
+      description:
+        'Configures a non-first target node for smart ingest routing. mem9 evaluates the natural-language prompt against each extracted fact and routes matching facts to this node. This policy controls extracted-fact writes; it does not filter recall queries.',
+      headers: chainJSONWriteHeaders,
+      pathParams: spaceChainRoutingPolicyPathFields,
+      bodyFields: spaceChainRoutingPolicyBodyFields,
+      responseFields: spaceChainNodeResponseFields,
+      examples: [{ label: 'Configure knowledge extraction routing', code: updateSpaceChainRoutingPolicyCode }],
     },
     {
       method: 'GET',
@@ -5500,6 +5552,26 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'Replace Space Chain nodes.': '替换 Space Chain 节点。',
     'Replaces the entire ordered node list. Each node must reference a normal Space key / tenant id, not another Space Chain key.': '替换整个有序节点列表。每个节点必须引用普通 Space key / tenant id，不能引用另一个 Space Chain key。',
     'Replace nodes': '替换节点',
+    'Update a Space Chain knowledge extraction policy.': '更新 Space Chain 知识抽取策略。',
+    'Configures a non-first target node for smart ingest routing. mem9 evaluates the natural-language prompt against each extracted fact and routes matching facts to this node. This policy controls extracted-fact writes; it does not filter recall queries.':
+      '为非首节点配置 smart ingest 路由。mem9 会用自然语言 prompt 判断每条抽取出的事实，并将匹配事实路由到该节点。该策略控制抽取事实的写入，不会过滤 recall 查询。',
+    'Space Chain id.': 'Space Chain id。',
+    'Target node id. The first node cannot have a routing policy.': '目标节点 id。首节点不能配置 routing policy。',
+    'Whether this node participates in knowledge extraction routing.': '该节点是否参与知识抽取路由。',
+    'Natural-language matching rule. Required when enabled is true; maximum 1,200 characters.':
+      '自然语言匹配规则。enabled 为 true 时必填，最多 1,200 个字符。',
+    'When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space.':
+      '为 true 时，匹配事实会通过 Space Chain webhook 发出，但不会直接保存到目标 Space。',
+    'Space Chain node id.': 'Space Chain 节点 id。',
+    'Target Space API key / tenant id.': '目标 Space API key / tenant id。',
+    'Console Space id used as the routing target identifier when present.': '存在时作为路由目标标识符使用的 Console Space id。',
+    'Display name for the target Space when present.': '存在时表示目标 Space 的显示名称。',
+    'Zero-based node position.': '从 0 开始的节点位置。',
+    'Whether knowledge extraction routing is enabled.': '知识抽取路由是否启用。',
+    'Natural-language matching rule when configured.': '已配置的自然语言匹配规则。',
+    'Whether matching facts are delivered only through Space Chain webhooks.':
+      '匹配事实是否只通过 Space Chain webhook 投递。',
+    'Configure knowledge extraction routing': '配置知识抽取路由',
     'List Space Chain key bindings.': '列出 Space Chain key bindings。',
     'Returns all key bindings visible to the management key for this Space Chain.': '返回该 Space Chain 管理 key 可见的全部 key bindings。',
     'List bindings': '列出 bindings',
