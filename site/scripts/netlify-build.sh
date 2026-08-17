@@ -63,6 +63,8 @@ cat > "${site_dist_dir}/_redirects" <<REDIRECTS
 # Configure CONSOLE_FE_ORIGIN and CONSOLE_API_ORIGIN per deploy context.
 /console/api/*     ${console_api_origin}/api/:splat             200!
 /console/auth/*    ${console_api_origin}/auth/:splat            200!
+/console/admin-api.md  ${console_fe_origin}/console/admin-api.md  200
+/console/spaces/api-guide/import-api-keys.md  ${console_fe_origin}/console/spaces/api-guide/import-api-keys.md  200
 /console/assets/*  ${console_fe_origin}/console/assets/:splat   200
 /console/favicon.svg  ${console_fe_origin}/console/favicon.svg  200
 /console           ${console_fe_origin}/console/index.html      200
