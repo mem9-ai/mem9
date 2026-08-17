@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/llm"
 )
 
 func TestChunkMessages(t *testing.T) {
@@ -556,4 +557,104 @@ func makeMessages(n int) []IngestMessage {
 		msgs[i] = IngestMessage{Role: "user", Content: "msg"}
 	}
 	return msgs
+}
+
+func TestFlattenContentBlocks(t *testing.T) {
+	t.Run("plain string content carries no media", func(t *testing.T) {
+		text, media := flattenContentBlocks(json.RawMessage(`"hello"`))
+		if text != "hello" {
+			t.Fatalf("text = %q, want %q", text, "hello")
+		}
+		if len(media) != 0 {
+			t.Fatalf("media len = %d, want 0", len(media))
+		}
+	})
+
+	t.Run("text blocks are joined and image and video blocks are kept", func(t *testing.T) {
+		raw := json.RawMessage(`[
+			{"type":"text","text":"first"},
+			{"type":"image_url","image_url":{"url":"https://example.com/a.png"}},
+			{"type":"text","text":"second"},
+			{"type":"video_url","video_url":{"url":"mm_file://vid"}},
+			{"type":"thinking","thinking":"ignored"}
+		]`)
+		text, media := flattenContentBlocks(raw)
+		if text != "first\n\nsecond" {
+			t.Fatalf("text = %q, want %q", text, "first\n\nsecond")
+		}
+		want := []llm.MediaPart{
+			{Kind: llm.MediaKindImage, URL: "https://example.com/a.png"},
+			{Kind: llm.MediaKindVideo, URL: "mm_file://vid"},
+		}
+		if len(media) != len(want) {
+			t.Fatalf("media = %#v, want %#v", media, want)
+		}
+		for i := range want {
+			if media[i] != want[i] {
+				t.Fatalf("media[%d] = %#v, want %#v", i, media[i], want[i])
+			}
+		}
+	})
+
+	t.Run("source and direct url forms are accepted", func(t *testing.T) {
+		raw := json.RawMessage(`[
+			{"type":"image","source":{"url":"https://example.com/b.png"}},
+			{"type":"video","url":"https://example.com/c.mp4"}
+		]`)
+		text, media := flattenContentBlocks(raw)
+		if text != "" {
+			t.Fatalf("text = %q, want empty", text)
+		}
+		if len(media) != 2 {
+			t.Fatalf("media len = %d, want 2", len(media))
+		}
+		if media[0] != (llm.MediaPart{Kind: llm.MediaKindImage, URL: "https://example.com/b.png"}) {
+			t.Fatalf("media[0] = %#v", media[0])
+		}
+		if media[1] != (llm.MediaPart{Kind: llm.MediaKindVideo, URL: "https://example.com/c.mp4"}) {
+			t.Fatalf("media[1] = %#v", media[1])
+		}
+	})
+
+	t.Run("media blocks without a url are skipped", func(t *testing.T) {
+		raw := json.RawMessage(`[{"type":"text","text":"only text"},{"type":"image_url"}]`)
+		text, media := flattenContentBlocks(raw)
+		if text != "only text" {
+			t.Fatalf("text = %q, want %q", text, "only text")
+		}
+		if len(media) != 0 {
+			t.Fatalf("media len = %d, want 0", len(media))
+		}
+	})
+}
+
+func TestParseOpenClawLineKeepsMediaOnlyMessage(t *testing.T) {
+	line := []byte(`{"type":"message","message":{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}]}}`)
+	msg := parseOpenClawLine(line)
+	if msg == nil {
+		t.Fatal("expected a message for media-only content, got nil")
+	}
+	if msg.Content != "" {
+		t.Fatalf("content = %q, want empty", msg.Content)
+	}
+	if len(msg.Media) != 1 || msg.Media[0].Kind != llm.MediaKindImage {
+		t.Fatalf("media = %#v, want a single image part", msg.Media)
+	}
+}
+
+func TestParseSessionFileKeepsMediaOnlyJSONLMessage(t *testing.T) {
+	data := []byte(`{"role":"user","media":[{"kind":"video","url":"mm_file://vid"}]}`)
+	file, err := parseSessionFile(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(file.Messages) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(file.Messages))
+	}
+	if len(file.Messages[0].Media) != 1 {
+		t.Fatalf("media = %#v, want a single part", file.Messages[0].Media)
+	}
+	if file.Messages[0].Media[0] != (llm.MediaPart{Kind: llm.MediaKindVideo, URL: "mm_file://vid"}) {
+		t.Fatalf("media[0] = %#v", file.Messages[0].Media[0])
+	}
 }

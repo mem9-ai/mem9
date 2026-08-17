@@ -3795,3 +3795,139 @@ func TestReconcileTagsClampedViaReconcilePath(t *testing.T) {
 		t.Fatalf("expected event.Tags clamped to %d via reconcile ADD path, got %d", maxTags, len(memRepo.createCalls[0].Tags))
 	}
 }
+
+func TestCollectMessageMedia(t *testing.T) {
+	t.Parallel()
+
+	got := collectMessageMedia([]IngestMessage{
+		{Role: "user", Content: "look at this", Media: []llm.MediaPart{{Kind: llm.MediaKindImage, URL: "https://example.com/a.png"}}},
+		{Role: "assistant", Content: "no media"},
+		{Role: "user", Media: []llm.MediaPart{{Kind: llm.MediaKindVideo, URL: "mm_file://vid"}}},
+	})
+	want := []llm.MediaPart{
+		{Kind: llm.MediaKindImage, URL: "https://example.com/a.png"},
+		{Kind: llm.MediaKindVideo, URL: "mm_file://vid"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("collectMessageMedia() = %#v, want %#v", got, want)
+	}
+}
+
+func TestPrepareExtractionInputKeepsMediaOnlyMessage(t *testing.T) {
+	t.Parallel()
+
+	input := prepareExtractionInput([]IngestMessage{
+		{Role: "user", Media: []llm.MediaPart{{Kind: llm.MediaKindImage, URL: "https://example.com/a.png"}}},
+	}, maxExtractionConversationRunes)
+
+	if len(input.messages) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(input.messages))
+	}
+	if len(input.media) != 1 || input.media[0].Kind != llm.MediaKindImage {
+		t.Fatalf("input.media = %#v, want a single image part", input.media)
+	}
+}
+
+func TestStripInjectedContextKeepsMediaOnlyMessage(t *testing.T) {
+	t.Parallel()
+
+	got := StripInjectedContext([]IngestMessage{
+		{Role: "user", Content: "<relevant-memories>noise</relevant-memories>",
+			Media: []llm.MediaPart{{Kind: llm.MediaKindVideo, URL: "mm_file://vid"}}},
+	})
+	if len(got) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(got))
+	}
+	if got[0].Content != "" {
+		t.Fatalf("content = %q, want empty", got[0].Content)
+	}
+	if len(got[0].Media) != 1 {
+		t.Fatalf("media = %#v, want a single part", got[0].Media)
+	}
+}
+
+// TestIngestSendsMessageMediaToLLM covers the smart-ingest path end to end: an
+// imported message carrying image and video inputs must reach the model as
+// content blocks rather than being dropped during conversation formatting.
+func TestIngestSendsMessageMediaToLLM(t *testing.T) {
+	var bodies [][]byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		bodies = append(bodies, b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"facts\":[]}"}}]}`))
+	}))
+	defer srv.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "MiniMax-M3"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	if _, err := svc.Ingest(context.Background(), "agent", IngestRequest{
+		AgentID: "agent-1",
+		Messages: []IngestMessage{{
+			Role:    "user",
+			Content: "what is in this clip?",
+			Media: []llm.MediaPart{
+				{Kind: llm.MediaKindImage, URL: "https://example.com/frame.png"},
+				{Kind: llm.MediaKindVideo, URL: "mm_file://vid"},
+			},
+		}},
+		Mode: ModeSmart,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(bodies) == 0 {
+		t.Fatal("expected at least one LLM request")
+	}
+	body := string(bodies[0])
+	if !strings.Contains(body, `"image_url"`) || !strings.Contains(body, "https://example.com/frame.png") {
+		t.Fatalf("extraction request is missing the image input, body: %s", body)
+	}
+	if !strings.Contains(body, `"video_url"`) || !strings.Contains(body, "mm_file://vid") {
+		t.Fatalf("extraction request is missing the video input, body: %s", body)
+	}
+}
+
+// TestIngestKeepsStringContentForTextOnlyModel guards the existing request
+// shape: a model without image or video input support must keep receiving the
+// plain string content form.
+func TestIngestKeepsStringContentForTextOnlyModel(t *testing.T) {
+	var bodies [][]byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		bodies = append(bodies, b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"facts\":[]}"}}]}`))
+	}))
+	defer srv.Close()
+
+	llmClient := llm.New(llm.Config{APIKey: "test-key", BaseURL: srv.URL, Model: "MiniMax-M2.7"})
+	svc := NewIngestService(&memoryRepoMock{}, llmClient, nil, "auto-model", ModeSmart)
+
+	if _, err := svc.Ingest(context.Background(), "agent", IngestRequest{
+		AgentID: "agent-1",
+		Messages: []IngestMessage{{
+			Role:    "user",
+			Content: "what is in this clip?",
+			Media:   []llm.MediaPart{{Kind: llm.MediaKindImage, URL: "https://example.com/frame.png"}},
+		}},
+		Mode: ModeSmart,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(bodies) == 0 {
+		t.Fatal("expected at least one LLM request")
+	}
+	body := string(bodies[0])
+	if strings.Contains(body, "image_url") || strings.Contains(body, "https://example.com/frame.png") {
+		t.Fatalf("text-only model must not receive media blocks, body: %s", body)
+	}
+}

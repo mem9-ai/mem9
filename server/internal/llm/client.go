@@ -97,12 +97,34 @@ func (m *messageContent) UnmarshalJSON(data []byte) error {
 
 type contentBlock struct {
 	Type         string        `json:"type"`
-	Text         string        `json:"text"`
+	Text         string        `json:"text,omitempty"`
+	ImageURL     *mediaURL     `json:"image_url,omitempty"`
+	VideoURL     *mediaURL     `json:"video_url,omitempty"`
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
+type mediaURL struct {
+	URL string `json:"url"`
 }
 
 type cacheControl struct {
 	Type string `json:"type"`
+}
+
+// MediaKind identifies a non-text input modality that can be attached to a
+// user message.
+type MediaKind string
+
+const (
+	MediaKindImage MediaKind = "image"
+	MediaKindVideo MediaKind = "video"
+)
+
+// MediaPart is a single non-text input referenced by URL. URL accepts either a
+// reachable link or a provider file reference.
+type MediaPart struct {
+	Kind MediaKind `json:"kind"`
+	URL  string    `json:"url"`
 }
 
 func plainContent(s string) messageContent {
@@ -117,6 +139,37 @@ func cachedContent(s string) messageContent {
 			CacheControl: &cacheControl{Type: "ephemeral"},
 		}},
 	}
+}
+
+// mediaContent builds the content of a user message. When the model accepts at
+// least one of the attached media modalities the content is sent in the block
+// form so the media reaches the model; otherwise it falls back to the plain
+// string form used for text-only models. The second result reports how many
+// media blocks were attached.
+func mediaContent(model, text string, media []MediaPart) (messageContent, int) {
+	blocks := make([]contentBlock, 0, len(media)+1)
+	if text != "" {
+		blocks = append(blocks, contentBlock{Type: "text", Text: text})
+	}
+	attached := 0
+	for _, part := range media {
+		if part.URL == "" || !supportsInputModality(model, part.Kind) {
+			continue
+		}
+		switch part.Kind {
+		case MediaKindImage:
+			blocks = append(blocks, contentBlock{Type: "image_url", ImageURL: &mediaURL{URL: part.URL}})
+		case MediaKindVideo:
+			blocks = append(blocks, contentBlock{Type: "video_url", VideoURL: &mediaURL{URL: part.URL}})
+		default:
+			continue
+		}
+		attached++
+	}
+	if attached == 0 {
+		return plainContent(text), 0
+	}
+	return messageContent{blocks: blocks}, attached
 }
 
 type responseFormat struct {
@@ -167,11 +220,11 @@ func (e *HTTPStatusError) Error() string {
 
 // Complete sends a chat completion request to the LLM.
 func (c *Client) Complete(ctx context.Context, system, user string) (string, error) {
-	return c.complete(ctx, system, user, nil, CallScope{})
+	return c.complete(ctx, system, user, nil, nil, CallScope{})
 }
 
 func (c *Client) CompleteWithScope(ctx context.Context, system, user string, scope CallScope) (string, error) {
-	return c.complete(ctx, system, user, nil, scope)
+	return c.complete(ctx, system, user, nil, nil, scope)
 }
 
 // CompleteJSON sends a chat completion request with response_format: json_object.
@@ -179,40 +232,49 @@ func (c *Client) CompleteWithScope(ctx context.Context, system, user string, sco
 // If the provider returns HTTP 400 (e.g., Ollama, some vLLM builds that don't support
 // response_format), it automatically retries without the parameter.
 func (c *Client) CompleteJSON(ctx context.Context, system, user string) (string, error) {
-	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"}, CallScope{})
+	result, err := c.complete(ctx, system, user, nil, &responseFormat{Type: "json_object"}, CallScope{})
 	if err != nil {
 		var httpErr *HTTPStatusError
 		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
-			return c.complete(ctx, system, user, nil, CallScope{})
+			return c.complete(ctx, system, user, nil, nil, CallScope{})
 		}
 	}
 	return result, err
 }
 
 func (c *Client) CompleteJSONWithScope(ctx context.Context, system, user string, scope CallScope) (string, error) {
-	result, err := c.complete(ctx, system, user, &responseFormat{Type: "json_object"}, scope)
+	return c.CompleteJSONWithMedia(ctx, system, user, nil, scope)
+}
+
+// CompleteJSONWithMedia behaves like CompleteJSONWithScope and additionally
+// attaches non-text inputs to the user message when the configured model
+// accepts those input modalities. Media the model cannot accept is left out, so
+// text-only models keep their current request shape.
+func (c *Client) CompleteJSONWithMedia(ctx context.Context, system, user string, media []MediaPart, scope CallScope) (string, error) {
+	result, err := c.complete(ctx, system, user, media, &responseFormat{Type: "json_object"}, scope)
 	if err != nil {
 		var httpErr *HTTPStatusError
 		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest {
 			recordRetryMetric(scope, "response_format_400_fallback")
 			slog.Warn("LLM rejected response_format:json_object (HTTP 400), retrying without it")
-			return c.complete(ctx, system, user, nil, scope)
+			return c.complete(ctx, system, user, media, nil, scope)
 		}
 	}
 	return result, err
 }
 
-func (c *Client) complete(ctx context.Context, system, user string, respFmt *responseFormat, scope CallScope) (string, error) {
+func (c *Client) complete(ctx context.Context, system, user string, media []MediaPart, respFmt *responseFormat, scope CallScope) (string, error) {
 	useExplicitCache := supportsExplicitCache(c.model)
 
 	sysContent := plainContent(system)
 	if useExplicitCache {
 		sysContent = cachedContent(system)
 	}
+	userContent, mediaBlocks := mediaContent(c.model, user, media)
 	messages := []Message{
 		{Role: "system", Content: sysContent},
-		{Role: "user", Content: plainContent(user)},
+		{Role: "user", Content: userContent},
 	}
 
 	enableThinking := disableThinkingOptions(c.model)
@@ -227,18 +289,23 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		ReasoningSplit: reasoningSplit,
 	}, scope)
 	if err != nil {
-		// If 400 and any provider-specific extras were applied (thinking flags or
-		// content-block cache markers), retry once with everything stripped.
+		// If 400 and any provider-specific extras were applied (thinking flags,
+		// media content blocks or content-block cache markers), retry once with
+		// everything stripped.
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil || useExplicitCache) {
-			if useExplicitCache {
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil || useExplicitCache || mediaBlocks > 0) {
+			switch {
+			case mediaBlocks > 0:
+				recordRetryMetric(scope, "media_block_400_fallback")
+			case useExplicitCache:
 				recordRetryMetric(scope, "cache_control_400_fallback")
-			} else {
+			default:
 				recordRetryMetric(scope, "thinking_param_400_fallback")
 			}
 			slog.Warn("LLM rejected provider-specific parameters (HTTP 400), retrying without them",
 				"model", c.model,
 				"had_cache_control", useExplicitCache,
+				"had_media_blocks", mediaBlocks > 0,
 				"had_thinking_flags", enableThinking != nil || reasoningSplit != nil)
 			plainMessages := []Message{
 				{Role: "system", Content: plainContent(system)},
@@ -391,6 +458,33 @@ func supportsReasoningSplit(model string) *bool {
 // per Aliyun Bailian docs (qwen3-max, qwen3-coder-plus, qwen3-vl-plus, ...).
 func supportsExplicitCache(model string) bool {
 	return strings.HasPrefix(strings.ToLower(model), "qwen")
+}
+
+// modelInputModalities maps a lowercase model-id prefix to the non-text input
+// modalities that model accepts. Models missing from this table are treated as
+// text-only, which keeps their requests in the plain string content form.
+var modelInputModalities = map[string][]MediaKind{
+	"minimax-m3": {MediaKindImage, MediaKindVideo},
+}
+
+// supportsInputModality reports whether the model accepts the given non-text
+// input modality. The longest matching prefix wins so a specific model id can
+// override a broader model-family entry.
+func supportsInputModality(model string, kind MediaKind) bool {
+	lower := strings.ToLower(strings.TrimSpace(model))
+	matched := ""
+	var modalities []MediaKind
+	for prefix, kinds := range modelInputModalities {
+		if strings.HasPrefix(lower, prefix) && len(prefix) > len(matched) {
+			matched, modalities = prefix, kinds
+		}
+	}
+	for _, k := range modalities {
+		if k == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func StripMarkdownFences(s string) string {
