@@ -1,0 +1,19 @@
+- id: agent-default-model
+  config:
+    provider: mem9-fixture
+    model: mem9-fixture
+
+- id: llm-deepseek
+  disabled: true
+
+- id: session-persistence-jsonl
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+
+- insert:
+    - id: mem9-loader-fixture
+      name: './test-fixtures/loader-fixture.ts'
+
+    - id: mem9-replay-inspector
+      name: './test-fixtures/replay-inspector.ts'
