@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 const root = dirname(dirname(new URL(import.meta.url).pathname));
 const temp = mkdtempSync(join(tmpdir(), "mem9-dsh-pack-"));
 const require = createRequire(import.meta.url);
-const dshBin = join(dirname(require.resolve("@dsh-ai/dsh/package.json")), "lib", "bin.js");
+const dshBin = join(dirname(require.resolve("@deepseek-ai/dsh/package.json")), "lib", "bin.js");
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
