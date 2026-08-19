@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "__MEM9_SESSION_START_COMMAND__",
+            "command": "node \"${PLUGIN_ROOT}/hooks/session-start.mjs\"",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\hooks\\session-start.mjs\"",
             "timeout": 10,
             "statusMessage": "[mem9] session start"
           }
@@ -17,7 +18,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "__MEM9_USER_PROMPT_SUBMIT_COMMAND__",
+            "command": "node \"${PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\"",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\hooks\\user-prompt-submit.mjs\"",
             "timeout": 20,
             "statusMessage": "[mem9] recall"
           }
@@ -29,7 +31,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "__MEM9_STOP_COMMAND__",
+            "command": "node \"${PLUGIN_ROOT}/hooks/stop.mjs\"",
+            "commandWindows": "node \"%PLUGIN_ROOT%\\hooks\\stop.mjs\"",
             "timeout": 20,
             "statusMessage": "[mem9] save"
           }

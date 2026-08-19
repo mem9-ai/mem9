@@ -18,7 +18,8 @@ Know the two home directories before setup:
 
 - `CODEX_HOME` falls back to `~/.codex` on macOS/Linux.
 - `MEM9_HOME` falls back to `~/.mem9` on macOS/Linux.
-- Codex integration files live under `$CODEX_HOME`, including `$CODEX_HOME/hooks.json`, `$CODEX_HOME/config.toml`, and `$CODEX_HOME/mem9/`.
+- Codex discovers this plugin's lifecycle hooks from `hooks/hooks.json` in the installed plugin root.
+- mem9 config and state files live under `$CODEX_HOME/mem9/`.
 - mem9 credential profiles live in `$MEM9_HOME/.credentials.json`.
 
 When you mention local paths to the user, use symbolic or home-relative paths such as `$CODEX_HOME/mem9/config.json`, `$MEM9_HOME/.credentials.json`, or `~/.mem9/.credentials.json`.
@@ -154,9 +155,9 @@ Common flags:
 `--recall-min-prompt-length` defaults to `5`; use `0` to recall on every non-empty stripped user prompt.
 Most mem9 plugin releases take effect after a Codex restart. Migration releases may ask for `$mem9:setup` once after restart.
 
-`scope apply` and `scope clear` install or repair the managed mem9 runtime in `$CODEX_HOME`.
-They enable the Codex hooks feature, repair `$CODEX_HOME/hooks.json`, install stable shims in `$CODEX_HOME/mem9/hooks/`, and write install metadata to `$CODEX_HOME/mem9/install.json`.
-Codex `0.129.0+` uses `hooks = true`; Codex `0.122.0` through `0.128.x` uses `codex_hooks = true`.
+`scope apply` writes mem9 scope config and install metadata under `$CODEX_HOME/mem9/`.
+`scope clear` only removes the current project's mem9 override.
+Setup relies on the plugin-owned `hooks/hooks.json` and does not modify `$CODEX_HOME/hooks.json` or hook feature flags in `$CODEX_HOME/config.toml`.
 
 Do not ask the user to paste API keys into the Codex TUI.
 Prefer `MEM9_API_KEY` plus a trusted-shell `profile save-key` command.

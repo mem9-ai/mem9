@@ -16,12 +16,11 @@ The plugin exposes:
 - `$mem9:recall`
 - `$mem9:store`
 
-`$mem9:setup` is the main entrypoint. It manages shared profiles in the mem9 home, applies either global or project scope, and repairs the managed Codex hooks in the Codex home.
+`$mem9:setup` is the main entrypoint. It manages shared profiles in the mem9 home and applies either global or project scope. Codex loads the lifecycle hooks directly from this plugin.
 
 ## Requirements
 
-- Codex CLI `0.122.0` or newer
-- A Codex App build with plugin and hook support
+- A current Codex build with plugin-bundled hook support
 - Node.js 22 or newer
 - Network access to the mem9 server API
 
@@ -49,7 +48,7 @@ codex plugin marketplace add mem9-ai/mem9
    $mem9:store
    ```
 
-You do not need to enable hooks manually first. `$mem9:setup` inspects the saved profiles, enables the Codex hooks feature, and installs the managed hooks. Codex `0.129.0+` uses `hooks = true`; Codex `0.122.0` through `0.128.x` uses `codex_hooks = true`.
+You do not need to enable hooks manually first. Codex discovers `hooks/hooks.json` when the plugin is enabled. `$mem9:setup` does not modify `$CODEX_HOME/hooks.json` or the hook feature flags in `$CODEX_HOME/config.toml`.
 
 ## Where Files Are Stored
 
@@ -57,7 +56,7 @@ The Codex plugin uses two home directories:
 
 | Variable | Default when unset | What lives there |
 |---|---|---|
-| `CODEX_HOME` | `~/.codex` on macOS/Linux | Codex user state, `hooks.json`, `config.toml`, and mem9-managed Codex runtime files under `$CODEX_HOME/mem9/` |
+| `CODEX_HOME` | `~/.codex` on macOS/Linux | Codex user state, the installed plugin cache, and mem9 config/state files under `$CODEX_HOME/mem9/` |
 | `MEM9_HOME` | `~/.mem9` on macOS/Linux | Shared mem9 credential profiles in `$MEM9_HOME/.credentials.json` |
 
 Most macOS/Linux users can leave both variables unset. With the defaults, Codex integration files live under `~/.codex/`, and mem9 credentials live in `~/.mem9/.credentials.json`. In shell commands, `~` means the same home directory as `$HOME`.
@@ -157,6 +156,8 @@ A project override is written to `<project>/.codex/mem9/config.json`. It only ne
 
 Remote update-check settings stay in user scope. Project scope only controls the active profile and request tuning for that repository.
 
+`scope apply` also writes `$CODEX_HOME/mem9/install.json` so mem9 can identify the active marketplace installation for diagnostics and upgrade guidance. Hook definitions and hook scripts remain inside the installed plugin.
+
 ## Daily Commands
 
 ### `$mem9:setup`
@@ -168,7 +169,8 @@ What it does:
 - inspects the current runtime, profiles, and scope config
 - lets you create a new mem9 API key or reuse an existing global profile
 - applies either user scope or project scope
-- repairs the Codex hooks feature flag, `$CODEX_HOME/hooks.json`, and the managed hook shims
+- records install metadata for diagnostics and upgrade guidance
+- leaves global Codex hook configuration untouched
 - keeps API key entry out of the Codex TUI
 
 Project scope keeps profile, timeout, and recall prompt-length overrides.
@@ -176,13 +178,13 @@ User scope also owns `updateCheck.enabled` and `updateCheck.intervalHours`.
 
 ### `$mem9:cleanup`
 
-Cleanup for the mem9-managed Codex files.
+Cleanup for mem9 config/state files and hook artifacts left by older releases.
 
 What it does:
 
 - `inspect` emits machine-readable JSON with sanitized paths and the current removable targets
-- `run` removes mem9-managed entries from `$CODEX_HOME/hooks.json`
-- `run` removes `$CODEX_HOME/mem9/hooks/`
+- `run` removes legacy mem9 hook entries from `$CODEX_HOME/hooks.json`, if present
+- `run` removes the legacy `$CODEX_HOME/mem9/hooks/` shim directory, if present
 - `run` removes `$CODEX_HOME/mem9/install.json`
 - `run` removes `$CODEX_HOME/mem9/config.json`
 - `run` removes `$CODEX_HOME/mem9/state.json`
@@ -226,6 +228,7 @@ codex plugin marketplace upgrade mem9-ai
 
 This updates the installed mem9 plugin for normal releases.
 Migration releases surface a `SessionStart` notice that asks for `$mem9:setup` once.
+When upgrading from a release that wrote mem9 hooks into `$CODEX_HOME/hooks.json`, run `$mem9:cleanup` once after the upgrade, then run `$mem9:setup` again. This removes the legacy global hook entries so only the plugin-bundled hooks remain active.
 
 ## Uninstall / Reset
 
@@ -239,7 +242,7 @@ Follow this order:
    codex plugin marketplace remove mem9-ai
    ```
 
-This order keeps mem9-managed hooks and plugin state in sync while you remove the integration.
+This order removes mem9 state and any legacy mem9 hook entries before the plugin is removed.
 This uninstall flow keeps `$MEM9_HOME/.credentials.json`.
 If you want a full removal, delete `$MEM9_HOME/.credentials.json` after the uninstall steps finish.
 
@@ -297,11 +300,11 @@ Common issues:
 - If `inspect` reports `missing_install_metadata` before setup finishes, continue with `$mem9:setup`. `scope apply` writes `$CODEX_HOME/mem9/install.json`.
 - If `SessionStart` says mem9 is not configured, run `$mem9:setup`.
 - If a repository needs a different profile, timeout, recall prompt-length threshold, or a cleared local override, rerun `$mem9:setup` in that repository and apply or clear project scope.
-- If you want to remove the managed Codex files before reinstalling or resetting mem9, run `$mem9:cleanup`.
+- If you want to remove mem9 config/state before reinstalling or resetting mem9, run `$mem9:cleanup`.
 - If the selected profile is missing, run `$mem9:setup` to create or repair global profiles.
 - If the selected profile is missing an API key, run `$mem9:setup` and choose `create-new`, or add the profile manually in `$MEM9_HOME/.credentials.json` and rerun `$mem9:setup`, then choose `use-existing`.
 - If setup repairs malformed JSON files, it keeps sibling `.bak` copies before rewriting them.
-- If you installed an older prerelease that still points hooks at `$CODEX_HOME/mem9/runtime/`, run `$mem9:setup` once after upgrading.
+- If an older release left hook entries in `$CODEX_HOME/hooks.json` or shims under `$CODEX_HOME/mem9/hooks/`, run `$mem9:cleanup` once before re-running `$mem9:setup`.
 
 ## Reference: Files, Config, Environment
 
@@ -314,17 +317,16 @@ CODEX_HOME=~/.codex
 MEM9_HOME=~/.mem9
 ```
 
-Global Codex integration:
+Plugin-owned lifecycle hooks:
 
 ```text
-$CODEX_HOME/hooks.json
-$CODEX_HOME/config.toml
+<plugin-root>/hooks/hooks.json
+<plugin-root>/hooks/*.mjs
 ```
 
 Global mem9 runtime and config:
 
 ```text
-$CODEX_HOME/mem9/hooks/
 $CODEX_HOME/mem9/install.json
 $CODEX_HOME/mem9/config.json
 $CODEX_HOME/mem9/state.json

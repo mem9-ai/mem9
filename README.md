@@ -78,7 +78,7 @@ mem9 gives coding agents one shared memory layer instead of separate local noteb
 | Hermes Agent | Memory provider plugin with setup and activation flow | [mem9-hermes-plugin README](https://github.com/mem9-ai/mem9-hermes-plugin#readme) |
 | Claude Code | Marketplace plugin with hooks and skills | [`claude-plugin/README.md`](claude-plugin/README.md) |
 | OpenCode | Plugin SDK integration loaded from `opencode.json` | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
-| Codex | Marketplace plugin with managed hooks and project overrides | [`codex-plugin/README.md`](codex-plugin/README.md) |
+| Codex | Marketplace plugin with bundled hooks and project overrides | [`codex-plugin/README.md`](codex-plugin/README.md) |
 | Dify | Tool plugin for Dify Agent apps and Workflow apps, with single-space and multi-space authorization | [mem9-dify-plugin README](https://github.com/mem9-ai/mem9-dify-plugin#readme) |
 | Any HTTP client / custom runtime | Direct REST API integration | [API Reference](#api-reference) |
 
@@ -365,7 +365,7 @@ These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS S
 | [`openclaw-plugin/`](openclaw-plugin/) | OpenClaw memory plugin |
 | [`opencode-plugin/`](opencode-plugin/) | OpenCode plugin |
 | [`claude-plugin/`](claude-plugin/) | Claude Code hooks and skills integration |
-| [`codex-plugin/`](codex-plugin/) | Codex marketplace plugin and managed hooks |
+| [`codex-plugin/`](codex-plugin/) | Codex marketplace plugin with bundled lifecycle hooks |
 | [`site/`](site/) | Public mem9.ai site and published onboarding assets |
 | [`dashboard/`](dashboard/) | Dashboard product frontend and supporting product docs |
 | [`benchmark/`](benchmark/) | Benchmark harnesses and datasets for mem9 evaluation |

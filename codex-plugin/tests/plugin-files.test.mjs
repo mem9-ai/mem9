@@ -14,6 +14,7 @@ test("plugin manifest exposes mem9 setup skill and basic metadata", () => {
   assert.equal(manifest.name, "mem9");
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.skills, "./skills/");
+  assert.equal("hooks" in manifest, false);
   assert.equal(typeof manifest.description, "string");
   assert.match(manifest.description, /\$mem9:setup/);
   assert.equal(packageManifest.version, manifest.version);
@@ -21,7 +22,7 @@ test("plugin manifest exposes mem9 setup skill and basic metadata", () => {
   assert.equal(packageManifest.files.includes("lib/"), true);
 });
 
-test("plugin templates and skills exist with mem9 hook wiring", () => {
+test("plugin hooks and skills use standard plugin-owned wiring", () => {
   assert.equal(existsSync("./skills/setup/SKILL.md"), true);
   assert.equal(existsSync("./skills/project-config/SKILL.md"), false);
   assert.equal(existsSync("./skills/cleanup/SKILL.md"), true);
@@ -31,8 +32,9 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(existsSync("./skills/store/agents/openai.yaml"), true);
   assert.equal(existsSync("./lib/config.mjs"), true);
   assert.equal(existsSync("./hooks/session-start.mjs"), true);
-  assert.equal(existsSync("./bootstrap-hooks/session-start.mjs"), true);
-  assert.equal(existsSync("./templates/hooks.json"), true);
+  assert.equal(existsSync("./hooks/hooks.json"), true);
+  assert.equal(existsSync("./bootstrap-hooks/session-start.mjs"), false);
+  assert.equal(existsSync("./templates/hooks.json"), false);
   assert.equal(existsSync("../.agents/plugins/marketplace.json"), true);
   assert.equal(existsSync("./hooks/shared/config.mjs"), false);
   assert.equal(existsSync("./hooks/shared/http.mjs"), false);
@@ -48,8 +50,8 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   const marketplace = JSON.parse(
     readFileSync("../.agents/plugins/marketplace.json", "utf8"),
   );
-  const hooksTemplate = JSON.parse(
-    readFileSync("./templates/hooks.json", "utf8"),
+  const hooksConfig = JSON.parse(
+    readFileSync("./hooks/hooks.json", "utf8"),
   );
 
   assert.match(setupSkill, /node \.\/scripts\/setup\.mjs/);
@@ -68,6 +70,8 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.match(setupSkill, /--recall-min-prompt-length <chars>/);
   assert.match(setupSkill, /--update-check enabled\|disabled/);
   assert.match(setupSkill, /--update-check-interval-hours <hours>/);
+  assert.match(setupSkill, /hooks\/hooks\.json/);
+  assert.match(setupSkill, /does not modify `\$CODEX_HOME\/hooks\.json`/);
   assert.doesNotMatch(setupSkill, /disable-model-invocation:\s*true/);
   assert.match(cleanupSkill, /node \.\/scripts\/cleanup\.mjs --help/);
   assert.match(cleanupSkill, /cleanup\.mjs run --help/);
@@ -88,20 +92,24 @@ test("plugin templates and skills exist with mem9 hook wiring", () => {
   assert.equal(marketplace.plugins[0].source.path, "./codex-plugin");
   assert.equal(marketplace.plugins[0].policy.authentication, "ON_USE");
   assert.equal(
-    hooksTemplate.hooks.SessionStart[0].hooks[0].statusMessage,
+    hooksConfig.hooks.SessionStart[0].hooks[0].statusMessage,
     "[mem9] session start",
   );
   assert.equal(
-    hooksTemplate.hooks.UserPromptSubmit[0].hooks[0].command,
-    "__MEM9_USER_PROMPT_SUBMIT_COMMAND__",
+    hooksConfig.hooks.UserPromptSubmit[0].hooks[0].command,
+    "node \"${PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\"",
   );
   assert.equal(
-    hooksTemplate.hooks.Stop[0].hooks[0].timeout,
+    hooksConfig.hooks.Stop[0].hooks[0].timeout,
     20,
+  );
+  assert.equal(
+    hooksConfig.hooks.Stop[0].hooks[0].commandWindows,
+    "node \"%PLUGIN_ROOT%\\hooks\\stop.mjs\"",
   );
 });
 
-test("README explains global hooks and project overrides", () => {
+test("README explains plugin hooks and project overrides", () => {
   const readme = readFileSync("./README.md", "utf8");
 
   assert.match(readme, /^# Codex Plugin for mem9/m);
@@ -124,7 +132,7 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /2\.\s+In Codex, open `\/plugins`, search for `mem9`, and uninstall the plugin\./);
   assert.match(readme, /3\.\s+After step 2 succeeds, exit Codex and run:/);
   assert.match(readme, /codex plugin marketplace remove mem9-ai/);
-  assert.match(readme, /keeps mem9-managed hooks and plugin state in sync/i);
+  assert.match(readme, /legacy mem9 hook entries/i);
   assert.match(readme, /keeps `\$MEM9_HOME\/\.credentials\.json`/);
   assert.match(readme, /delete `\$MEM9_HOME\/\.credentials\.json` after the uninstall steps finish/i);
   assert.match(readme, /## Local Development \/ Testing/);
@@ -165,6 +173,8 @@ test("README explains global hooks and project overrides", () => {
   assert.match(readme, /node \.\/skills\/setup\/scripts\/setup\.mjs --help/);
   assert.match(readme, /node \.\/skills\/cleanup\/scripts\/cleanup\.mjs --help/);
   assert.match(readme, /You do not need to enable hooks manually first/);
+  assert.match(readme, /hooks\/hooks\.json/);
+  assert.match(readme, /does not modify `\$CODEX_HOME\/hooks\.json`/);
   assert.doesNotMatch(readme, /--use-existing/);
   assert.match(readme, /rerun `\$mem9:setup`, then choose `use-existing`/);
 });
