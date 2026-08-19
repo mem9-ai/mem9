@@ -24,7 +24,7 @@ export const agentGuideTargets = {
     external: true,
   },
   deepseek: {
-    href: 'https://github.com/mem9-ai/mem9/tree/main/deepseek-plugin#readme',
+    href: 'https://github.com/mem9-ai/mem9/tree/main/dsh-plugin#readme',
     external: true,
   },
   dify: {
@@ -6452,7 +6452,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           name: 'DeepSeek Harness',
           desc: 'DSH/Cordis bundle',
           detail:
-            'Install the @mem9/deepseek-plugin bundle for automatic recall, smart ingest, and five memory tools.',
+            'Install the @mem9/dsh-plugin bundle for automatic recall, smart ingest, and five memory tools.',
           guideId: 'deepseek',
           badge: 'Beta',
         },
@@ -6818,7 +6818,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           name: 'DeepSeek Harness',
           desc: 'DSH/Cordis bundle',
           detail:
-            '安装 @mem9/deepseek-plugin 插件，获得自动召回、智能摄取和五个记忆工具。',
+            '安装 @mem9/dsh-plugin 插件，获得自动召回、智能摄取和五个记忆工具。',
           guideId: 'deepseek',
           badge: 'Beta',
         },
@@ -7183,7 +7183,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           name: 'DeepSeek Harness',
           desc: 'DSH/Cordis bundle',
           detail:
-            '安裝 @mem9/deepseek-plugin 外掛，獲得自動召回、智慧攝取與五個記憶工具。',
+            '安裝 @mem9/dsh-plugin 外掛，獲得自動召回、智慧攝取與五個記憶工具。',
           guideId: 'deepseek',
           badge: 'Beta',
         },
@@ -7551,7 +7551,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           name: 'DeepSeek Harness',
           desc: 'DSH/Cordis bundle',
           detail:
-            '@mem9/deepseek-plugin バンドルをインストールし、自動リコール、スマートインジェスト、5つのメモリツールを利用できます。',
+            '@mem9/dsh-plugin バンドルをインストールし、自動リコール、スマートインジェスト、5つのメモリツールを利用できます。',
           guideId: 'deepseek',
           badge: 'Beta',
         },
@@ -7918,7 +7918,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           name: 'DeepSeek Harness',
           desc: 'DSH/Cordis bundle',
           detail:
-            '@mem9/deepseek-plugin 번들을 설치하여 자동 리콜, 스마트 인제스트, 다섯 가지 메모리 도구를 사용하세요.',
+            '@mem9/dsh-plugin 번들을 설치하여 자동 리콜, 스마트 인제스트, 다섯 가지 메모리 도구를 사용하세요.',
           guideId: 'deepseek',
           badge: 'Beta',
         },
@@ -8288,7 +8288,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           name: 'DeepSeek Harness',
           desc: 'DSH/Cordis bundle',
           detail:
-            'Pasang bundle @mem9/deepseek-plugin untuk recall otomatis, smart ingest, dan lima alat memori.',
+            'Pasang bundle @mem9/dsh-plugin untuk recall otomatis, smart ingest, dan lima alat memori.',
           guideId: 'deepseek',
           badge: 'Beta',
         },
@@ -8658,7 +8658,7 @@ export const siteCopy: Record<SiteLocale, SiteDictionary> = {
           name: 'DeepSeek Harness',
           desc: 'DSH/Cordis bundle',
           detail:
-            'ติดตั้งบันเดิล @mem9/deepseek-plugin เพื่อการเรียกคืนอัตโนมัติ การบันทึกอัจฉริยะ และเครื่องมือหน่วยความจำห้ารายการ',
+            'ติดตั้งบันเดิล @mem9/dsh-plugin เพื่อการเรียกคืนอัตโนมัติ การบันทึกอัจฉริยะ และเครื่องมือหน่วยความจำห้ารายการ',
           guideId: 'deepseek',
           badge: 'Beta',
         },

@@ -1,4 +1,4 @@
-# @mem9/deepseek-plugin
+# @mem9/dsh-plugin
 
 Persistent Mem9 memory for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). This package is an installable DSH/Cordis bundle. It adds automatic recall, background smart ingest, and five model-facing memory tools without changing the Harness agent loop or session format.
 
@@ -6,14 +6,14 @@ Persistent Mem9 memory for [DeepSeek Harness](https://github.com/deepseek-ai/dee
 
 ```bash
 export MEM9_API_KEY="<mem9-api-key>"
-dsh plugin --profile <profile> add @mem9/deepseek-plugin
+dsh plugin --profile <profile> add @mem9/dsh-plugin
 dsh --profile <profile> --dump-config
 ```
 
 Before the package is published to npm, install from a local checkout:
 
 ```bash
-dsh plugin --profile <profile> add ./deepseek-plugin
+dsh plugin --profile <profile> add ./dsh-plugin
 ```
 
 The bundle inserts one Cordis row named `mem9`. Override its complete `config` object in the profile's `cordis.patch.yml` when non-default settings are required.
@@ -40,7 +40,7 @@ Example profile override:
 
 ```yaml
 - id: mem9
-  name: '@mem9/deepseek-plugin'
+  name: '@mem9/dsh-plugin'
   config:
     apiKeyEnv: MEM9_API_KEY
     apiUrl: https://api.mem9.ai

@@ -10,7 +10,7 @@ on:
       - "openclaw-plugin/**"
       - "opencode-plugin/**"
       - "claude-plugin/**"
-      - "deepseek-plugin/**"
+      - "dsh-plugin/**"
   push:
     branches: [main]
     paths:
@@ -20,7 +20,7 @@ on:
       - "openclaw-plugin/**"
       - "opencode-plugin/**"
       - "claude-plugin/**"
-      - "deepseek-plugin/**"
+      - "dsh-plugin/**"
   workflow_dispatch:
 
 permissions:
@@ -104,7 +104,7 @@ jobs:
           version: 10
 
       - name: Typecheck DeepSeek plugin
-        working-directory: deepseek-plugin
+        working-directory: dsh-plugin
         run: |
           pnpm install --frozen-lockfile
           pnpm run typecheck

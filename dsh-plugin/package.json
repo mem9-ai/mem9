@@ -1,5 +1,5 @@
 {
-  "name": "@mem9/deepseek-plugin",
+  "name": "@mem9/dsh-plugin",
   "version": "0.1.0",
   "description": "Mem9 persistent memory for DeepSeek Harness",
   "type": "module",
