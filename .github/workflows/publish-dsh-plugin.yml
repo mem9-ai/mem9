@@ -4,15 +4,15 @@ on:
   push:
     branches: [main]
     paths:
-      - "deepseek-plugin/**"
-      - ".github/workflows/publish-deepseek-plugin.yml"
+      - "dsh-plugin/**"
+      - ".github/workflows/publish-dsh-plugin.yml"
 
 permissions:
   contents: read
 
 jobs:
   publish:
-    name: Publish @mem9/deepseek-plugin
+    name: Publish @mem9/dsh-plugin
     runs-on: ubuntu-latest
 
     steps:
@@ -35,7 +35,7 @@ jobs:
 
       - name: Read package version
         id: package
-        working-directory: deepseek-plugin
+        working-directory: dsh-plugin
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
@@ -82,29 +82,29 @@ jobs:
       - name: Check package version is unpublished
         run: |
           set -euo pipefail
-          if npm view "@mem9/deepseek-plugin@${{ steps.package.outputs.version }}" version >/dev/null 2>&1; then
-            echo "::error::@mem9/deepseek-plugin@${{ steps.package.outputs.version }} already exists on npm."
+          if npm view "@mem9/dsh-plugin@${{ steps.package.outputs.version }}" version >/dev/null 2>&1; then
+            echo "::error::@mem9/dsh-plugin@${{ steps.package.outputs.version }} already exists on npm."
             exit 1
           fi
 
       - name: Install dependencies
-        working-directory: deepseek-plugin
+        working-directory: dsh-plugin
         run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        working-directory: deepseek-plugin
+        working-directory: dsh-plugin
         run: pnpm test
 
       - name: Typecheck
-        working-directory: deepseek-plugin
+        working-directory: dsh-plugin
         run: pnpm run typecheck
 
       - name: Pack check
-        working-directory: deepseek-plugin
+        working-directory: dsh-plugin
         run: pnpm run pack:check
 
       - name: Publish
-        working-directory: deepseek-plugin
+        working-directory: dsh-plugin
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: pnpm publish --access public --tag "${{ steps.npm-tag.outputs.tag }}" --no-git-checks

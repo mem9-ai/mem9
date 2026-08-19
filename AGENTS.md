@@ -28,7 +28,7 @@ and a small Astro site.
 | `opencode-plugin/`   | OpenCode plugin (`@mem9/opencode`)                           |
 | `claude-plugin/`     | Claude Code plugin (hooks + skills)                          |
 | `codex-plugin/`      | Codex plugin (hooks + `$mem9:*` skills)                       |
-| `deepseek-plugin/`   | DeepSeek Harness DSH/Cordis bundle                            |
+| `dsh-plugin/`   | DeepSeek Harness DSH/Cordis bundle                            |
 | `docs/design/`       | Architecture/proposal notes and design drafts                |
 | `site/`              | Astro static site — deployed to Netlify from `main` branch   |
 | `e2e/`               | Live end-to-end scripts against a running server             |
@@ -54,8 +54,8 @@ cd opencode-plugin && pnpm test
 cd opencode-plugin && pnpm run typecheck
 pnpm --dir codex-plugin test
 pnpm --dir codex-plugin typecheck
-pnpm --dir deepseek-plugin test
-pnpm --dir deepseek-plugin typecheck
+pnpm --dir dsh-plugin test
+pnpm --dir dsh-plugin typecheck
 
 # Site dev/build
 cd site && npm run dev
@@ -159,7 +159,7 @@ MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" make dev
 | Dashboard worker (sibling repo) | `../mem9-node/apps/worker/`      |
 | Claude hooks         | `claude-plugin/hooks/`                      |
 | Codex hooks and skills | `codex-plugin/`                          |
-| DeepSeek Harness wiring | `deepseek-plugin/src/index.ts`          |
+| DeepSeek Harness wiring | `dsh-plugin/src/index.ts`          |
 | Architecture notes   | `docs/design/`                              |
 | OpenCode wiring      | `opencode-plugin/src/index.ts`              |
 | OpenClaw wiring      | `openclaw-plugin/index.ts`                  |

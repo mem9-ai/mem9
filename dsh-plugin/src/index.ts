@@ -222,7 +222,7 @@ class Mem9Gateway {
         "content-type": "application/json",
         "x-api-key": credential.value,
         "x-mnemo-agent-id": this.config.agentId,
-        "user-agent": "@mem9/deepseek-plugin/0.1.0",
+        "user-agent": "@mem9/dsh-plugin/0.1.0",
       },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal,

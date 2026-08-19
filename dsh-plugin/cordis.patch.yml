@@ -1,0 +1,3 @@
+- insert:
+    - id: mem9
+      name: '@mem9/dsh-plugin'
