@@ -9,7 +9,7 @@
 <p align="center">
   For OpenClaw and ClawHub installs, start here: <a href="https://mem9.ai/openclaw-memory">mem9.ai/openclaw-memory</a>
   <br/>
-  Hermes Agent, Claude Code, OpenCode, Codex, and Dify guides are below.
+  Hermes Agent, Claude Code, OpenCode, Codex, DeepSeek Harness, and Dify guides are below.
 </p>
 
 <p align="center">
@@ -42,6 +42,7 @@
    - [Claude Code](claude-plugin/README.md)
    - [OpenCode](opencode-plugin/README.md)
    - [Codex](codex-plugin/README.md)
+   - [DeepSeek Harness](deepseek-plugin/README.md)
    - [Dify](https://github.com/mem9-ai/mem9-dify-plugin#readme)
    - [Any HTTP client / custom runtime](#api-reference)
 
@@ -66,7 +67,7 @@ mem9 gives coding agents one shared memory layer instead of separate local noteb
 | What mem9 gives you | Why it matters |
 |---|---|
 | Persistent memory across sessions and machines | Your context survives restarts, laptop switches, and long-running projects |
-| Shared memory across agents and workflow platforms | OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, Dify apps, and custom clients can recall the same facts |
+| Shared memory across agents and workflow platforms | OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, DeepSeek Harness, Dify apps, and custom clients can recall the same facts |
 | Stateless integrations | Runtime plugins stay thin because storage, search, ingest, and policy live in the server |
 | Hybrid recall and a visual dashboard | Semantic search, keyword search, and inspection workflows stay in one system |
 
@@ -79,6 +80,7 @@ mem9 gives coding agents one shared memory layer instead of separate local noteb
 | Claude Code | Marketplace plugin with hooks and skills | [`claude-plugin/README.md`](claude-plugin/README.md) |
 | OpenCode | Plugin SDK integration loaded from `opencode.json` | [`opencode-plugin/README.md`](opencode-plugin/README.md) |
 | Codex | Marketplace plugin with managed hooks and project overrides | [`codex-plugin/README.md`](codex-plugin/README.md) |
+| DeepSeek Harness | Native DSH/Cordis bundle with recall, smart ingest, and memory tools | [`deepseek-plugin/README.md`](deepseek-plugin/README.md) |
 | Dify | Tool plugin for Dify Agent apps and Workflow apps, with single-space and multi-space authorization | [mem9-dify-plugin README](https://github.com/mem9-ai/mem9-dify-plugin#readme) |
 | Any HTTP client / custom runtime | Direct REST API integration | [API Reference](#api-reference) |
 
@@ -91,7 +93,7 @@ The hosted mem9 API is the fastest way to put persistent memory behind an agent 
 | Hosted API capability | Why teams start here |
 |---|---|
 | Hosted mem9 API with instant space provisioning | You can install an agent integration first and skip standing up infrastructure on day one |
-| Shared memory across runtimes and platforms | One space can serve OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, Dify apps, and custom clients together |
+| Shared memory across runtimes and platforms | One space can serve OpenClaw, Hermes Agent, Claude Code, OpenCode, Codex, DeepSeek Harness, Dify apps, and custom clients together |
 | Managed search and storage | Hybrid recall works out of the box without a separate vector stack or sync layer |
 | TiDB Cloud Starter foundation | The hosted path benefits from instant provisioning, native vector search, full-text search, server-side auto-embedding, hybrid search, and MySQL-compatible operational semantics |
 | Same API contract as self-hosted mem9 | Moving to your own deployment is a base-URL and credential change, not a plugin rewrite |
@@ -359,6 +361,7 @@ These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS S
 | [`opencode-plugin/`](opencode-plugin/) | OpenCode plugin |
 | [`claude-plugin/`](claude-plugin/) | Claude Code hooks and skills integration |
 | [`codex-plugin/`](codex-plugin/) | Codex marketplace plugin and managed hooks |
+| [`deepseek-plugin/`](deepseek-plugin/) | DeepSeek Harness DSH/Cordis bundle |
 | [`site/`](site/) | Public mem9.ai site and published onboarding assets |
 | [`dashboard/`](dashboard/) | Dashboard product frontend and supporting product docs |
 | [`benchmark/`](benchmark/) | Benchmark harnesses and datasets for mem9 evaluation |
