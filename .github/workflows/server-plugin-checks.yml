@@ -10,6 +10,7 @@ on:
       - "openclaw-plugin/**"
       - "opencode-plugin/**"
       - "claude-plugin/**"
+      - "deepseek-plugin/**"
   push:
     branches: [main]
     paths:
@@ -19,6 +20,7 @@ on:
       - "openclaw-plugin/**"
       - "opencode-plugin/**"
       - "claude-plugin/**"
+      - "deepseek-plugin/**"
   workflow_dispatch:
 
 permissions:
@@ -95,3 +97,14 @@ jobs:
           node --check hooks/lib/hook-json.mjs
           node --check hooks/lib/memories-formatter.mjs
           node --check hooks/lib/transcript-parser.mjs
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Typecheck DeepSeek plugin
+        working-directory: deepseek-plugin
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run typecheck
