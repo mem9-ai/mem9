@@ -38,9 +38,9 @@ cd site && npx tsc --noEmit
 - Release note feature entries in `src/content/site.ts` must carry a version tag. Legacy entries default to `v1.0.0`; new feature entries should set the version that corresponds to the feature release.
 - Output is static (`output: 'static'`).
 - Netlify should keep `site/` as the package directory with the base directory unset. `netlify.toml` still lives here, but its build paths resolve from the repo root so it can build both `site/` and `dashboard/app/`, then copy dashboard assets into `site/dist/your-memory/`.
-- The combined build protects `/console/ops/*` with Netlify Basic Auth before
-  proxying the Console FE or API; its credentials must match the dedicated Ops
-  credentials on `mem9-console-server`.
+- The combined build keeps `/console/ops/*` in the Console SPA and proxies only
+  `/console/ops/api/*` to `mem9-console-server`, where Basic Auth protects the
+  data. Ops credentials must never enter the site build environment.
 - Locale and theme state use typed string unions and storage keys defined in `src/content/site.ts`.
 - Locale switching is runtime-driven via `data-i18n` attributes plus `src/scripts/site-ui.ts`; new locales usually touch `site.ts`, `site-ui.ts`, and `Layout.astro` together.
 - `public/SKILL.md` is served verbatim as onboarding documents.
