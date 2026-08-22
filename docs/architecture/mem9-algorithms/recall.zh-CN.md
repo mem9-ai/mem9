@@ -118,7 +118,41 @@ RRF(id) = Σ 1 / (60 + rank_leg(id))
 
 ## 6. 二跳与相邻 turn 扩展
 
-Insight 的 second hop 只在 autoModel 候选路径且显式启用时运行。第一跳最佳向量相似度必须至少 0.5，否则认为没有足够强的语义锚点，避免扩展噪声。默认取前 3 个 seed；rich-top/enumeration 可取 5 个。二跳结果排除 seeds、按最佳相似度去重，并以 0.3 权重加入 RRF。
+Insight 的 second hop 只在 **autoModel 候选路径**且 handler 为 insight 分支**显式启用** `EnableSecondHop` 时运行；外部 embedder、仅 FTS/keyword、pinned 和 session 候选路径都不会执行它。第一跳向量结果中的最高相似度必须至少为 `0.5`，才被视为足够强的语义锚点；低于该门槛会跳过扩展，避免从弱命中扩大噪声。
+
+### Insight second hop 独立流程图
+
+```mermaid
+flowchart TD
+    A["insight 的 SearchCandidates"] --> B{"autoModel 候选路径且 EnableSecondHop=true？"}
+    B -->|否| Z["不执行 second hop"]
+    B -->|是| C["第一跳：AutoVectorSearch(query) + FTS/keyword"]
+    C --> D["对第一跳 vector 结果应用 MinScore"]
+    D --> E{"最高 vector similarity >= 0.5？"}
+    E -->|否| Z
+    E -->|是| F["用 keyword + vector 的 RRF 排序第一跳候选"]
+    F --> G["选 seed：默认前 3；rich-top / enumeration 最多前 5"]
+    G --> H["尽量复用 seed.Embedding；缺失时按 ID 批量查 embedding"]
+    H --> I{"该 seed 有 embedding？"}
+    I -->|是| J["VectorSearch(seed embedding)"]
+    I -->|否| K["AutoVectorSearch(seed content)"]
+    J --> L["每个 seed 并发执行第二跳检索"]
+    K --> L
+    L --> M["排除 seed 本身；按 ID 保留最高相似度；过滤 score < 0.3"]
+    M --> N["按最佳相似度排序 second-hop 候选"]
+    N --> O["以 0.3 / (60 + rank) 的较低权重并入 RRF"]
+    O --> P["后续按 content 去重、计算 confidence 并选择结果"]
+```
+
+second hop 是一次**间接的向量近邻扩展**，不是显式图数据库的边遍历：系统没有存储或查询“seed 与 neighbor 的关系边”。它先把第一跳 keyword/FTS 与 vector 结果用 RRF 排序，默认从该排序的前 3 条取 seed；对 `general`/`exact` 的 rich-top 以及 `enumeration`，handler 会将 `SecondHopTopN` 提高到 5。候选不足时只取实际数量。
+
+启动条件同样有两层：`autoHybridCandidates` 只在 `opts.EnableSecondHop` 为真时考虑二跳，而 `SearchCandidates` 只有在 `autoModel != ""` 时才会调用该函数；随后它检查已应用最小分数过滤后的第一跳 vector 结果，要求最高 `Score >= 0.5`。所以 FTS/keyword 命中本身不能触发二跳，也不会因为 RRF 排名高而绕过向量语义锚点。
+
+`secondHopAutoSearch` 先按第一跳 RRF 分数排列 seed。它优先使用 seed 已携带的 `Embedding`；对缺 embedding 的 seed，若仓库实现 `GetEmbeddingsByID`，便按 ID 批量回填。回填失败或接口不可用时，不中断召回：该 seed 退回使用其 `Content` 作为 `AutoVectorSearch` 的查询文本。因此“自动向量检索”只是 seed embedding 的回退路径，不是对每个 seed 都重复生成向量。
+
+每个 seed 启动一个 goroutine 进行第二跳向量检索：有 embedding 时调用 `VectorSearch(seed.Embedding, filter, limit)`，否则调用 `AutoVectorSearch(seed.Content, filter, limit)`。收集结果时排除所有 seed ID；相同候选 ID 只保留最高相似度的版本；`Score < 0.3` 的候选被丢弃（无 score 的结果按 `0` 参与“最佳”比较）。最后按保留的最佳相似度降序形成单一列表。
+
+该列表不会被当作直接命中等权对待。合并时第 `rank` 个 second-hop 候选仅增加 `0.3 / (60 + rank)` 的 RRF 分数，低于 keyword/vector 主路径的 `1 / (60 + rank)`；后续仍会应用类型权重、按 content 去重、置信度计算和最终选择。这样它只补充由强第一跳锚点引出的可能相关记忆，不能被表述为确定的、已存储的关系。
 
 Session 的 adjacent turns 从高排名 seed 出发，在相同 app/session 中按 seq 取半径 1 的上下文，默认最多围绕 4 个 seed；列举查询可以扩大到 12 个。相邻结果以 0.8 权重加入融合，让回答不仅看到命中的一句，还能看到它前后的对话语境。
 
