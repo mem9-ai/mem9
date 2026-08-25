@@ -224,6 +224,128 @@ type LocalizedYourMemoryCopy = {
   groups: Array<[string, string]>; verbs: Record<string, string>; detail: string; field: string;
 };
 
+type ProfileFieldName =
+  | 'generatedAt'
+  | 'source'
+  | 'summary'
+  | 'summary.text'
+  | 'summary.message'
+  | 'summary.evidence'
+  | 'attributes'
+  | 'changes'
+  | 'items'
+  | 'items[].kind'
+  | 'items[].title'
+  | 'items[].summary'
+  | 'items[].importance'
+  | 'items[].evidenceCount'
+  | 'items[].evidence';
+
+const localizedProfileFieldDescriptions: Record<Exclude<SiteLocale, 'en'>, Record<ProfileFieldName, string>> = {
+  zh: {
+    generatedAt: '用户画像生成时间。',
+    source: '来源摘要，包含 `memoryTypes` 和 `memoryCount`。',
+    summary: '用户画像摘要；生成文案跟随来源 memory 的主要语言。',
+    'summary.text': '使用 memory 主要语言生成的人物画像摘要；英文摘要使用 `You are ...` 直接称呼用户。',
+    'summary.message': '可选状态提示，使用相同的 memory 主要语言。',
+    'summary.evidence': '来源证据数组；引用的 memory 文本保留原始语言。',
+    attributes: '用户画像属性记录。',
+    changes: '用户画像属性变更记录。',
+    items: '当前优先事项、偏好的陪伴方式和 AI 约束；生成文案跟随 memory 的主要语言。',
+    'items[].kind': '`current_priority`、`companion_style` 或 `robot_constraint`。',
+    'items[].title': '由 API 生成时，条目标题使用 memory 的主要语言。',
+    'items[].summary': '由 API 生成时，条目摘要使用 memory 的主要语言。',
+    'items[].importance': '计算得出的条目重要性分数。',
+    'items[].evidenceCount': '支持该条目的 memory 数量。',
+    'items[].evidence': '支持该条目的 memory 证据；引用文本保留原始语言。',
+  },
+  'zh-Hant': {
+    generatedAt: '使用者畫像產生時間。',
+    source: '來源摘要，包含 `memoryTypes` 和 `memoryCount`。',
+    summary: '使用者畫像摘要；產生的文案會跟隨來源 memory 的主要語言。',
+    'summary.text': '使用 memory 主要語言產生的人物畫像摘要；英文摘要使用 `You are ...` 直接稱呼使用者。',
+    'summary.message': '選填的狀態提示，使用相同的 memory 主要語言。',
+    'summary.evidence': '來源證據陣列；引用的 memory 文字保留原始語言。',
+    attributes: '使用者畫像屬性記錄。',
+    changes: '使用者畫像屬性變更記錄。',
+    items: '目前優先事項、偏好的陪伴方式和 AI 約束；產生的文案會跟隨 memory 的主要語言。',
+    'items[].kind': '`current_priority`、`companion_style` 或 `robot_constraint`。',
+    'items[].title': '由 API 產生時，項目標題使用 memory 的主要語言。',
+    'items[].summary': '由 API 產生時，項目摘要使用 memory 的主要語言。',
+    'items[].importance': '計算得出的項目重要性分數。',
+    'items[].evidenceCount': '支援該項目的 memory 數量。',
+    'items[].evidence': '支援該項目的 memory 證據；引用文字保留原始語言。',
+  },
+  ja: {
+    generatedAt: 'ユーザープロファイルの生成日時です。',
+    source: '`memoryTypes` と `memoryCount` を含むソース概要です。',
+    summary: 'ソースメモリの主要言語に従って生成されるプロファイル概要です。',
+    'summary.text': 'メモリの主要言語で生成される人物像の要約です。英語では `You are ...` とユーザーに直接呼びかけます。',
+    'summary.message': '同じ主要言語で表示される任意のステータスメッセージです。',
+    'summary.evidence': 'ソースとなる根拠の配列です。引用されたメモリ本文は元の言語を維持します。',
+    attributes: 'プロファイル属性のレコードです。',
+    changes: 'プロファイル属性の変更レコードです。',
+    items: '現在の優先事項、好みの伴走スタイル、AI への制約です。生成文はメモリの主要言語に従います。',
+    'items[].kind': '`current_priority`、`companion_style`、または `robot_constraint` です。',
+    'items[].title': 'API が生成する場合、項目タイトルはメモリの主要言語で表示されます。',
+    'items[].summary': 'API が生成する場合、項目の要約はメモリの主要言語で表示されます。',
+    'items[].importance': '算出された項目の重要度スコアです。',
+    'items[].evidenceCount': 'この項目を裏付けるメモリの数です。',
+    'items[].evidence': '項目を裏付けるメモリの根拠です。引用文は元の言語を維持します。',
+  },
+  ko: {
+    generatedAt: '사용자 프로필 생성 시각입니다.',
+    source: '`memoryTypes`와 `memoryCount`를 포함하는 출처 요약입니다.',
+    summary: '원본 메모리의 주 언어에 맞춰 생성되는 프로필 요약입니다.',
+    'summary.text': '메모리의 주 언어로 생성되는 사용자 페르소나 요약입니다. 영어 요약은 `You are ...`로 사용자를 직접 지칭합니다.',
+    'summary.message': '동일한 주 언어로 표시되는 선택적 상태 메시지입니다.',
+    'summary.evidence': '출처 근거 배열입니다. 인용된 메모리 텍스트는 원래 언어를 유지합니다.',
+    attributes: '프로필 속성 레코드입니다.',
+    changes: '프로필 속성 변경 레코드입니다.',
+    items: '현재 우선순위, 선호하는 동행 방식, AI 제약 조건입니다. 생성 문구는 메모리의 주 언어를 따릅니다.',
+    'items[].kind': '`current_priority`, `companion_style` 또는 `robot_constraint`입니다.',
+    'items[].title': 'API가 생성한 경우 항목 제목은 메모리의 주 언어로 표시됩니다.',
+    'items[].summary': 'API가 생성한 경우 항목 요약은 메모리의 주 언어로 표시됩니다.',
+    'items[].importance': '계산된 항목 중요도 점수입니다.',
+    'items[].evidenceCount': '이 항목을 뒷받침하는 메모리 수입니다.',
+    'items[].evidence': '항목을 뒷받침하는 메모리 근거입니다. 인용문은 원래 언어를 유지합니다.',
+  },
+  id: {
+    generatedAt: 'Waktu pembuatan profil pengguna.',
+    source: 'Ringkasan sumber yang memuat `memoryTypes` dan `memoryCount`.',
+    summary: 'Ringkasan profil dengan teks yang mengikuti bahasa utama memori sumber.',
+    'summary.text': 'Ringkasan persona dalam bahasa utama memori. Ringkasan bahasa Inggris menyapa pengguna secara langsung dengan `You are ...`.',
+    'summary.message': 'Pesan status opsional dalam bahasa utama yang sama.',
+    'summary.evidence': 'Daftar bukti sumber; teks memori yang dikutip tetap menggunakan bahasa aslinya.',
+    attributes: 'Catatan atribut profil.',
+    changes: 'Catatan perubahan atribut profil.',
+    items: 'Prioritas saat ini, gaya pendampingan, dan batasan AI. Teks yang dihasilkan mengikuti bahasa utama memori.',
+    'items[].kind': '`current_priority`, `companion_style`, atau `robot_constraint`.',
+    'items[].title': 'Jika dibuat oleh API, judul item menggunakan bahasa utama memori.',
+    'items[].summary': 'Jika dibuat oleh API, ringkasan item menggunakan bahasa utama memori.',
+    'items[].importance': 'Skor kepentingan item yang dihitung.',
+    'items[].evidenceCount': 'Jumlah memori yang mendukung item ini.',
+    'items[].evidence': 'Bukti memori yang mendukung item; teks kutipan tetap menggunakan bahasa aslinya.',
+  },
+  th: {
+    generatedAt: 'เวลาที่สร้างโปรไฟล์ผู้ใช้',
+    source: 'สรุปแหล่งข้อมูลซึ่งประกอบด้วย `memoryTypes` และ `memoryCount`',
+    summary: 'สรุปโปรไฟล์ที่ข้อความซึ่งสร้างขึ้นใช้ภาษาหลักของหน่วยความจำต้นทาง',
+    'summary.text': 'สรุปตัวตนผู้ใช้ในภาษาหลักของหน่วยความจำ โดยสรุปภาษาอังกฤษจะกล่าวถึงผู้ใช้โดยตรงด้วย `You are ...`',
+    'summary.message': 'ข้อความสถานะแบบไม่บังคับในภาษาหลักเดียวกัน',
+    'summary.evidence': 'รายการหลักฐานต้นทาง โดยข้อความหน่วยความจำที่อ้างอิงจะคงภาษาต้นฉบับไว้',
+    attributes: 'รายการคุณลักษณะของโปรไฟล์',
+    changes: 'รายการการเปลี่ยนแปลงคุณลักษณะของโปรไฟล์',
+    items: 'ลำดับความสำคัญปัจจุบัน รูปแบบการช่วยเหลือที่ต้องการ และข้อจำกัดสำหรับ AI โดยข้อความที่สร้างขึ้นจะใช้ภาษาหลักของหน่วยความจำ',
+    'items[].kind': '`current_priority`, `companion_style` หรือ `robot_constraint`',
+    'items[].title': 'เมื่อ API เป็นผู้สร้าง ชื่อรายการจะใช้ภาษาหลักของหน่วยความจำ',
+    'items[].summary': 'เมื่อ API เป็นผู้สร้าง สรุปรายการจะใช้ภาษาหลักของหน่วยความจำ',
+    'items[].importance': 'คะแนนความสำคัญของรายการที่คำนวณแล้ว',
+    'items[].evidenceCount': 'จำนวนหน่วยความจำที่สนับสนุนรายการนี้',
+    'items[].evidence': 'หลักฐานจากหน่วยความจำที่สนับสนุนรายการ โดยข้อความอ้างอิงจะคงภาษาต้นฉบับไว้',
+  },
+};
+
 const localizedCopy: Partial<Record<SiteLocale, LocalizedYourMemoryCopy>> = {
   ja: { title: 'Your Memory API リファレンス', intro: 'API でユーザープロファイルの取得、インサイトレポートの生成、ソースメッセージの修正、詳細分析やバッチ分析を実行します。', summary: 'ヘルスチェック以外は `x-mem9-api-key` が必要です。非同期 API が返す ID で結果を取得してください。', auth: 'Base URL と認証', async: '非同期処理', quick: 'クイックスタート', quickDescription: 'API key を設定し、プロファイルと記憶分析レポートを取得します。', example: 'ユーザープロファイルを取得', cta: 'Your Memory を始める', ctaBody: '同じ mem9 API key でプロファイルと分析結果を確認します。', groups: [['ユーザープロファイル', '保存した事実とインサイトからプロファイルを構築します。生成文はメモリの主要言語に従い、英語の要約では `You are ...` を使用します。'], ['記憶分析レポート', '非同期の記憶インサイトレポートを生成・取得します。'], ['ソースメッセージの確認', '分析元の会話メッセージを確認、修正、復元します。'], ['詳細分析', '詳細分析レポートを管理します。'], ['バッチ分析ジョブ', '記憶を分割アップロードして結果を取得します。'], ['サービス状態', 'liveness と readiness を確認します。']], verbs: { GET: '取得', POST: '作成', PUT: '更新', DELETE: '削除' }, detail: '現在の API key の範囲で処理し、結果または状態を返します。', field: 'このリクエストまたはレスポンスのフィールドです。' },
   ko: { title: 'Your Memory API 레퍼런스', intro: 'API로 사용자 프로필을 조회하고 인사이트 보고서를 생성하며 원본 메시지와 메모리 분석을 관리합니다.', summary: '상태 확인을 제외한 모든 API에는 `x-mem9-api-key`가 필요합니다. 비동기 API가 반환한 ID로 결과를 조회하세요.', auth: 'Base URL 및 인증', async: '비동기 처리', quick: '빠른 시작', quickDescription: 'API key를 설정하고 프로필과 메모리 분석 보고서를 조회합니다.', example: '사용자 프로필 조회', cta: 'Your Memory 시작하기', ctaBody: '같은 mem9 API key로 프로필과 분석 결과를 확인합니다.', groups: [['사용자 프로필', '저장된 사실과 인사이트로 프로필을 구성합니다. 생성 문구는 메모리의 주요 언어를 따르며 영어 요약은 `You are ...`를 사용합니다.'], ['메모리 분석 보고서', '비동기 메모리 인사이트 보고서를 생성하고 조회합니다.'], ['원본 메시지 검토', '분석 원본 메시지를 검토, 수정 및 복원합니다.'], ['심층 분석', '심층 분석 보고서를 관리합니다.'], ['배치 분석 작업', '메모리를 배치로 업로드하고 결과를 조회합니다.'], ['서비스 상태', 'liveness 및 readiness를 확인합니다.']], verbs: { GET: '조회', POST: '생성', PUT: '수정', DELETE: '삭제' }, detail: '현재 API key 범위에서 처리하고 결과 또는 상태를 반환합니다.', field: '요청 또는 응답에 사용되는 필드입니다.' },
@@ -235,7 +357,8 @@ localizedCopy.zh = { title: 'Your Memory API 参考', intro: '通过 API 读取�
 localizedCopy['zh-Hant'] = { title: 'Your Memory API 參考', intro: '透過 API 讀取使用者畫像、產生洞察報告、校正來源訊息，並執行深度或分批記憶分析。', summary: '除健康檢查外，所有介面都需要 `x-mem9-api-key`。請使用非同步介面回傳的 ID 查詢結果。', auth: 'Base URL 與驗證', async: '非同步處理', quick: '快速開始', quickDescription: '設定 API key，然後讀取畫像並建立記憶分析報告。', example: '讀取使用者畫像', cta: '開始使用 Your Memory', ctaBody: '使用同一 mem9 API key 查看畫像與分析結果。', groups: [['使用者畫像', '根據已保存的事實與洞察建立使用者畫像。產生的文案會跟隨 memory 的主要語言，英文摘要使用第二人稱 `You are ...`。'], ['記憶分析報告', '產生並讀取各類非同步記憶洞察報告。'], ['來源訊息校正', '審核、修正、查看和撤銷分析引用的會話訊息。'], ['深度分析', '建立、查看、清理和刪除深度分析報告。'], ['分批分析任務', '分批上傳大量記憶並增量查詢分析結果。'], ['服務狀態', '用於部署與編排的存活和就緒檢查。']], verbs: { GET: '取得', POST: '建立', PUT: '更新', DELETE: '刪除' }, detail: '在目前 API key 範圍內執行操作，並回傳結果或處理狀態。', field: '此 request 或 response 中的欄位。' };
 
 function translateGroups(locale: SiteLocale, copy: LocalizedYourMemoryCopy): SiteApiEndpointGroupCopy[] {
-  return groups.map((group, index) => ({ ...group, title: copy.groups[index][0], description: copy.groups[index][1], endpoints: group.endpoints.map((endpoint) => ({ ...endpoint, summary: `${copy.verbs[endpoint.method] ?? endpoint.method} ${endpoint.path}`, description: copy.detail, headers: endpoint.headers?.map((item) => ({ ...item, description: copy.field })), pathParams: endpoint.pathParams?.map((item) => ({ ...item, description: copy.field })), queryParams: endpoint.queryParams?.map((item) => ({ ...item, description: copy.field })), bodyFields: endpoint.bodyFields?.map((item) => ({ ...item, description: copy.field })), responseFields: endpoint.responseFields?.map((item) => ({ ...item, description: copy.field })), examples: endpoint.examples?.map((example) => ({ ...example, label: copy.example })) })) }));
+  const profileFieldDescriptions = locale === 'en' ? undefined : localizedProfileFieldDescriptions[locale];
+  return groups.map((group, index) => ({ ...group, title: copy.groups[index][0], description: copy.groups[index][1], endpoints: group.endpoints.map((endpoint) => ({ ...endpoint, summary: `${copy.verbs[endpoint.method] ?? endpoint.method} ${endpoint.path}`, description: copy.detail, headers: endpoint.headers?.map((item) => ({ ...item, description: copy.field })), pathParams: endpoint.pathParams?.map((item) => ({ ...item, description: copy.field })), queryParams: endpoint.queryParams?.map((item) => ({ ...item, description: copy.field })), bodyFields: endpoint.bodyFields?.map((item) => ({ ...item, description: copy.field })), responseFields: endpoint.responseFields?.map((item) => ({ ...item, description: group.id === 'your-memory-profile' ? profileFieldDescriptions?.[item.name] ?? item.description : copy.field })), examples: endpoint.examples?.map((example) => ({ ...example, label: copy.example })) })) }));
 }
 
 export function yourMemoryApiPage(locale: SiteLocale, base: SiteApiPageCopy): SiteApiPageCopy {
