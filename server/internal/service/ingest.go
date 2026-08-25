@@ -83,9 +83,10 @@ type IngestRequest struct {
 
 // IngestMessage represents a single conversation message.
 type IngestMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-	Seq     *int   `json:"seq,omitempty"`
+	Role    string          `json:"role"`
+	Content string          `json:"content"`
+	Media   []llm.MediaPart `json:"media,omitempty"`
+	Seq     *int            `json:"seq,omitempty"`
 }
 
 // IngestResult is the output of the ingest pipeline.
@@ -191,7 +192,7 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	// Cap conversation size to avoid blowing LLM token limits.
 	formatted = truncateRunes(formatted, maxExtractionConversationRunes)
 
-	changes, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, formatted, req.ExternalProvenance)
+	changes, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, formatted, collectMessageMedia(req.Messages), req.ExternalProvenance)
 	if err != nil {
 		slog.Error("insight extraction failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
@@ -331,6 +332,7 @@ type preparedExtractionInput struct {
 	messages              []IngestMessage
 	originalIndices       []int
 	formatted             string
+	media                 []llm.MediaPart
 	includeAssistantFacts bool
 }
 
@@ -342,15 +344,17 @@ func prepareExtractionInputWithPolicy(messages []IngestMessage, maxConversationR
 	input := preparedExtractionInput{includeAssistantFacts: includeAssistantFacts}
 	for idx, msg := range messages {
 		content := strings.TrimSpace(msg.Content)
-		if content == "" {
+		if content == "" && len(msg.Media) == 0 {
 			continue
 		}
 		input.messages = append(input.messages, IngestMessage{
 			Role:    strings.TrimSpace(msg.Role),
 			Content: content,
+			Media:   msg.Media,
 			Seq:     msg.Seq,
 		})
 		input.originalIndices = append(input.originalIndices, idx)
+		input.media = append(input.media, msg.Media...)
 	}
 	if len(input.messages) == 0 {
 		return input
@@ -543,7 +547,7 @@ func (s *IngestService) ExtractPhase1WithRouting(ctx context.Context, messages [
 		return &Phase1Result{}, nil
 	}
 
-	facts, messageTags, err := s.extractFactsAndTagsWithRouting(ctx, input.formatted, len(input.messages), routingTargets)
+	facts, messageTags, err := s.extractFactsAndTagsWithRouting(ctx, input.formatted, len(input.messages), input.media, routingTargets)
 	if err != nil {
 		return nil, err
 	}
@@ -673,7 +677,7 @@ func (s *IngestService) ExtractContentWithRouting(ctx context.Context, content s
 	}
 	const maxContentRunes = 32000
 	formatted := truncateRunes(content, maxContentRunes)
-	return s.extractFactsWithRouting(ctx, "User: "+formatted, routingTargets)
+	return s.extractFactsWithRouting(ctx, "User: "+formatted, nil, routingTargets)
 }
 
 // ingestRaw stores messages as a single raw memory (legacy behavior).
@@ -729,12 +733,12 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 }
 
 // extractAndReconcile runs Phase 1a (extraction) + Phase 2 (reconciliation).
-func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID, conversation string, externalProvenance *ExternalProvenance) ([]MemoryChange, int, error) {
+func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID, conversation string, media []llm.MediaPart, externalProvenance *ExternalProvenance) ([]MemoryChange, int, error) {
 	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
 	// Phase 1a: Extract facts only — no message_tags needed here (smart-ingest / raw-ingest path).
 	// Use extractFacts instead of extractFactsAndTags to avoid wasting tokens on tag generation.
-	facts, err := s.extractFacts(ctx, conversation)
+	facts, err := s.extractFactsWithRouting(ctx, conversation, media, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("extract facts: %w", err)
 	}
@@ -824,10 +828,10 @@ func normalizeParsedFacts(raw string, parsed []ExtractedFact) []ExtractedFact {
 // extractFacts calls the LLM to extract atomic facts only, without per-message tag generation.
 // Used by extractAndReconcile (ReconcileContent path) where message_tags are not needed.
 func (s *IngestService) extractFacts(ctx context.Context, conversation string) ([]ExtractedFact, error) {
-	return s.extractFactsWithRouting(ctx, conversation, nil)
+	return s.extractFactsWithRouting(ctx, conversation, nil, nil)
 }
 
-func (s *IngestService) extractFactsWithRouting(ctx context.Context, conversation string, routingTargets []RoutingTarget) ([]ExtractedFact, error) {
+func (s *IngestService) extractFactsWithRouting(ctx context.Context, conversation string, media []llm.MediaPart, routingTargets []RoutingTarget) ([]ExtractedFact, error) {
 	if s.llm == nil || conversation == "" {
 		return nil, nil
 	}
@@ -835,6 +839,9 @@ func (s *IngestService) extractFactsWithRouting(ctx context.Context, conversatio
 	if input.formatted == "" {
 		return nil, nil
 	}
+	// The conversation reaches this point as formatted text, so the non-text
+	// inputs are carried separately by the caller.
+	input.media = media
 
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
 atomic facts from a conversation.
@@ -968,7 +975,7 @@ candidate is a query, transient status, one-off intent, activity log, or operati
 	}
 
 	scope := llm.CallScope{Step: "extraction"}
-	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
+	raw, err := s.llm.CompleteJSONWithMedia(ctx, systemPrompt, userPrompt, input.media, scope)
 	if err != nil {
 		slog.Warn("extraction LLM call failed", "err", err)
 		return nil, fmt.Errorf("extraction llm call: %w", err)
@@ -978,9 +985,9 @@ candidate is a query, transient status, one-off intent, activity log, or operati
 	lastRaw := raw
 	if err != nil {
 		metrics.LLMRetryTotal.WithLabelValues("extraction", "json_parse_retry").Inc()
-		raw2, retryErr := s.llm.CompleteJSONWithScope(ctx, systemPrompt,
+		raw2, retryErr := s.llm.CompleteJSONWithMedia(ctx, systemPrompt,
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
-			scope)
+			input.media, scope)
 		if retryErr != nil {
 			slog.Warn("extraction retry failed", "err", retryErr)
 			return nil, fmt.Errorf("extraction retry: %w", retryErr)
@@ -1010,14 +1017,17 @@ candidate is a query, transient status, one-off intent, activity log, or operati
 // extractFactsAndTags calls the LLM to extract atomic facts and per-message tags
 // from the conversation in a single call.
 func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation string, messageCount int) ([]ExtractedFact, [][]string, error) {
-	return s.extractFactsAndTagsWithRouting(ctx, conversation, messageCount, nil)
+	return s.extractFactsAndTagsWithRouting(ctx, conversation, messageCount, nil, nil)
 }
 
-func (s *IngestService) extractFactsAndTagsWithRouting(ctx context.Context, conversation string, messageCount int, routingTargets []RoutingTarget) ([]ExtractedFact, [][]string, error) {
+func (s *IngestService) extractFactsAndTagsWithRouting(ctx context.Context, conversation string, messageCount int, media []llm.MediaPart, routingTargets []RoutingTarget) ([]ExtractedFact, [][]string, error) {
 	input := prepareExtractionInputFromConversationWithPolicy(conversation, maxExtractionConversationRunes, s.includeAssistantFacts)
 	if input.formatted == "" {
 		return nil, normalizeMessageTags(nil, messageCount), nil
 	}
+	// The conversation reaches this point as formatted text, so the non-text
+	// inputs are carried separately by the caller.
+	input.media = media
 
 	systemPrompt := `You are an information extraction engine. Your task is to identify distinct,
 atomic facts from a conversation AND assign short descriptive tags to each message.
@@ -1181,7 +1191,7 @@ eligible source content is non-durable, while still returning message_tags for e
 	}
 
 	scope := llm.CallScope{Step: "extraction_and_classification"}
-	raw, err := s.llm.CompleteJSONWithScope(ctx, systemPrompt, userPrompt, scope)
+	raw, err := s.llm.CompleteJSONWithMedia(ctx, systemPrompt, userPrompt, input.media, scope)
 	if err != nil {
 		slog.Warn("extraction LLM call failed", "err", err)
 		return nil, normalizeMessageTags(nil, messageCount), fmt.Errorf("extraction llm call: %w", err)
@@ -1191,9 +1201,9 @@ eligible source content is non-durable, while still returning message_tags for e
 	lastRaw := raw
 	if err != nil {
 		metrics.LLMRetryTotal.WithLabelValues("extraction_and_classification", "json_parse_retry").Inc()
-		raw2, retryErr := s.llm.CompleteJSONWithScope(ctx, systemPrompt,
+		raw2, retryErr := s.llm.CompleteJSONWithMedia(ctx, systemPrompt,
 			"Your previous response was invalid JSON:\n"+raw+"\n\nFix it and return ONLY the corrected JSON object.\n\n"+userPrompt,
-			scope)
+			input.media, scope)
 		if retryErr != nil {
 			slog.Warn("extraction retry failed", "err", retryErr)
 			return nil, normalizeMessageTags(nil, messageCount), fmt.Errorf("extraction retry: %w", retryErr)
@@ -1904,8 +1914,8 @@ func stripInjectedContext(messages []IngestMessage) []IngestMessage {
 	for _, msg := range messages {
 		cleaned := stripMemoryTags(msg.Content)
 		cleaned = strings.TrimSpace(cleaned)
-		if cleaned != "" {
-			result = append(result, IngestMessage{Role: msg.Role, Content: cleaned, Seq: msg.Seq})
+		if cleaned != "" || len(msg.Media) > 0 {
+			result = append(result, IngestMessage{Role: msg.Role, Content: cleaned, Media: msg.Media, Seq: msg.Seq})
 		}
 	}
 	return result
@@ -1927,6 +1937,16 @@ func stripMemoryTags(s string) string {
 		s = s[:start] + s[end+len("</relevant-memories>"):]
 	}
 	return s
+}
+
+// collectMessageMedia gathers the non-text inputs attached to messages so they
+// can be sent alongside the formatted conversation text.
+func collectMessageMedia(messages []IngestMessage) []llm.MediaPart {
+	var media []llm.MediaPart
+	for _, msg := range messages {
+		media = append(media, msg.Media...)
+	}
+	return media
 }
 
 // formatConversation formats messages into a conversation string for LLM.
