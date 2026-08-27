@@ -576,6 +576,7 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	m.SupersededBy = supersededBy.String
 	m.Tags = unmarshalTags(tagsJSON)
 	m.Metadata = unmarshalRawJSON(metadataJSON)
+	m.Embedding = parseVec(embeddingStr)
 	return &m, nil
 }
 
@@ -723,6 +724,19 @@ func nullJSON(data json.RawMessage) any {
 }
 
 // vecToParam converts a float32 slice to a pgvector.Vector for use as a query parameter.
+// parseVec decodes a pgvector text value (e.g. "[0.1,0.2,0.3]") into []float32.
+// NULL or malformed values yield nil.
+func parseVec(s sql.NullString) []float32 {
+	if !s.Valid || len(s.String) < 2 {
+		return nil
+	}
+	var v pgvector.Vector
+	if err := v.Parse(s.String); err != nil {
+		return nil
+	}
+	return v.Slice()
+}
+
 func vecToParam(embedding []float32) any {
 	if len(embedding) == 0 {
 		return nil

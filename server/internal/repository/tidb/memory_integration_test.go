@@ -600,3 +600,41 @@ func TestListBootstrap(t *testing.T) {
 // These require TiDB-specific features (VECTOR column type, VEC_COSINE_DISTANCE,
 // VEC_EMBED_COSINE_DISTANCE, fts_match_word) that are not available in plain MySQL.
 // To test these, use a real TiDB Serverless instance.
+
+// GetByID must hydrate Embedding: service read-modify-write paths (tag or
+// metadata patches after create, Update without content change) hand the
+// struct back to UpdateOptimistic, which writes the embedding column
+// unconditionally. A nil Embedding there would wipe the stored vector.
+func TestGetByIDHydratesEmbeddingForUpdate(t *testing.T) {
+	truncateMemories(t)
+	repo := newMemoryRepo()
+	ctx := context.Background()
+
+	m := newTestMemory(func(m *domain.Memory) {
+		m.Embedding = []float32{0.25, -0.5, 1}
+	})
+	if err := repo.Create(ctx, m); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if len(got.Embedding) != len(m.Embedding) {
+		t.Fatalf("GetByID embedding: got %v want %v", got.Embedding, m.Embedding)
+	}
+
+	got.Tags = []string{"patched"}
+	if err := repo.UpdateOptimistic(ctx, got, 0); err != nil {
+		t.Fatalf("UpdateOptimistic: %v", err)
+	}
+
+	embeddings, err := repo.GetEmbeddingsByID(ctx, []string{m.ID})
+	if err != nil {
+		t.Fatalf("GetEmbeddingsByID: %v", err)
+	}
+	if len(embeddings[m.ID]) != len(m.Embedding) {
+		t.Fatalf("embedding lost after UpdateOptimistic: got %v want %v", embeddings[m.ID], m.Embedding)
+	}
+}

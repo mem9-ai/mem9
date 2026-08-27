@@ -1078,12 +1078,18 @@ func (s *MemoryService) Update(ctx context.Context, agentName, id, content strin
 	}
 	current.UpdatedBy = agentName
 
-	if contentChanged && s.autoModel == "" && s.embedder != nil {
-		embedding, err := s.embedder.Embed(ctx, current.Content)
-		if err != nil {
-			return nil, err
+	if contentChanged && s.autoModel == "" {
+		if s.embedder != nil {
+			embedding, err := s.embedder.Embed(ctx, current.Content)
+			if err != nil {
+				return nil, err
+			}
+			current.Embedding = embedding
+		} else {
+			// No embedder: the stored vector describes the old content. Clear it
+			// rather than carrying a stale vector onto the new content.
+			current.Embedding = nil
 		}
-		current.Embedding = embedding
 	}
 
 	writeStart := time.Now()
