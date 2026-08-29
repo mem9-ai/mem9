@@ -206,6 +206,46 @@ make docker REGISTRY=local COMMIT=dev
 docker run -e MNEMO_DSN="..." -e MNEMO_DB_BACKEND="tidb" -p 8080:8080 local/mnemo-server:dev
 ```
 
+### Local Quickstart with Docker Compose
+
+The `docker-compose.yml` at the repo root spins up a self-contained TiDB + mem9
+stack so you can hack against a real (non-Cloud) mem9 server without managing
+the database yourself. It runs three services:
+
+- `tidb` — `pingcap/tidb:v8.5.6` in `unistore` single-process mode, exposed on
+  `localhost:4000`. Good enough for local dev including the `VECTOR(N)` column
+  types used in `server/schema.sql`. (Vector *indexes* still need TiFlash and
+  remain commented out in the schema.)
+- `schema-init` — one-shot job that waits for TiDB to accept connections, then
+  pipes `server/schema.sql` through the `mysql` client.
+- `mem9` — built in-place from `server/Dockerfile.local` (multi-stage Go
+  build), tagged `mem9:local` by default, started after `schema-init`
+  completes, on `localhost:8080`. No Go toolchain needed on the host.
+
+```bash
+cp .env.example .env                   # optional — defaults are sane
+docker compose up --build              # bring everything up
+
+# smoke check (in another terminal). The X-API-Key matches the local-dev
+# tenant row that schema-init seeds; without it, v1alpha2 routes 401.
+curl -s http://localhost:8080/healthz
+curl -s -X POST http://localhost:8080/v1alpha2/mem9s/memories \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: local-dev' \
+  -d '{"content":"local smoke memory","memory_type":"pinned","agent_id":"smoke"}'
+curl -s 'http://localhost:8080/v1alpha2/mem9s/memories?q=smoke' \
+  -H 'X-API-Key: local-dev'
+```
+
+`.env.example` documents the knobs an operator typically wants:
+`MEM9_IMAGE` (use a prebuilt image instead of the in-place build),
+`MEM9_PORT` / `TIDB_PORT` (re-map host ports if 8080/4000 are in use),
+`MEM9_LOCAL_API_KEY` (rename the seeded key), `MNEMO_INGEST_MODE`
+(switch to `smart` for LLM-extracted ingest — also requires
+`MNEMO_LLM_*`), and the `MNEMO_EMBED_*` keys for vector recall.
+
+To wipe state and start clean: `docker compose down -v && docker compose up --build`.
+
 ### Environment Variables
 
 Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only applies to specific deployment modes.
