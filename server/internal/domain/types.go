@@ -286,23 +286,37 @@ type Session struct {
 // bumps Version. The sessions table is never modified, so the overlay only
 // changes how Session Search renders an already-matched row.
 type SessionEdit struct {
-	ID              string   `json:"id"` // == sessions.id
-	AppID           string   `json:"appId,omitempty"`
-	SessionID       string   `json:"session_id,omitempty"`
-	Seq             int      `json:"seq"`
-	AgentID         string   `json:"agent_id,omitempty"`
-	OriginalContent string   `json:"original_content"`
-	EditedContent   string   `json:"edited_content"`
-	EditedTags      []string `json:"edited_tags,omitempty"`
+	ID              string `json:"id"` // == sessions.id
+	AppID           string `json:"appId,omitempty"`
+	SessionID       string `json:"session_id,omitempty"`
+	Seq             int    `json:"seq"`
+	AgentID         string `json:"agent_id,omitempty"`
+	OriginalContent string `json:"original_content"`
+	EditedContent   string `json:"edited_content,omitempty"`
+	// EditedContentSet mirrors whether the edited_content column is non-NULL.
+	// A row can exist with only a correctness mark and no content override
+	// (mark-only row); the overlay replaces rendered content only when this
+	// is true.
+	EditedContentSet bool     `json:"-"`
+	EditedTags       []string `json:"edited_tags,omitempty"`
 	// EditedTagsSet distinguishes "tags omitted (leave display tags as-is)"
 	// from "tags explicitly set (including [] to clear)". It mirrors whether
 	// the edited_tags column is non-NULL; only when true does the overlay
 	// replace a row's rendered tags.
-	EditedTagsSet bool        `json:"-"`
-	EditedBy      string      `json:"edited_by,omitempty"`
-	Reason        string      `json:"reason,omitempty"`
-	Version       int         `json:"version"`
-	State         MemoryState `json:"state"`
-	CreatedAt     time.Time   `json:"created_at"`
-	UpdatedAt     time.Time   `json:"updated_at"`
+	EditedTagsSet bool `json:"-"`
+	// Correctness is a human review mark: "correct" or "incorrect"; empty
+	// means unmarked. A content edit auto-sets it to "correct".
+	Correctness string      `json:"correctness,omitempty"`
+	EditedBy    string      `json:"edited_by,omitempty"`
+	Reason      string      `json:"reason,omitempty"`
+	Version     int         `json:"version"`
+	State       MemoryState `json:"state"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }
+
+// SessionEdit correctness mark values.
+const (
+	SessionEditCorrect   = "correct"
+	SessionEditIncorrect = "incorrect"
+)
