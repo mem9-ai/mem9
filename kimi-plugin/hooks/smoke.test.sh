@@ -74,6 +74,7 @@ out=$(printf '{"hook_event_name":"SessionStart","session_id":"session_test123","
 check "session-start stdout empty" '[ -z "${out}" ]'
 check "credentials upserted" 'grep -q "\"provisioned-key-123\"" "${MEM9_HOME}/.credentials.json"'
 check "schemaVersion preserved" 'grep -q "\"schemaVersion\": 1" "${MEM9_HOME}/.credentials.json"'
+check "credentials file mode 600" 'node -e "process.exit((require(\"fs\").statSync(process.argv[1]).mode & 0o777) === 0o600 ? 0 : 1)" "${MEM9_HOME}/.credentials.json"'
 
 # 1b. pre-existing second profile must survive the upsert
 node -e '
@@ -96,6 +97,11 @@ check "recall writer id header" 'grep -q "X-Mnemo-Agent-Id: kimi-code" "${REQ_LO
 # 2b. UserPromptSubmit with content-part array prompt
 out=$(printf '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":[{"type":"text","text":"deploy?"},{"type":"image","url":"blobref:x"}],"cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
 check "array prompt handled" '[[ "${out}" == *"deploy window is Friday"* ]]'
+
+# 2c. MEM9_API_URL env override wins over the saved profile baseUrl
+: > "${REQ_LOG}"
+out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | MEM9_API_URL="https://override.example" bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
+check "env API URL overrides profile baseUrl" 'grep -q "https://override.example/v1alpha2/mem9s/memories" "${REQ_LOG}"'
 
 # 3. Stop: ingests from wire.jsonl, empty stdout
 : > "${REQ_LOG}"

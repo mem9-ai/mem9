@@ -166,7 +166,7 @@ mem9_load_auth() {
   if ! parsed="$(node -e '
 const fs = require("node:fs");
 const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-const fallbackBaseUrl = process.argv[2] || "https://api.mem9.ai";
+const envBaseUrl = (process.argv[2] || "").trim();
 const isRecord = (value) => value != null && typeof value === "object" && !Array.isArray(value);
 const profiles = isRecord(data) && isRecord(data.profiles) ? data.profiles : {};
 let profile = isRecord(profiles.default) ? profiles.default : null;
@@ -176,9 +176,10 @@ if (!profile) {
     profile = profiles[ids[0]];
   }
 }
-const baseUrl = profile && typeof profile.baseUrl === "string" && profile.baseUrl.trim()
+const profileBaseUrl = profile && typeof profile.baseUrl === "string" && profile.baseUrl.trim()
   ? profile.baseUrl.trim()
-  : fallbackBaseUrl;
+  : "";
+const baseUrl = envBaseUrl || profileBaseUrl || "https://api.mem9.ai";
 const apiKey = profile && typeof profile.apiKey === "string" ? profile.apiKey.trim() : "";
 process.stdout.write([baseUrl, apiKey].join("\t"));
 ' "${credentials_file}" "${MEM9_API_URL}")"; then
@@ -229,7 +230,8 @@ data.schemaVersion = 1;
 data.profiles = profiles;
 fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
 const tempPath = `${credentialsPath}.${process.pid}.${Date.now()}.tmp`;
-fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n");
+fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+fs.chmodSync(tempPath, 0o600);
 fs.renameSync(tempPath, credentialsPath);
 ' "${credentials_file}" "${MEM9_API_URL}" "${api_key}"
 }
