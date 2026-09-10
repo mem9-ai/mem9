@@ -63,9 +63,9 @@ const apiKey = process.argv[2];
 const baseUrl = process.argv[3];
 let data = {};
 try { data = JSON.parse(fs.readFileSync(credPath, "utf8")); } catch {}
-if (!data || typeof data !== "object") data = {};
-const profiles = data.profiles && typeof data.profiles === "object" ? data.profiles : {};
-const existing = profiles.default && typeof profiles.default === "object" ? profiles.default : {};
+if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
+const profiles = data.profiles && typeof data.profiles === "object" && !Array.isArray(data.profiles) ? data.profiles : {};
+const existing = profiles.default && typeof profiles.default === "object" && !Array.isArray(profiles.default) ? profiles.default : {};
 profiles.default = {
   ...existing,
   label: typeof existing.label === "string" && existing.label ? existing.label : "default",
