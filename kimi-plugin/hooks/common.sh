@@ -4,6 +4,9 @@
 set -euo pipefail
 
 MEM9_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Tracks whether MEM9_API_URL was explicitly set; the loader must only let a
+# real env override win over a saved profile's baseUrl.
+MEM9_API_URL_ENV="${MEM9_API_URL:-}"
 MEM9_API_URL="${MEM9_API_URL:-https://api.mem9.ai}"
 MEM9_AGENT_ID="${MEM9_AGENT_ID:-kimi-code-main}"
 MEM9_WRITER_ID="${MEM9_WRITER_ID:-kimi-code}"
@@ -182,7 +185,7 @@ const profileBaseUrl = profile && typeof profile.baseUrl === "string" && profile
 const baseUrl = envBaseUrl || profileBaseUrl || "https://api.mem9.ai";
 const apiKey = profile && typeof profile.apiKey === "string" ? profile.apiKey.trim() : "";
 process.stdout.write([baseUrl, apiKey].join("\t"));
-' "${credentials_file}" "${MEM9_API_URL}")"; then
+' "${credentials_file}" "${MEM9_API_URL_ENV}")"; then
     MEM9_AUTH_SOURCE="invalid_file"
     return 2
   fi

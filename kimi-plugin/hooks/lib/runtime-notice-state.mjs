@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -93,7 +94,8 @@ function pruneState(state, now) {
 function writeState(filePath, state) {
   mkdirSync(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tempPath, `${JSON.stringify(state, null, 2)}\n`);
+  writeFileSync(tempPath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(tempPath, 0o600);
   renameSync(tempPath, filePath);
 }
 
@@ -116,17 +118,19 @@ export function claimRuntimeNotice(input) {
 
   try {
     const now = input.now ?? new Date();
+    // Notices can embed credential-bearing claim URLs; persist only the hash.
+    const messageKey = noticeHash(message);
     const state = readState(stateFile);
     pruneState(state, now);
     const session = state.sessions[sessionID] ?? { seenMessages: [], updatedAt: "" };
-    if (session.seenMessages.includes(message)) {
+    if (session.seenMessages.includes(messageKey)) {
       session.updatedAt = now.toISOString();
       state.sessions[sessionID] = session;
       writeState(stateFile, state);
       return false;
     }
 
-    session.seenMessages.push(message);
+    session.seenMessages.push(messageKey);
     session.updatedAt = now.toISOString();
     state.sessions[sessionID] = session;
     writeState(stateFile, state);

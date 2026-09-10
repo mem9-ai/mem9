@@ -103,6 +103,25 @@ check "array prompt handled" '[[ "${out}" == *"deploy window is Friday"* ]]'
 out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | MEM9_API_URL="https://override.example" bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
 check "env API URL overrides profile baseUrl" 'grep -q "https://override.example/v1alpha2/mem9s/memories" "${REQ_LOG}"'
 
+# 2d. Without an env override, the saved profile baseUrl wins over the cloud default
+node -e '
+const fs = require("fs");
+const p = process.argv[1];
+const d = JSON.parse(fs.readFileSync(p, "utf8"));
+d.profiles.default.baseUrl = "https://selfhost.example";
+fs.writeFileSync(p, JSON.stringify(d, null, 2));
+' "${MEM9_HOME}/.credentials.json"
+: > "${REQ_LOG}"
+out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
+check "profile baseUrl wins when no env override" 'grep -q "https://selfhost.example/v1alpha2/mem9s/memories" "${REQ_LOG}"'
+node -e '
+const fs = require("fs");
+const p = process.argv[1];
+const d = JSON.parse(fs.readFileSync(p, "utf8"));
+d.profiles.default.baseUrl = "https://api.mem9.ai";
+fs.writeFileSync(p, JSON.stringify(d, null, 2));
+' "${MEM9_HOME}/.credentials.json"
+
 # 3. Stop: ingests from wire.jsonl, empty stdout
 : > "${REQ_LOG}"
 out=$(printf '{"hook_event_name":"Stop","session_id":"session_test123","stop_hook_active":false,"cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/stop.sh")
@@ -122,6 +141,20 @@ check "sessionend stdout empty" '[ -z "${out}" ]'
 
 # 5. debug log location
 check "debug log under KIMI_CODE_HOME" '[ -f "${KIMI_CODE_HOME}/mem9/logs/hooks.jsonl" ]'
+
+# 6. runtime notice state: hashes only, dedup works, file mode 600
+NOTICE_FILE="${KIMI_HOME}/mem9/runtime-notices.json"
+claim_result=$(NOTICE_FILE="${NOTICE_FILE}" PLUGIN_ROOT="${PLUGIN_ROOT}" node --input-type=module -e '
+const { claimRuntimeNotice } = await import("file://" + process.env.PLUGIN_ROOT + "/hooks/lib/runtime-notice-state.mjs");
+const f = process.env.NOTICE_FILE;
+const first = claimRuntimeNotice({ stateFile: f, sessionID: "s1", message: "claim at https://x/claim?key=secret-key-abc" });
+const second = claimRuntimeNotice({ stateFile: f, sessionID: "s1", message: "claim at https://x/claim?key=secret-key-abc" });
+process.stdout.write([first, second].join(","));
+')
+check "notice claimed once per session" '[ "${claim_result}" = "true,false" ]'
+check "notice raw text not persisted" '! grep -q "secret-key-abc" "${NOTICE_FILE}"'
+check "notice hash persisted" 'grep -q "sha256:" "${NOTICE_FILE}"'
+check "notice state file mode 600" 'node -e "process.exit((require(\"fs\").statSync(process.argv[1]).mode & 0o777) === 0o600 ? 0 : 1)" "${NOTICE_FILE}"'
 
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then

@@ -10,15 +10,19 @@ Use this skill only when the user explicitly asks to remember or save something 
 ## Steps
 
 1. Extract the one fact, preference, or instruction that should be remembered.
-2. Use `${MEM9_HOME:-$HOME/.mem9}/.credentials.json` only as request credentials. If it is missing or has no usable profile, tell the user to run the `mem9-setup` skill first. Do not print the file contents or the API key.
+2. Resolve credentials: if `MEM9_API_KEY` is set, use it (with `MEM9_API_URL` when set). Otherwise use `${MEM9_HOME:-$HOME/.mem9}/.credentials.json`; if it is missing or has no usable profile, tell the user to run the `mem9-setup` skill first. An explicit `MEM9_API_URL` always overrides the profile's `baseUrl`. Do not print the credentials file contents or the API key.
 3. Store the memory with the single-message `content` API. Do not invent tags client-side.
 
 ```bash
 set -euo pipefail
 
-credentials_file="${MEM9_HOME:-$HOME/.mem9}/.credentials.json"
-test -f "$credentials_file"
-read_api_key_and_base_url="$(node -e '
+if [ -n "${MEM9_API_KEY:-}" ]; then
+  api_key="$MEM9_API_KEY"
+  base_url="${MEM9_API_URL:-https://api.mem9.ai}"
+else
+  credentials_file="${MEM9_HOME:-$HOME/.mem9}/.credentials.json"
+  test -f "$credentials_file"
+  read_api_key_and_base_url="$(node -e '
 const fs = require("node:fs");
 const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const profiles = data.profiles && typeof data.profiles === "object" ? data.profiles : {};
@@ -29,8 +33,9 @@ const profile = profiles.default && typeof profiles.default === "object"
 const values = [profile.apiKey || "", profile.baseUrl || "https://api.mem9.ai"];
 process.stdout.write(values.join("\t"));
 ' "$credentials_file")"
-api_key="${read_api_key_and_base_url%%	*}"
-base_url="${read_api_key_and_base_url#*	}"
+  api_key="${read_api_key_and_base_url%%	*}"
+  base_url="${MEM9_API_URL:-${read_api_key_and_base_url#*	}}"
+fi
 test -n "$api_key"
 test -n "$base_url"
 plugin_version="unknown"

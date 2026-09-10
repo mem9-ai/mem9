@@ -57,6 +57,7 @@ profiles.default = {
 data.schemaVersion = 1;
 data.profiles = profiles;
 fs.writeFileSync(credPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+fs.chmodSync(credPath, 0o600);
 ' "$credentials_file" "$api_key"
 ```
 
