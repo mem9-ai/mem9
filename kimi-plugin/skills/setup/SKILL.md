@@ -36,7 +36,9 @@ base_url="${MEM9_API_URL:-}"
 if [ -z "$base_url" ] && [ -f "$credentials_file" ]; then
   base_url="$(node -e '
 const fs = require("node:fs");
-const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+let data = {};
+try { data = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
+if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
 const profiles = data.profiles && typeof data.profiles === "object" ? data.profiles : {};
 const ids = Object.keys(profiles);
 const profile = profiles.default && typeof profiles.default === "object"
@@ -78,6 +80,8 @@ fs.chmodSync(credPath, 0o600);
 ```
 
 The credentials file is shared with other mem9 integrations (for example the Codex plugin); the upsert must merge into it and never drop other profiles.
+
+If the credentials file exists but contains malformed JSON, continue anyway: the base-url probe treats it as absent, and the upsert rewrites a fresh, valid file. Setup is the repair path — a broken file must never abort it.
 
 ## If setup cannot complete
 

@@ -326,6 +326,27 @@ function applyMessageCap(messages, maxMessages) {
 }
 
 /**
+ * @param {string} text
+ * @returns {number}
+ */
+function utf8Size(text) {
+  return new TextEncoder().encode(text).byteLength;
+}
+
+/**
+ * @param {string} text
+ * @param {number} maxBytes
+ * @returns {string}
+ */
+function truncateUtf8(text, maxBytes) {
+  const encoded = new TextEncoder().encode(text);
+  if (encoded.byteLength <= maxBytes) {
+    return text;
+  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(encoded.subarray(0, maxBytes));
+}
+
+/**
  * @param {IngestMessage[]} messages
  * @param {number} maxBytes
  * @returns {IngestMessage[]}
@@ -341,14 +362,44 @@ function applyByteBudget(messages, maxBytes) {
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    const size = new TextEncoder().encode(message.content).byteLength;
+    const size = utf8Size(message.content);
 
-    if (selected.length > 0 && totalBytes + size > maxBytes) {
-      break;
+    if (totalBytes + size <= maxBytes) {
+      selected.unshift(message);
+      totalBytes += size;
+      continue;
     }
 
-    selected.unshift(message);
-    totalBytes += size;
+    // Oversized message: the payload cap is hard — truncate instead of
+    // exceeding it — and keep a user message in the window whenever the
+    // candidates contain one.
+    if (selected.length === 0) {
+      const earlierUser = messages
+        .slice(0, index)
+        .some((item) => item.role === "user");
+      const limit =
+        message.role === "user" || !earlierUser
+          ? maxBytes
+          : Math.max(Math.floor(maxBytes / 2), 1);
+      const truncated = { ...message, content: truncateUtf8(message.content, limit) };
+      selected.unshift(truncated);
+      totalBytes += utf8Size(truncated.content);
+      continue;
+    }
+
+    const hasUser = selected.some((item) => item.role === "user");
+    if (message.role === "user" && !hasUser) {
+      const remaining = maxBytes - totalBytes;
+      if (remaining > 0) {
+        selected.unshift({ ...message, content: truncateUtf8(message.content, remaining) });
+      } else {
+        selected.length = 0;
+        const truncated = { ...message, content: truncateUtf8(message.content, maxBytes) };
+        selected.unshift(truncated);
+        totalBytes = utf8Size(truncated.content);
+      }
+    }
+    break;
   }
 
   return selected;

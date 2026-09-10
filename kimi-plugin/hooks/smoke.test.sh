@@ -58,6 +58,22 @@ EOF
 printf '{"sessionId":"session_test123","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
   "${SESSION_DIR}" > "${KIMI_HOME}/session_index.jsonl"
 
+# --- fixture with oversized messages for byte-cap tests ---
+SESSION_BIG_DIR="${KIMI_HOME}/sessions/wd_proj_abc/session_big"
+mkdir -p "${SESSION_BIG_DIR}/agents/main"
+node -e '
+const fs = require("fs");
+const dir = process.argv[1];
+const lines = [
+  JSON.stringify({ type: "metadata", protocol_version: "1.5", created_at: 1 }),
+  JSON.stringify({ type: "context.append_message", agentId: "main", message: { role: "user", content: [{ type: "text", text: "u".repeat(4000) }], origin: { kind: "user" }, id: "b1" }, time: 2 }),
+  JSON.stringify({ type: "context.append_loop_event", agentId: "main", event: { type: "content.part", turnId: "0", stepUuid: "s1", part: { type: "text", text: "a".repeat(4000) } }, time: 3 }),
+];
+fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
+' "${SESSION_BIG_DIR}"
+printf '{"sessionId":"session_big","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
+  "${SESSION_BIG_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
+
 pass=0
 fail=0
 check() {
@@ -178,6 +194,20 @@ check "notice claimed once per session" '[ "${claim_result}" = "true,false" ]'
 check "notice raw text not persisted" '! grep -q "secret-key-abc" "${NOTICE_FILE}"'
 check "notice hash persisted" 'grep -q "sha256:" "${NOTICE_FILE}"'
 check "notice state file mode 600" 'node -e "process.exit((require(\"fs\").statSync(process.argv[1]).mode & 0o777) === 0o600 ? 0 : 1)" "${NOTICE_FILE}"'
+
+# 7. wire-parser byte cap: oversized messages truncated, user message kept
+big_out=$(node "${PLUGIN_ROOT}/hooks/lib/wire-parser.mjs" --session-id session_big --cwd /tmp/proj --mode stop --max-bytes 1000)
+check "byte cap enforced on oversized messages" 'printf "%s" "${big_out}" | node -e "
+const fs = require(\"fs\");
+const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
+const total = msgs.reduce((n, m) => n + Buffer.byteLength(m.content), 0);
+process.exit(msgs.length > 0 && total <= 1000 ? 0 : 1);
+"'
+check "window keeps the user message" 'printf "%s" "${big_out}" | node -e "
+const fs = require(\"fs\");
+const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
+process.exit(msgs.some((m) => m.role === \"user\") ? 0 : 1);
+"'
 
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
