@@ -191,11 +191,15 @@ process.stdout.write([baseUrl, apiKey].join("\t"));
   fi
 
   IFS=$'\t' read -r auth_api_url auth_api_key <<< "${parsed}"
+  # Carry the resolved URL (env > profile > default) even when the key is
+  # missing, so re-provisioning targets the configured server and the upsert
+  # does not overwrite a self-hosted baseUrl with the cloud default.
+  MEM9_API_URL="${auth_api_url}"
+  export MEM9_API_URL
   if [[ -z "${auth_api_key}" ]]; then
     return 1
   fi
 
-  MEM9_API_URL="${auth_api_url}"
   MEM9_API_KEY="${auth_api_key}"
   MEM9_AUTH_SOURCE="credentials_file"
 

@@ -122,6 +122,29 @@ d.profiles.default.baseUrl = "https://api.mem9.ai";
 fs.writeFileSync(p, JSON.stringify(d, null, 2));
 ' "${MEM9_HOME}/.credentials.json"
 
+# 2e. Missing-key repair: profile URL is carried into re-provisioning
+node -e '
+const fs = require("fs");
+const p = process.argv[1];
+const d = JSON.parse(fs.readFileSync(p, "utf8"));
+d.profiles.default = { label: "default", baseUrl: "https://selfhost.example", apiKey: "" };
+fs.writeFileSync(p, JSON.stringify(d, null, 2));
+' "${MEM9_HOME}/.credentials.json"
+: > "${REQ_LOG}"
+out=$(printf '%s' '{"hook_event_name":"SessionStart","session_id":"session_test123","source":"startup","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/session-start.sh")
+check "re-provision targets profile baseUrl" 'grep -q "https://selfhost.example/v1alpha1/mem9s" "${REQ_LOG}"'
+check "re-provision keeps profile baseUrl" 'node -e "
+const d = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
+process.exit(d.profiles.default.baseUrl === \"https://selfhost.example\" && d.profiles.default.apiKey === \"provisioned-key-123\" ? 0 : 1);
+" "${MEM9_HOME}/.credentials.json"'
+node -e '
+const fs = require("fs");
+const p = process.argv[1];
+const d = JSON.parse(fs.readFileSync(p, "utf8"));
+d.profiles.default.baseUrl = "https://api.mem9.ai";
+fs.writeFileSync(p, JSON.stringify(d, null, 2));
+' "${MEM9_HOME}/.credentials.json"
+
 # 3. Stop: ingests from wire.jsonl, empty stdout
 : > "${REQ_LOG}"
 out=$(printf '{"hook_event_name":"Stop","session_id":"session_test123","stop_hook_active":false,"cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/stop.sh")
