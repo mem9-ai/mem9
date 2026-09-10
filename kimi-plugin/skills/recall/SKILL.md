@@ -1,0 +1,54 @@
+---
+name: mem9-recall
+description: Use when the current request needs relevant memories from mem9.
+---
+
+# Mem9 Recall
+
+Use this skill when the current request could benefit from historical context stored in mem9.
+
+## Steps
+
+1. Check `${MEM9_HOME:-$HOME/.mem9}/.credentials.json`. If it is missing or has no usable profile, tell the user to run the `mem9-setup` skill first.
+2. Use the credentials file only as request credentials. Do not print the file contents or the API key.
+3. Search mem9 with the current question across all agents in the account (no `agent_id` filter).
+
+```bash
+set -euo pipefail
+
+credentials_file="${MEM9_HOME:-$HOME/.mem9}/.credentials.json"
+test -f "$credentials_file"
+read_api_key_and_base_url="$(node -e '
+const fs = require("node:fs");
+const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+const profiles = data.profiles && typeof data.profiles === "object" ? data.profiles : {};
+const ids = Object.keys(profiles);
+const profile = profiles.default && typeof profiles.default === "object"
+  ? profiles.default
+  : (ids.length === 1 && typeof profiles[ids[0]] === "object" ? profiles[ids[0]] : {});
+const values = [profile.apiKey || "", profile.baseUrl || "https://api.mem9.ai"];
+process.stdout.write(values.join("\t"));
+' "$credentials_file")"
+api_key="${read_api_key_and_base_url%%	*}"
+base_url="${read_api_key_and_base_url#*	}"
+test -n "$api_key"
+test -n "$base_url"
+plugin_version="unknown"
+if [ -n "${KIMI_PLUGIN_ROOT:-}" ] && [ -f "${KIMI_PLUGIN_ROOT}/kimi.plugin.json" ]; then
+  plugin_version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(data.version || "unknown");' "${KIMI_PLUGIN_ROOT}/kimi.plugin.json")"
+fi
+
+query='REPLACE_WITH_SEARCH_QUERY'
+encoded_query="$(printf '%s' "$query" | node -e 'const fs=require("node:fs"); const raw=fs.readFileSync(0,"utf8").trim(); process.stdout.write(encodeURIComponent(raw));')"
+
+curl -sf --max-time 8 \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: ${api_key}" \
+  -H "X-Mnemo-Agent-Id: kimi-code" \
+  -H "User-Agent: mem9-plugin/kimi-code/${plugin_version}" \
+  "${base_url%/}/v1alpha2/mem9s/memories?q=${encoded_query}&limit=10"
+```
+
+If several profiles exist and none is named `default`, tell the user to pick one (for example by renaming it to `default` in the credentials file) instead of guessing.
+
+Return only the memories that help with the current question. Never reveal secret values.

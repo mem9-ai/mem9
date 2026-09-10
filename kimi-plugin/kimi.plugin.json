@@ -1,0 +1,44 @@
+{
+  "$schema": "https://kimi.com/schemas/kimi.plugin.schema.json",
+  "name": "mem9",
+  "version": "0.1.0",
+  "description": "Persistent cloud memory for Kimi Code. Requires Node.js 18+, auto-provisions credentials on startup, recalls memories on each user turn, and uploads structured conversation turns to mem9.",
+  "author": "mem9-ai",
+  "homepage": "https://mem9.ai",
+  "license": "Apache-2.0",
+  "skills": "./skills/",
+  "sessionStart": {
+    "skill": "using-mem9"
+  },
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "bash ./hooks/session-start.sh",
+      "timeout": 30
+    },
+    {
+      "event": "UserPromptSubmit",
+      "command": "bash ./hooks/user-prompt-submit.sh",
+      "timeout": 30
+    },
+    {
+      "event": "Stop",
+      "command": "bash ./hooks/stop.sh",
+      "timeout": 60
+    },
+    {
+      "event": "PreCompact",
+      "command": "bash ./hooks/pre-compact.sh",
+      "timeout": 60
+    },
+    {
+      "event": "SessionEnd",
+      "command": "bash ./hooks/session-end.sh",
+      "timeout": 60
+    }
+  ],
+  "interface": {
+    "displayName": "mem9",
+    "shortDescription": "Persistent cloud memory for Kimi Code"
+  }
+}

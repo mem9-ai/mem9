@@ -11,6 +11,7 @@ on:
       - "opencode-plugin/**"
       - "claude-plugin/**"
       - "dsh-plugin/**"
+      - "kimi-plugin/**"
   push:
     branches: [main]
     paths:
@@ -21,6 +22,7 @@ on:
       - "opencode-plugin/**"
       - "claude-plugin/**"
       - "dsh-plugin/**"
+      - "kimi-plugin/**"
   workflow_dispatch:
 
 permissions:
@@ -97,6 +99,23 @@ jobs:
           node --check hooks/lib/hook-json.mjs
           node --check hooks/lib/memories-formatter.mjs
           node --check hooks/lib/transcript-parser.mjs
+
+      - name: Check Kimi plugin hooks
+        working-directory: kimi-plugin
+        run: |
+          bash -n hooks/common.sh
+          bash -n hooks/pre-compact.sh
+          bash -n hooks/session-end.sh
+          bash -n hooks/session-start.sh
+          bash -n hooks/stop.sh
+          bash -n hooks/user-prompt-submit.sh
+          node --check hooks/lib/hook-json.mjs
+          node --check hooks/lib/memories-formatter.mjs
+          node --check hooks/lib/quota-error.mjs
+          node --check hooks/lib/runtime-notice-state.mjs
+          node --check hooks/lib/runtime-state.mjs
+          node --check hooks/lib/wire-parser.mjs
+          bash hooks/smoke.test.sh
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
