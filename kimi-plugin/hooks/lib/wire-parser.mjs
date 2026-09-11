@@ -426,6 +426,13 @@ function applyByteBudget(messages, maxBytes) {
         selected.unshift(truncated);
         totalBytes = utf8Size(truncated.content);
       }
+      break;
+    }
+
+    if (!hasUser) {
+      // No user message retained yet: skip over-budget non-user messages so
+      // the scan still reaches the latest user prompt.
+      continue;
     }
     break;
   }

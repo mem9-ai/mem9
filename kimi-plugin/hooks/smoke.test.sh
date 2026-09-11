@@ -29,19 +29,36 @@ export MEM9_SMOKE_REQ_LOG="${REQ_LOG}"
 # --- stub curl ---
 # Emulates `curl -w '\n%{http_code}'` by appending a newline + status code only
 # when the invocation asks for %{http_code}; the provision call uses -sf
-# without -w and must get a bare body.
+# without -w and must get a bare body. Requests carry their URL and headers in
+# a -K config file and bodies on stdin (--data-binary @-); the stub logs argv,
+# the config file contents, and any stdin body so assertions can match them.
 cat > "${MEM9_CURL_BIN}" <<'SH'
 #!/usr/bin/env bash
 args="$*"
-printf '%s\n' "$args" >> "${MEM9_SMOKE_REQ_LOG}"
-case "$args" in
+combined="${args}"
+prev=""
+for a in "$@"; do
+  if [ "${prev}" = "-K" ]; then
+    combined="${combined}
+$(cat "$a")"
+  fi
+  prev="$a"
+done
+case "${args}" in
+  *"--data-binary @-"*)
+    combined="${combined}
+$(cat)"
+    ;;
+esac
+printf '%s\n' "${combined}" >> "${MEM9_SMOKE_REQ_LOG}"
+case "${combined}" in
   *v1alpha1/mem9s*) printf '{"id":"provisioned-key-123"}' ;;
   *runtime-state*) printf '{}' ;;
   *"/memories?q="*) printf '{"memories":[{"id":"m1","content":"remember the deploy window is Friday","tags":["deploy"],"relative_age":"2d"}]}' ;;
   *"-X POST"*) printf '{}' ;;
   *) printf '{}' ;;
 esac
-case "$args" in
+case "${args}" in
   *'%{http_code}'*) printf '\n200' ;;
 esac
 SH
@@ -106,6 +123,23 @@ fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
 ' "${SESSION_MANY_DIR}"
 printf '{"sessionId":"session_many","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
   "${SESSION_MANY_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
+
+# --- fixture: oversized middle assistant message between user and reply ---
+SESSION_GAP_DIR="${KIMI_HOME}/sessions/wd_proj_abc/session_gap"
+mkdir -p "${SESSION_GAP_DIR}/agents/main"
+node -e '
+const fs = require("fs");
+const dir = process.argv[1];
+const lines = [
+  JSON.stringify({ type: "metadata", protocol_version: "1.5", created_at: 1 }),
+  JSON.stringify({ type: "context.append_message", agentId: "main", message: { role: "user", content: [{ type: "text", text: "gap user prompt" }], origin: { kind: "user" }, id: "g1" }, time: 2 }),
+  JSON.stringify({ type: "context.append_loop_event", agentId: "main", event: { type: "content.part", turnId: "0", stepUuid: "s0", part: { type: "text", text: "a".repeat(4000) } }, time: 3 }),
+  JSON.stringify({ type: "context.append_loop_event", agentId: "main", event: { type: "content.part", turnId: "1", stepUuid: "s1", part: { type: "text", text: "short final reply" } }, time: 4 }),
+];
+fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
+' "${SESSION_GAP_DIR}"
+printf '{"sessionId":"session_gap","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
+  "${SESSION_GAP_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
 
 pass=0
 fail=0
@@ -262,6 +296,15 @@ check "message cap keeps user message" 'printf "%s" "${many_out}" | node -e "
 const fs = require(\"fs\");
 const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
 process.exit(msgs.length <= 4 && msgs[0].role === \"user\" && msgs[0].content.includes(\"deploy window fact\") ? 0 : 1);
+"'
+
+# 10. byte budget: oversized middle message is skipped, user prompt retained
+gap_out=$(node "${PLUGIN_ROOT}/hooks/lib/wire-parser.mjs" --session-id session_gap --cwd /tmp/proj --mode stop --max-bytes 1000)
+check "oversized middle message skipped" 'printf "%s" "${gap_out}" | node -e "
+const fs = require(\"fs\");
+const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
+const total = msgs.reduce((n, m) => n + Buffer.byteLength(m.content), 0);
+process.exit(msgs.length === 2 && total <= 1000 && msgs[0].content.includes(\"gap user prompt\") && msgs[1].content.includes(\"short final reply\") ? 0 : 1);
 "'
 
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"

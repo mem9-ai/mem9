@@ -54,13 +54,16 @@ memory_file="REPLACE_WITH_FILE_PATH"
 payload="$(node -e 'const fs=require("node:fs"); const content=fs.readFileSync(process.argv[1],"utf8").replace(/\n+$/,""); process.stdout.write(JSON.stringify({ content }));' "$memory_file")"
 rm -f "$memory_file"
 
-curl -sf --max-time 8 \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ${api_key}" \
-  -H "X-Mnemo-Agent-Id: kimi-code" \
-  -H "User-Agent: mem9-plugin/kimi-code/${plugin_version}" \
-  -d "$payload" \
-  "${base_url%/}/v1alpha2/mem9s/memories"
+curl_config="$(mktemp "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")"
+{
+  printf 'url = "%s"\n' "${base_url%/}/v1alpha2/mem9s/memories"
+  printf 'header = "Content-Type: application/json"\n'
+  printf 'header = "X-API-Key: %s"\n' "${api_key}"
+  printf 'header = "X-Mnemo-Agent-Id: kimi-code"\n'
+  printf 'header = "User-Agent: mem9-plugin/kimi-code/%s"\n' "${plugin_version}"
+} > "$curl_config"
+printf '%s' "$payload" | curl -sf --max-time 8 -K "$curl_config" --data-binary @-
+rm -f "$curl_config"
 ```
 
 Confirm back to the user what was saved. Never reveal secret values.

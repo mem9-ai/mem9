@@ -249,28 +249,51 @@ mem9_provision_auth() {
     "${MEM9_API_URL%/}/v1alpha1/mem9s"
 }
 
+# Escape a value for a double-quoted curl config entry; CR/LF are stripped
+# because the config format is line-based.
+mem9_curl_config_escape() {
+  local value="${1:-}"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/}"
+  value="${value//$'\r'/}"
+  printf '%s' "${value}"
+}
+
+# Sensitive material (API key, prompt-bearing URL, transcript bodies) never
+# travels in curl argv: the URL and headers go into a curl config file inside
+# a 0700 temp dir, and request bodies arrive on stdin via --data-binary @-.
 mem9_api_request() {
   local method="$1"
   local path="$2"
   local body="${3:-}"
   local response
+  local curl_status
   local http_code
   local response_body
-  local curl_args=(
-    -sS
-    --max-time 8
-    -X "${method}"
-    -H "Content-Type: application/json"
-    -H "X-API-Key: ${MEM9_API_KEY}"
-    -H "X-Mnemo-Agent-Id: ${MEM9_WRITER_ID}"
-    -H "User-Agent: $(mem9_plugin_user_agent)"
-  )
+  local tmp_dir
+  local config_file
+
+  tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")" || return 1
+  config_file="${tmp_dir}/curl.conf"
+  {
+    printf 'url = "%s"\n' "$(mem9_curl_config_escape "$(mem9_memory_base)${path}")"
+    printf 'header = "Content-Type: application/json"\n'
+    printf 'header = "X-API-Key: %s"\n' "$(mem9_curl_config_escape "${MEM9_API_KEY}")"
+    printf 'header = "X-Mnemo-Agent-Id: %s"\n' "$(mem9_curl_config_escape "${MEM9_WRITER_ID}")"
+    printf 'header = "User-Agent: %s"\n' "$(mem9_curl_config_escape "$(mem9_plugin_user_agent)")"
+  } > "${config_file}"
 
   if [[ -n "${body}" ]]; then
-    curl_args+=(-d "${body}")
+    response="$(printf '%s' "${body}" | "${MEM9_CURL_BIN}" -sS --max-time 8 -X "${method}" -K "${config_file}" --data-binary @- -w $'\n%{http_code}')"
+    curl_status=$?
+  else
+    response="$("${MEM9_CURL_BIN}" -sS --max-time 8 -X "${method}" -K "${config_file}" -w $'\n%{http_code}')"
+    curl_status=$?
   fi
+  rm -rf "${tmp_dir}"
 
-  if ! response="$("${MEM9_CURL_BIN}" "${curl_args[@]}" -w $'\n%{http_code}' "$(mem9_memory_base)${path}")"; then
+  if [[ "${curl_status}" -ne 0 ]]; then
     return 1
   fi
 
