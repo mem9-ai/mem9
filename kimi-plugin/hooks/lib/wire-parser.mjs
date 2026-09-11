@@ -343,7 +343,13 @@ function truncateUtf8(text, maxBytes) {
   if (encoded.byteLength <= maxBytes) {
     return text;
   }
-  return new TextDecoder("utf-8", { fatal: false }).decode(encoded.subarray(0, maxBytes));
+  // Back off to a code-point boundary so decoding never emits U+FFFD
+  // (which would both corrupt the text and exceed the byte cap).
+  let end = maxBytes;
+  while (end > 0 && (encoded[end] & 0xc0) === 0x80) {
+    end -= 1;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(encoded.subarray(0, end));
 }
 
 /**

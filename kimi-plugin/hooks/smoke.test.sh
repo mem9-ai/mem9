@@ -74,6 +74,21 @@ fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
 printf '{"sessionId":"session_big","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
   "${SESSION_BIG_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
 
+# --- fixture with multibyte characters for UTF-8 boundary truncation ---
+SESSION_UTF8_DIR="${KIMI_HOME}/sessions/wd_proj_abc/session_utf8"
+mkdir -p "${SESSION_UTF8_DIR}/agents/main"
+node -e '
+const fs = require("fs");
+const dir = process.argv[1];
+const lines = [
+  JSON.stringify({ type: "metadata", protocol_version: "1.5", created_at: 1 }),
+  JSON.stringify({ type: "context.append_message", agentId: "main", message: { role: "user", content: [{ type: "text", text: "é".repeat(2000) }], origin: { kind: "user" }, id: "u1" }, time: 2 }),
+];
+fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
+' "${SESSION_UTF8_DIR}"
+printf '{"sessionId":"session_utf8","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
+  "${SESSION_UTF8_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
+
 pass=0
 fail=0
 check() {
@@ -207,6 +222,20 @@ check "window keeps the user message" 'printf "%s" "${big_out}" | node -e "
 const fs = require(\"fs\");
 const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
 process.exit(msgs.some((m) => m.role === \"user\") ? 0 : 1);
+"'
+
+# 8. truncation never splits a UTF-8 code point (no U+FFFD, cap still hard)
+utf8_out=$(node "${PLUGIN_ROOT}/hooks/lib/wire-parser.mjs" --session-id session_utf8 --cwd /tmp/proj --mode stop --max-bytes 3)
+check "truncation respects byte cap mid-character" 'printf "%s" "${utf8_out}" | node -e "
+const fs = require(\"fs\");
+const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
+const total = msgs.reduce((n, m) => n + Buffer.byteLength(m.content), 0);
+process.exit(msgs.length === 1 && total <= 3 ? 0 : 1);
+"'
+check "truncation emits no replacement character" 'printf "%s" "${utf8_out}" | node -e "
+const fs = require(\"fs\");
+const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
+process.exit(msgs.every((m) => !m.content.includes(\"\\uFFFD\")) ? 0 : 1);
 "'
 
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"

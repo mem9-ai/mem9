@@ -39,11 +39,12 @@ const fs = require("node:fs");
 let data = {};
 try { data = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
 if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
-const profiles = data.profiles && typeof data.profiles === "object" ? data.profiles : {};
+const isRecord = (v) => v != null && typeof v === "object" && !Array.isArray(v);
+const profiles = isRecord(data.profiles) ? data.profiles : {};
 const ids = Object.keys(profiles);
-const profile = profiles.default && typeof profiles.default === "object"
+const profile = isRecord(profiles.default)
   ? profiles.default
-  : (ids.length === 1 && typeof profiles[ids[0]] === "object" ? profiles[ids[0]] : {});
+  : (ids.length === 1 && isRecord(profiles[ids[0]]) ? profiles[ids[0]] : {});
 process.stdout.write(typeof profile.baseUrl === "string" ? profile.baseUrl.trim() : "");
 ' "$credentials_file")"
 fi

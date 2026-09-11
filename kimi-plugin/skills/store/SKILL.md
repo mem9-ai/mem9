@@ -24,12 +24,15 @@ else
   test -f "$credentials_file"
   read_api_key_and_base_url="$(node -e '
 const fs = require("node:fs");
-const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-const profiles = data.profiles && typeof data.profiles === "object" ? data.profiles : {};
+const isRecord = (v) => v != null && typeof v === "object" && !Array.isArray(v);
+let data = {};
+try { data = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
+if (!isRecord(data)) data = {};
+const profiles = isRecord(data.profiles) ? data.profiles : {};
 const ids = Object.keys(profiles);
-const profile = profiles.default && typeof profiles.default === "object"
+const profile = isRecord(profiles.default)
   ? profiles.default
-  : (ids.length === 1 && typeof profiles[ids[0]] === "object" ? profiles[ids[0]] : {});
+  : (ids.length === 1 && isRecord(profiles[ids[0]]) ? profiles[ids[0]] : {});
 const values = [profile.apiKey || "", profile.baseUrl || "https://api.mem9.ai"];
 process.stdout.write(values.join("\t"));
 ' "$credentials_file")"
