@@ -10,7 +10,10 @@ Use this skill when the user asks to set up mem9, diagnose why memory is not wor
 ## What to check
 
 1. Verify `node` is installed and version `>= 18`.
-2. Check the shared credentials file `${MEM9_HOME:-$HOME/.mem9}/.credentials.json` for a usable profile (`profiles.default`, or the only profile if there is exactly one).
+2. Check whether `MEM9_API_KEY` is set in the environment. It overrides the credentials file in every hook and skill, so:
+   - If it is set and memory works, tell the user mem9 is initialized via the environment and stop — do not provision.
+   - If it is set and memory is broken, the env override is the problem: provisioning a saved key would change nothing. Direct the user to fix or unset `MEM9_API_KEY` (and `MEM9_API_URL`) first, and stop.
+3. Check the shared credentials file `${MEM9_HOME:-$HOME/.mem9}/.credentials.json` for a usable profile (`profiles.default`, or the only profile if there is exactly one).
 
 ## If credentials already exist
 

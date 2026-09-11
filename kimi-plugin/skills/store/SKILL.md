@@ -49,8 +49,10 @@ if [ -n "${KIMI_PLUGIN_ROOT:-}" ] && [ -f "${KIMI_PLUGIN_ROOT}/kimi.plugin.json"
   plugin_version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(data.version || "unknown");' "${KIMI_PLUGIN_ROOT}/kimi.plugin.json")"
 fi
 
-memory_text='REPLACE_WITH_MEMORY'
-payload="$(printf '%s' "$memory_text" | node -e 'const fs=require("node:fs"); const content=fs.readFileSync(0,"utf8"); process.stdout.write(JSON.stringify({ content }));')"
+IFS= read -r -d '' memory_text <<'MEM9_TEXT' || true
+REPLACE_WITH_MEMORY
+MEM9_TEXT
+payload="$(printf '%s' "$memory_text" | node -e 'const fs=require("node:fs"); const content=fs.readFileSync(0,"utf8").replace(/\n+$/,""); process.stdout.write(JSON.stringify({ content }));')"
 
 curl -sf --max-time 8 \
   -H "Content-Type: application/json" \

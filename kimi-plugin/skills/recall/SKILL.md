@@ -49,7 +49,9 @@ if [ -n "${KIMI_PLUGIN_ROOT:-}" ] && [ -f "${KIMI_PLUGIN_ROOT}/kimi.plugin.json"
   plugin_version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(data.version || "unknown");' "${KIMI_PLUGIN_ROOT}/kimi.plugin.json")"
 fi
 
-query='REPLACE_WITH_SEARCH_QUERY'
+IFS= read -r -d '' query <<'MEM9_QUERY' || true
+REPLACE_WITH_SEARCH_QUERY
+MEM9_QUERY
 encoded_query="$(printf '%s' "$query" | node -e 'const fs=require("node:fs"); const raw=fs.readFileSync(0,"utf8").trim(); process.stdout.write(encodeURIComponent(raw));')"
 
 curl -sf --max-time 8 \
