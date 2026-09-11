@@ -60,11 +60,11 @@ api_key="$(printf '%s' "$response" | node -e 'const fs=require("node:fs"); const
 test -n "$api_key"
 
 mkdir -p "$(dirname "$credentials_file")"
-node -e '
+MEM9_SETUP_API_KEY="$api_key" node -e '
 const fs = require("node:fs");
 const credPath = process.argv[1];
-const apiKey = process.argv[2];
-const baseUrl = process.argv[3];
+const apiKey = process.env.MEM9_SETUP_API_KEY || "";
+const baseUrl = process.argv[2];
 let data = {};
 try { data = JSON.parse(fs.readFileSync(credPath, "utf8")); } catch {}
 if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
@@ -80,7 +80,7 @@ data.schemaVersion = 1;
 data.profiles = profiles;
 fs.writeFileSync(credPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
 fs.chmodSync(credPath, 0o600);
-' "$credentials_file" "$api_key" "$base_url"
+' "$credentials_file" "$base_url"
 ```
 
 The credentials file is shared with other mem9 integrations (for example the Codex plugin); the upsert must merge into it and never drop other profiles.

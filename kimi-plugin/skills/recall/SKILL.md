@@ -54,6 +54,7 @@ encoded_query="$(node -e 'const fs=require("node:fs"); const raw=fs.readFileSync
 rm -f "$query_file"
 
 curl_config="$(mktemp "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")"
+trap 'rm -f "$curl_config"' EXIT
 {
   printf 'url = "%s"\n' "${base_url%/}/v1alpha2/mem9s/memories?q=${encoded_query}&limit=10"
   printf 'header = "Content-Type: application/json"\n'
@@ -62,7 +63,6 @@ curl_config="$(mktemp "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")"
   printf 'header = "User-Agent: mem9-plugin/kimi-code/%s"\n' "${plugin_version}"
 } > "$curl_config"
 curl -sf --max-time 8 -K "$curl_config"
-rm -f "$curl_config"
 ```
 
 If several profiles exist and none is named `default`, tell the user to pick one (for example by renaming it to `default` in the credentials file) instead of guessing.

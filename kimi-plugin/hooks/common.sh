@@ -212,12 +212,13 @@ mem9_upsert_default_profile() {
   local credentials_file
   credentials_file="$(mem9_credentials_file)"
 
-  node -e '
+  # The API key travels via env (owner-only in /proc), never as process argv.
+  MEM9_UPSERT_API_KEY="${api_key}" node -e '
 const fs = require("node:fs");
 const path = require("node:path");
 const credentialsPath = process.argv[1];
 const baseUrl = process.argv[2];
-const apiKey = process.argv[3];
+const apiKey = process.env.MEM9_UPSERT_API_KEY || "";
 const isRecord = (value) => value != null && typeof value === "object" && !Array.isArray(value);
 let data = {};
 try {
@@ -240,7 +241,7 @@ const tempPath = `${credentialsPath}.${process.pid}.${Date.now()}.tmp`;
 fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
 fs.chmodSync(tempPath, 0o600);
 fs.renameSync(tempPath, credentialsPath);
-' "${credentials_file}" "${MEM9_API_URL}" "${api_key}"
+' "${credentials_file}" "${MEM9_API_URL}"
 }
 
 mem9_provision_auth() {

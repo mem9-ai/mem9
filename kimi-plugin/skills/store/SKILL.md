@@ -51,10 +51,9 @@ if [ -n "${KIMI_PLUGIN_ROOT:-}" ] && [ -f "${KIMI_PLUGIN_ROOT}/kimi.plugin.json"
 fi
 
 memory_file="REPLACE_WITH_FILE_PATH"
-payload="$(node -e 'const fs=require("node:fs"); const content=fs.readFileSync(process.argv[1],"utf8").replace(/\n+$/,""); process.stdout.write(JSON.stringify({ content }));' "$memory_file")"
-rm -f "$memory_file"
-
 curl_config="$(mktemp "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")"
+trap 'rm -f "$curl_config" "$memory_file"' EXIT
+payload="$(node -e 'const fs=require("node:fs"); const content=fs.readFileSync(process.argv[1],"utf8").replace(/\n+$/,""); process.stdout.write(JSON.stringify({ content }));' "$memory_file")"
 {
   printf 'url = "%s"\n' "${base_url%/}/v1alpha2/mem9s/memories"
   printf 'header = "Content-Type: application/json"\n'
@@ -63,7 +62,6 @@ curl_config="$(mktemp "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")"
   printf 'header = "User-Agent: mem9-plugin/kimi-code/%s"\n' "${plugin_version}"
 } > "$curl_config"
 printf '%s' "$payload" | curl -sf --max-time 8 -K "$curl_config" --data-binary @-
-rm -f "$curl_config"
 ```
 
 Confirm back to the user what was saved. Never reveal secret values.
