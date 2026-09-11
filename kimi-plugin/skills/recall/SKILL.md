@@ -33,8 +33,11 @@ const ids = Object.keys(profiles);
 const profile = isRecord(profiles.default)
   ? profiles.default
   : (ids.length === 1 && isRecord(profiles[ids[0]]) ? profiles[ids[0]] : {});
-const values = [profile.apiKey || "", profile.baseUrl || "https://api.mem9.ai"];
-process.stdout.write(values.join("\t"));
+const apiKey = typeof profile.apiKey === "string" ? profile.apiKey.trim() : "";
+const baseUrl = typeof profile.baseUrl === "string" && profile.baseUrl.trim()
+  ? profile.baseUrl.trim()
+  : "https://api.mem9.ai";
+process.stdout.write([apiKey, baseUrl].join("\t"));
 ' "$credentials_file")"
   api_key="${read_api_key_and_base_url%%	*}"
   base_url="${MEM9_API_URL:-${read_api_key_and_base_url#*	}}"

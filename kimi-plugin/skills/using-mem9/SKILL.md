@@ -5,10 +5,12 @@ description: How mem9 automatic memory works in this session, and when to use th
 
 # Using mem9
 
-mem9 automatic memory is active in this session:
+The mem9 memory plugin is installed for this session. When its credentials are initialized, it works automatically:
 
-- On every prompt you submit, relevant memories are recalled automatically and injected as context.
-- At the end of each turn, the conversation is ingested into mem9 automatically.
+- On every prompt you submit, relevant memories are recalled and injected as context.
+- At the end of each turn, the conversation is ingested into mem9.
+
+Initialization can fail silently (missing Node.js, invalid credentials, provisioning failure); the hooks stay quiet by design. If recall results never appear or memory seems inactive, run the `mem9-setup` skill to diagnose or repair before claiming memory is working.
 
 Memories are account-wide: they come from your whole mem9 account across tools and agents, not just this session or this machine.
 
