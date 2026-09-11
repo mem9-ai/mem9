@@ -17,11 +17,53 @@ Use this skill when the user asks to set up mem9, diagnose why memory is not wor
 
 ## If credentials already exist
 
-- Tell the user mem9 is already initialized.
-- Show the credentials file path and the active profile id.
-- Do not print the file contents or the API key.
+A nonempty saved key may still be revoked or pointed at the wrong server — verify it with an authenticated probe before declaring setup complete:
 
-## If credentials are missing
+```bash
+set -euo pipefail
+
+credentials_file="${MEM9_HOME:-$HOME/.mem9}/.credentials.json"
+plugin_version="unknown"
+if [ -n "${KIMI_PLUGIN_ROOT:-}" ] && [ -f "${KIMI_PLUGIN_ROOT}/kimi.plugin.json" ]; then
+  plugin_version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(data.version || "unknown");' "${KIMI_PLUGIN_ROOT}/kimi.plugin.json")"
+fi
+read_api_key_and_base_url="$(node -e '
+const fs = require("node:fs");
+const isRecord = (v) => v != null && typeof v === "object" && !Array.isArray(v);
+let data = {};
+try { data = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
+if (!isRecord(data)) data = {};
+const profiles = isRecord(data.profiles) ? data.profiles : {};
+const ids = Object.keys(profiles);
+const profile = isRecord(profiles.default)
+  ? profiles.default
+  : (ids.length === 1 && isRecord(profiles[ids[0]]) ? profiles[ids[0]] : {});
+const apiKey = typeof profile.apiKey === "string" ? profile.apiKey.trim() : "";
+const baseUrl = typeof profile.baseUrl === "string" && profile.baseUrl.trim()
+  ? profile.baseUrl.trim()
+  : "https://api.mem9.ai";
+process.stdout.write([apiKey, baseUrl].join("\t"));
+' "$credentials_file")"
+api_key="${read_api_key_and_base_url%%	*}"
+base_url="${MEM9_API_URL:-${read_api_key_and_base_url#*	}}"
+test -n "$api_key"
+probe_config="$(mktemp "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")"
+trap 'rm -f "$probe_config"' EXIT
+{
+  printf 'url = "%s"\n' "${base_url%/}/v1alpha2/mem9s/runtime-state"
+  printf 'header = "X-API-Key: %s"\n' "${api_key}"
+  printf 'header = "User-Agent: mem9-plugin/kimi-code/%s"\n' "${plugin_version}"
+} > "$probe_config"
+probe_status="$(curl -s --max-time 8 -o /dev/null -w '%{http_code}' -K "$probe_config" || printf '000')"
+printf 'probe_status=%s\n' "$probe_status"
+```
+
+- `2xx` — the saved credentials work. Tell the user mem9 is initialized and verified, show the credentials file path and active profile id, and stop.
+- `401`/`403` — the saved key is no longer valid. Continue to the provisioning section below to re-provision; the upsert preserves the profile's existing `baseUrl`, so the new key comes from the same server.
+- `000` or any other status — connectivity or server problem. Tell the user the probe failed and suggest retrying; do not re-provision on transient failures.
+- Never print the file contents or the API key.
+
+## If credentials are missing or invalid
 
 Provision an API key and upsert `profiles.default` into the shared credentials file, preserving any other profiles. Provision against `MEM9_API_URL` when set, otherwise the existing profile's `baseUrl` (a new key must come from the server it will be used against), otherwise the cloud default:
 

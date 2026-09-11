@@ -307,6 +307,15 @@ const total = msgs.reduce((n, m) => n + Buffer.byteLength(m.content), 0);
 process.exit(msgs.length === 2 && total <= 1000 && msgs[0].content.includes(\"gap user prompt\") && msgs[1].content.includes(\"short final reply\") ? 0 : 1);
 "'
 
+# 11. recall formatter truncates at code-point boundaries (no split surrogates)
+long_content=$(node -e 'process.stdout.write("a".repeat(499) + "🎉" + "b".repeat(50))')
+fmt_out=$(printf '{"memories":[{"id":"m1","content":"%s","tags":[],"relative_age":"1d"}]}' "${long_content}" | node "${PLUGIN_ROOT}/hooks/lib/memories-formatter.mjs")
+check "recall truncation is surrogate-safe" 'printf "%s" "${fmt_out}" | node -e "
+const fs = require(\"fs\");
+const out = fs.readFileSync(0, \"utf8\");
+process.exit(!out.includes(\"\\uFFFD\") && out.includes(\"🎉\") ? 0 : 1);
+"'
+
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
   exit 1

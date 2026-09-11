@@ -59,6 +59,19 @@ export function formatStatusWarningBlock(message) {
 }
 
 /**
+ * @param {string} text
+ * @param {number} maxLength
+ * @returns {string}
+ */
+function truncateByCodePoints(text, maxLength) {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  // Iterate code points so an astral character never loses half a surrogate pair.
+  return Array.from(text).slice(0, maxLength).join("");
+}
+
+/**
  * @param {MemoryItem} memory
  * @param {number} index
  * @param {number} maxContentLength
@@ -68,7 +81,7 @@ function formatMemoryLine(memory, index, maxContentLength) {
   const rawContent = String(memory.content ?? "").trim();
   const content =
     rawContent.length > maxContentLength
-      ? `${rawContent.slice(0, maxContentLength)}...`
+      ? `${truncateByCodePoints(rawContent, maxContentLength)}...`
       : rawContent;
 
   const tags =
