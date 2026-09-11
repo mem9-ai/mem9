@@ -322,7 +322,29 @@ function applyMessageCap(messages, maxMessages) {
   if (!Number.isFinite(maxMessages) || maxMessages <= 0) {
     return messages;
   }
-  return messages.slice(-maxMessages);
+
+  const sliced = messages.slice(-maxMessages);
+  if (sliced.some((message) => message.role === "user")) {
+    return sliced;
+  }
+
+  // A tool-heavy turn can emit more assistant messages than the cap; never
+  // let the tail slice drop the user prompt — server-side ingest ignores
+  // assistant-only payloads.
+  let latestUser = null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") {
+      latestUser = messages[index];
+      break;
+    }
+  }
+  if (!latestUser) {
+    return sliced;
+  }
+  if (sliced.length === 0) {
+    return [latestUser];
+  }
+  return [latestUser, ...sliced.slice(1)];
 }
 
 /**

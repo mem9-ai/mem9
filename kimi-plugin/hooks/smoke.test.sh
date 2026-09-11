@@ -89,6 +89,24 @@ fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
 printf '{"sessionId":"session_utf8","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
   "${SESSION_UTF8_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
 
+# --- fixture with more assistant messages than the message cap ---
+SESSION_MANY_DIR="${KIMI_HOME}/sessions/wd_proj_abc/session_many"
+mkdir -p "${SESSION_MANY_DIR}/agents/main"
+node -e '
+const fs = require("fs");
+const dir = process.argv[1];
+const lines = [
+  JSON.stringify({ type: "metadata", protocol_version: "1.5", created_at: 1 }),
+  JSON.stringify({ type: "context.append_message", agentId: "main", message: { role: "user", content: [{ type: "text", text: "the deploy window fact" }], origin: { kind: "user" }, id: "t1" }, time: 2 }),
+];
+for (let i = 0; i < 5; i += 1) {
+  lines.push(JSON.stringify({ type: "context.append_loop_event", agentId: "main", event: { type: "content.part", turnId: String(i), stepUuid: "s" + i, part: { type: "text", text: "assistant turn " + i } }, time: 3 + i }));
+}
+fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
+' "${SESSION_MANY_DIR}"
+printf '{"sessionId":"session_many","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
+  "${SESSION_MANY_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
+
 pass=0
 fail=0
 check() {
@@ -236,6 +254,14 @@ check "truncation emits no replacement character" 'printf "%s" "${utf8_out}" | n
 const fs = require(\"fs\");
 const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
 process.exit(msgs.every((m) => !m.content.includes(\"\\uFFFD\")) ? 0 : 1);
+"'
+
+# 9. message cap keeps the latest user message (tool-heavy turns)
+many_out=$(node "${PLUGIN_ROOT}/hooks/lib/wire-parser.mjs" --session-id session_many --cwd /tmp/proj --mode stop --max-messages 4)
+check "message cap keeps user message" 'printf "%s" "${many_out}" | node -e "
+const fs = require(\"fs\");
+const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
+process.exit(msgs.length <= 4 && msgs[0].role === \"user\" && msgs[0].content.includes(\"deploy window fact\") ? 0 : 1);
 "'
 
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
