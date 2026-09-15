@@ -40,6 +40,7 @@ import type {
 import type { Memory } from "@/types/memory";
 import type { TimeRangePreset } from "@/types/time-range";
 const TERMINAL_BATCH_STATUSES = new Set(["SUCCEEDED", "FAILED", "DLQ"]);
+const EMPTY_ANALYSIS_CARDS: AnalysisCategoryCard[] = [];
 export const ANALYSIS_AUTO_REFRESH_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 export const MAX_STALLED_POLL_ATTEMPTS = 4;
 
@@ -73,6 +74,15 @@ const INITIAL_STATE: SpaceAnalysisState = {
   pollAfterMs: getDefaultPollMs(),
   isRetrying: false,
 };
+
+export function resolveAnalysisCards(
+  cards: AnalysisCategoryCard[],
+  snapshot: AnalysisJobSnapshotResponse | null,
+): AnalysisCategoryCard[] {
+  return cards.length > 0
+    ? cards
+    : snapshot?.aggregateCards ?? EMPTY_ANALYSIS_CARDS;
+}
 
 export function shouldStopPollingSnapshot(
   snapshot: AnalysisJobSnapshotResponse,
@@ -844,7 +854,7 @@ export function useSpaceAnalysis(input: {
     state,
     taxonomy: taxonomyQuery.data ?? null,
     taxonomyUnavailable,
-    cards: cards.length > 0 ? cards : state.snapshot?.aggregateCards ?? [],
+    cards: resolveAnalysisCards(cards, state.snapshot),
     matches,
     matchMap,
     sourceMemories,

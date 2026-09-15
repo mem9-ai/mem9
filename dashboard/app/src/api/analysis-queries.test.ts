@@ -5,6 +5,7 @@ import {
   createPollProgressState,
   getNextPollProgressState,
   isAnalysisCacheFresh,
+  resolveAnalysisCards,
   shouldRestartIncompleteCachedSnapshot,
   shouldStopPollingSnapshot,
   shouldTreatPollAsStalled,
@@ -148,6 +149,24 @@ describe("shouldStopPollingSnapshot", () => {
       ).toBe(false);
     },
   );
+});
+
+describe("resolveAnalysisCards", () => {
+  it("returns a stable empty array while analysis is not ready", () => {
+    const first = resolveAnalysisCards([], null);
+    const second = resolveAnalysisCards([], null);
+
+    expect(first).toBe(second);
+    expect(first).toEqual([]);
+  });
+
+  it("prefers computed cards and otherwise uses snapshot cards", () => {
+    const computed = [{ category: "identity" as const, count: 3, confidence: 0.8 }];
+    const snapshot = createSnapshot();
+
+    expect(resolveAnalysisCards(computed, snapshot)).toBe(computed);
+    expect(resolveAnalysisCards([], snapshot)).toBe(snapshot.aggregateCards);
+  });
 });
 
 describe("shouldRestartIncompleteCachedSnapshot", () => {

@@ -79,7 +79,9 @@ type WorkerResponse =
     };
 
 const MAX_MEMORY_ANALYSIS_CACHE = 2048;
-const MAX_RESULT_CACHE = 128;
+const MAX_DERIVED_SIGNAL_CACHE = 4;
+const MAX_INSIGHT_GRAPH_CACHE = 2;
+const MAX_RELATION_GRAPH_CACHE = 8;
 
 const memoryAnalysisCache = new Map<string, MemoryDerivedAnalysis>();
 const derivedSignalCache = new Map<string, LocalDerivedSignalIndex>();
@@ -230,7 +232,12 @@ function getOrBuildDerivedSignals(
     memoryAnalyses: getMemoryAnalyses(memories),
   });
 
-  return setBoundedCache(derivedSignalCache, cacheKey, result, MAX_RESULT_CACHE);
+  return setBoundedCache(
+    derivedSignalCache,
+    cacheKey,
+    result,
+    MAX_DERIVED_SIGNAL_CACHE,
+  );
 }
 
 function getOrBuildInsightGraph(
@@ -252,7 +259,12 @@ function getOrBuildInsightGraph(
     signalIndex,
   });
 
-  return setBoundedCache(insightGraphCache, cacheKey, result, MAX_RESULT_CACHE);
+  return setBoundedCache(
+    insightGraphCache,
+    cacheKey,
+    result,
+    MAX_INSIGHT_GRAPH_CACHE,
+  );
 }
 
 function getOrBuildRelationGraph(
@@ -284,7 +296,12 @@ function getOrBuildRelationGraph(
     minimumCoOccurrence: options.minimumCoOccurrence,
   });
 
-  return setBoundedCache(relationGraphCache, cacheKey, result, MAX_RESULT_CACHE);
+  return setBoundedCache(
+    relationGraphCache,
+    cacheKey,
+    result,
+    MAX_RELATION_GRAPH_CACHE,
+  );
 }
 
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {

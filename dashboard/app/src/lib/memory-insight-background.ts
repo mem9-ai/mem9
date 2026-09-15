@@ -148,6 +148,15 @@ export function shouldUseDerivedSignalsWorker(input: {
   return enabled && workerAvailable && memoryCount >= minimumMemoryCount;
 }
 
+export function shouldSkipBackgroundWorkerTask(input: {
+  type: WorkerRequest["type"];
+  memoryCount: number;
+  cardCount?: number;
+}): boolean {
+  return input.memoryCount === 0 ||
+    (input.type === "insight-graph" && input.cardCount === 0);
+}
+
 function getWorker(): Worker {
   if (backgroundWorker) {
     return backgroundWorker;
@@ -225,10 +234,15 @@ function useBackgroundComputation<T extends WorkerResult>({
       return;
     }
 
-    if (
-      request.type === "derived-signals" &&
-      request.payload.memories.length === 0
-    ) {
+    const hasNoInput = shouldSkipBackgroundWorkerTask({
+      type: request.type,
+      memoryCount: request.payload.memories.length,
+      cardCount: "cards" in request.payload
+        ? request.payload.cards.length
+        : undefined,
+    });
+
+    if (hasNoInput) {
       setData(emptyValue);
       setIsComputing(false);
       return;

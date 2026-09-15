@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   projectInsightWorkerMemory,
+  shouldSkipBackgroundWorkerTask,
   shouldUseDerivedSignalsWorker,
 } from "./memory-insight-background";
 import type { Memory } from "@/types/memory";
@@ -52,5 +53,28 @@ describe("memory insight background helpers", () => {
       updated_at: "2026-03-28T01:00:00Z",
       tags: ["dashboard", "query"],
     });
+  });
+
+  it("skips empty worker tasks without disabling populated relation graphs", () => {
+    expect(
+      shouldSkipBackgroundWorkerTask({
+        type: "derived-signals",
+        memoryCount: 0,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSkipBackgroundWorkerTask({
+        type: "insight-graph",
+        memoryCount: 100,
+        cardCount: 0,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSkipBackgroundWorkerTask({
+        type: "relation-graph",
+        memoryCount: 100,
+        cardCount: 0,
+      }),
+    ).toBe(false);
   });
 });
