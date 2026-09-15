@@ -135,8 +135,17 @@ profiles.default = {
 };
 data.schemaVersion = 1;
 data.profiles = profiles;
-fs.writeFileSync(credPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
-fs.chmodSync(credPath, 0o600);
+// Atomic write: a mode-0600 temp file in the same directory, renamed over
+// the target, with the temp file removed if anything fails midway.
+const tempPath = `${credPath}.${process.pid}.${Date.now()}.tmp`;
+try {
+  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+  fs.chmodSync(tempPath, 0o600);
+  fs.renameSync(tempPath, credPath);
+} catch (error) {
+  try { fs.unlinkSync(tempPath); } catch {}
+  throw error;
+}
 ' "$credentials_file" "$base_url"
 ```
 

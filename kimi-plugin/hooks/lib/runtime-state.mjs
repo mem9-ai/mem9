@@ -236,9 +236,15 @@ function main() {
   return 0;
 }
 
-if (
-  process.argv[1] &&
-  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+let isMainModule = false;
+try {
+  isMainModule = Boolean(
+    process.argv[1] &&
+    realpathSync(process.argv[1]) === fileURLToPath(import.meta.url),
+  );
+} catch {
+  isMainModule = false;
+}
+if (isMainModule) {
   process.exitCode = main();
 }

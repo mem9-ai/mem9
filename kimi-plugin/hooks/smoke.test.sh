@@ -395,6 +395,15 @@ check "ambiguous profiles logged" 'grep -q "\"stage\":\"auth_ambiguous\"" "${DEB
 out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
 check "recall silent on ambiguous profiles" '[ -z "${out}" ] && ! grep -q "/memories?q=" "${REQ_LOG}"'
 
+# 18. formatter ellipsis counts code points; eval-style imports survive
+stats_out=$(printf '%s' '{"message":"quota notice","memories":[]}' | node --input-type=module -e 'import { readFileSync } from "node:fs"; import { pathToFileURL } from "node:url"; const { responseMessage } = await import(pathToFileURL(process.argv[2])); const message = responseMessage(JSON.parse(readFileSync(0, "utf8"))); process.stdout.write(message ? "true" : "false");' _ "${PLUGIN_ROOT}/hooks/lib/memories-formatter.mjs")
+check "formatter import tolerates eval argv[1]" '[ "${stats_out}" = "true" ]'
+emoji_mem=$(node -e 'process.stdout.write("🎉".repeat(300))')
+fmt2_out=$(printf '{"memories":[{"id":"m2","content":"%s","tags":[],"relative_age":"1d"}]}' "${emoji_mem}" | node "${PLUGIN_ROOT}/hooks/lib/memories-formatter.mjs")
+check "no false ellipsis under the code-point cap" 'printf "%s" "${fmt2_out}" | grep -q "🎉" && ! printf "%s" "${fmt2_out}" | grep -qF "..."'
+fmt3_out=$(printf '{"memories":[{"id":"m3","content":"%s","tags":[],"relative_age":"1d"}]}' "$(node -e 'process.stdout.write("a".repeat(501))')" | node "${PLUGIN_ROOT}/hooks/lib/memories-formatter.mjs")
+check "ellipsis present when truncated" 'printf "%s" "${fmt3_out}" | grep -qF "..."'
+
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
   exit 1

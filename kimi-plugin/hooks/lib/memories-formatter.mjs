@@ -79,8 +79,11 @@ function truncateByCodePoints(text, maxLength) {
  */
 function formatMemoryLine(memory, index, maxContentLength) {
   const rawContent = String(memory.content ?? "").trim();
+  // Guard and truncation both count code points, so the ellipsis only
+  // appears when content was actually omitted.
+  const codePointCount = Array.from(rawContent).length;
   const content =
-    rawContent.length > maxContentLength
+    codePointCount > maxContentLength
       ? `${truncateByCodePoints(rawContent, maxContentLength)}...`
       : rawContent;
 
@@ -205,9 +208,15 @@ function main() {
   return 0;
 }
 
-if (
-  process.argv[1] &&
-  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+let isMainModule = false;
+try {
+  isMainModule = Boolean(
+    process.argv[1] &&
+    realpathSync(process.argv[1]) === fileURLToPath(import.meta.url),
+  );
+} catch {
+  isMainModule = false;
+}
+if (isMainModule) {
   process.exitCode = main();
 }
