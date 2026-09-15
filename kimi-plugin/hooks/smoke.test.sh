@@ -141,6 +141,22 @@ fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
 printf '{"sessionId":"session_gap","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
   "${SESSION_GAP_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
 
+# --- fixture: emoji-led user prompt crowded out by assistant bulk ---
+SESSION_EMOJI_DIR="${KIMI_HOME}/sessions/wd_proj_abc/session_emoji"
+mkdir -p "${SESSION_EMOJI_DIR}/agents/main"
+node -e '
+const fs = require("fs");
+const dir = process.argv[1];
+const lines = [
+  JSON.stringify({ type: "metadata", protocol_version: "1.5", created_at: 1 }),
+  JSON.stringify({ type: "context.append_message", agentId: "main", message: { role: "user", content: [{ type: "text", text: "🚀 launch checklist review" }], origin: { kind: "user" }, id: "e1" }, time: 2 }),
+  JSON.stringify({ type: "context.append_loop_event", agentId: "main", event: { type: "content.part", turnId: "0", stepUuid: "s0", part: { type: "text", text: "a".repeat(19999) } }, time: 3 }),
+];
+fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
+' "${SESSION_EMOJI_DIR}"
+printf '{"sessionId":"session_emoji","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
+  "${SESSION_EMOJI_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
+
 pass=0
 fail=0
 check() {
@@ -315,6 +331,19 @@ const fs = require(\"fs\");
 const out = fs.readFileSync(0, \"utf8\");
 process.exit(!out.includes(\"\\uFFFD\") && out.includes(\"🎉\") ? 0 : 1);
 "'
+
+# 12. byte budget reserves a complete code point for the user prompt
+emoji_out=$(node "${PLUGIN_ROOT}/hooks/lib/wire-parser.mjs" --session-id session_emoji --cwd /tmp/proj --mode stop --max-bytes 20000)
+check "user prompt reserved over assistant bulk" 'printf "%s" "${emoji_out}" | node -e "
+const fs = require(\"fs\");
+const msgs = JSON.parse(fs.readFileSync(0, \"utf8\")).messages;
+process.exit(msgs.length === 1 && msgs[0].role === \"user\" && msgs[0].content.includes(\"launch checklist\") ? 0 : 1);
+"'
+
+# 13. lib entrypoints work through symlinked plugin paths (macOS /tmp)
+ln -s "${PLUGIN_ROOT}" "${TMP_DIR}/plugin-link"
+link_out=$(printf '{"source":"startup"}' | node "${TMP_DIR}/plugin-link/hooks/lib/hook-json.mjs" get-string source)
+check "lib works through symlinked path" '[ "${link_out}" = "startup" ]'
 
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // runtime-state.mjs - Format mem9 runtime-state payloads for hooks.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -238,7 +238,7 @@ function main() {
 
 if (
   process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   process.exitCode = main();
 }

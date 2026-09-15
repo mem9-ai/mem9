@@ -2,7 +2,7 @@
 // @ts-check
 
 import path from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { formatRuntimeStateNotice } from "./runtime-state.mjs";
@@ -207,7 +207,7 @@ function main() {
 
 if (
   process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   process.exitCode = main();
 }

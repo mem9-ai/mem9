@@ -54,13 +54,26 @@ trap 'rm -f "$probe_config"' EXIT
   printf 'header = "X-API-Key: %s"\n' "${api_key}"
   printf 'header = "User-Agent: mem9-plugin/kimi-code/%s"\n' "${plugin_version}"
 } > "$probe_config"
-probe_status="$(curl -s --max-time 8 -o /dev/null -w '%{http_code}' -K "$probe_config" || printf '000')"
-printf 'probe_status=%s\n' "$probe_status"
+probe_response="$(curl -s --max-time 8 -K "$probe_config" -w $'\n%{http_code}' || printf '\n000')"
+probe_status="${probe_response##*$'\n'}"
+credential_status="$(printf '%s' "${probe_response%$'\n'"$probe_status"}" | node -e '
+const fs = require("node:fs");
+let status = "";
+try {
+  const body = JSON.parse(fs.readFileSync(0, "utf8"));
+  const key = body && typeof body === "object" && body.mem9ApiKey && typeof body.mem9ApiKey === "object" ? body.mem9ApiKey : {};
+  status = typeof key.status === "string" ? key.status : "";
+} catch {}
+process.stdout.write(status);
+' || true)"
+printf 'probe_status=%s credential_status=%s\n' "$probe_status" "${credential_status:-unknown}"
 ```
 
-- `2xx` — the saved credentials work. Tell the user mem9 is initialized and verified, show the credentials file path and active profile id, and stop.
-- `401`/`403` — the saved key is no longer valid. Continue to the provisioning section below to re-provision; the upsert preserves the profile's existing `baseUrl`, so the new key comes from the same server.
-- `000` or any other status — connectivity or server problem. Tell the user the probe failed and suggest retrying; do not re-provision on transient failures.
+The runtime-state endpoint returns HTTP 200 with `mem9ApiKey.status: "inactive"` for a known but disabled key, so the HTTP status alone is not enough — always check both outputs:
+
+- `probe_status` 2xx and `credential_status` `active` (or absent from the body) — the saved credentials work. Tell the user mem9 is initialized and verified, show the credentials file path and active profile id, and stop.
+- `probe_status` 2xx with `credential_status` `inactive` — the key is known but disabled. Continue to the provisioning section below to re-provision; the upsert preserves the profile's existing `baseUrl`, so the new key comes from the same server.
+- `credential_status` `unknown`, `000`, or any other status — connectivity or server problem. Tell the user the probe failed and suggest retrying; do not re-provision on transient failures.
 - Never print the file contents or the API key.
 
 ## If credentials are missing or invalid

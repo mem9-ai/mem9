@@ -3,7 +3,7 @@
 
 import path from "node:path";
 import os from "node:os";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // Mirrors claude-plugin/hooks/lib/transcript-parser.mjs so injected recall
@@ -409,22 +409,31 @@ function applyByteBudget(messages, maxBytes) {
         message.role === "user" || !earlierUser
           ? maxBytes
           : Math.max(Math.floor(maxBytes / 2), 1);
-      const truncated = { ...message, content: truncateUtf8(message.content, limit) };
-      selected.unshift(truncated);
-      totalBytes += utf8Size(truncated.content);
+      const truncatedContent = truncateUtf8(message.content, limit);
+      if (truncatedContent) {
+        selected.unshift({ ...message, content: truncatedContent });
+        totalBytes += utf8Size(truncatedContent);
+      }
       continue;
     }
 
     const hasUser = selected.some((item) => item.role === "user");
     if (message.role === "user" && !hasUser) {
-      const remaining = maxBytes - totalBytes;
-      if (remaining > 0) {
-        selected.unshift({ ...message, content: truncateUtf8(message.content, remaining) });
-      } else {
-        selected.length = 0;
-        const truncated = { ...message, content: truncateUtf8(message.content, maxBytes) };
-        selected.unshift(truncated);
-        totalBytes = utf8Size(truncated.content);
+      // Reserve room for at least the first complete code point of the
+      // prompt: an empty user message is dropped by server-side extraction,
+      // which would leave the whole turn unsaved.
+      const firstCodePointBytes = utf8Size(Array.from(message.content)[0] ?? "");
+      let remaining = maxBytes - totalBytes;
+      while (remaining < firstCodePointBytes && selected.length > 0) {
+        const evicted = selected.shift();
+        totalBytes -= utf8Size(evicted.content);
+        remaining = maxBytes - totalBytes;
+      }
+      const truncatedContent =
+        remaining > 0 ? truncateUtf8(message.content, remaining) : "";
+      if (truncatedContent) {
+        selected.unshift({ ...message, content: truncatedContent });
+        totalBytes += utf8Size(truncatedContent);
       }
       break;
     }
@@ -632,7 +641,7 @@ function main(argv) {
 
 if (
   process.argv[1] &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   process.exitCode = main(process.argv.slice(2));
 }
