@@ -379,6 +379,12 @@ printf 'not json' > "${MEM9_HOME}/.credentials.json"
 printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh"
 check "invalid credentials logged as auth_invalid" 'grep -q "\"stage\":\"auth_invalid\"" "${DEBUG_LOG}"'
 
+# 16. failed credentials upsert (rename over a directory) leaves no temp key file
+rm -f "${MEM9_HOME}/.credentials.json"
+mkdir "${MEM9_HOME}/.credentials.json"
+printf '%s' '{"hook_event_name":"SessionStart","session_id":"session_test123","source":"startup","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/session-start.sh" || true
+check "failed upsert leaves no temp key file" 'if ls "${MEM9_HOME}"/.credentials.json.*.tmp >/dev/null 2>&1; then false; else true; fi'
+
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
   exit 1

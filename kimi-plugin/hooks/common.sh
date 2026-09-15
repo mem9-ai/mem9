@@ -240,9 +240,15 @@ data.schemaVersion = 1;
 data.profiles = profiles;
 fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
 const tempPath = `${credentialsPath}.${process.pid}.${Date.now()}.tmp`;
-fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
-fs.chmodSync(tempPath, 0o600);
-fs.renameSync(tempPath, credentialsPath);
+try {
+  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+  fs.chmodSync(tempPath, 0o600);
+  fs.renameSync(tempPath, credentialsPath);
+} catch (error) {
+  // Never leave the key behind in an orphaned temp file.
+  try { fs.unlinkSync(tempPath); } catch {}
+  throw error;
+}
 ' "${credentials_file}" "${MEM9_API_URL}"
 }
 

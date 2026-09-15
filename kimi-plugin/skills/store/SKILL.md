@@ -11,7 +11,7 @@ Use this skill only when the user explicitly asks to remember or save something 
 
 1. Extract the one fact, preference, or instruction that should be remembered.
 2. Resolve credentials: if `MEM9_API_KEY` is set, use it (with `MEM9_API_URL` when set). Otherwise use `${MEM9_HOME:-$HOME/.mem9}/.credentials.json`; if it is missing or has no usable profile, tell the user to run the `mem9-setup` skill first. An explicit `MEM9_API_URL` always overrides the profile's `baseUrl`. Do not print the credentials file contents or the API key.
-3. Write the exact memory text to a fresh temporary file with the Write tool (for example `${TMPDIR:-/tmp}/mem9-store-<random>.txt`) and put its path in place of `REPLACE_WITH_FILE_PATH` below. Never embed the text in the command itself — shell quoting and heredoc delimiters are both unsafe for arbitrary user text.
+3. Create a private input directory first: `input_dir="$(mktemp -d "${TMPDIR:-/tmp}/mem9-input.XXXXXX")"` (mode 0700), then write the exact memory text to `${input_dir}/input.txt` using the Write tool — the 0700 directory keeps the content unreadable by other users even before cleanup, regardless of the Write tool's file mode. Put the directory path in place of `REPLACE_WITH_INPUT_DIR` below. Never embed the text in the command itself — shell quoting and heredoc delimiters are both unsafe for arbitrary user text.
 4. Store the memory with the single-message `content` API. Do not invent tags client-side.
 
 ```bash
@@ -50,9 +50,10 @@ if [ -n "${KIMI_PLUGIN_ROOT:-}" ] && [ -f "${KIMI_PLUGIN_ROOT}/kimi.plugin.json"
   plugin_version="$(node -e 'const fs=require("node:fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); process.stdout.write(data.version || "unknown");' "${KIMI_PLUGIN_ROOT}/kimi.plugin.json")"
 fi
 
-memory_file="REPLACE_WITH_FILE_PATH"
+input_dir="REPLACE_WITH_INPUT_DIR"
+memory_file="${input_dir}/input.txt"
 curl_config="$(mktemp "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")"
-trap 'rm -f "$curl_config" "$memory_file"' EXIT
+trap 'rm -f "$curl_config"; rm -rf "$input_dir"' EXIT
 payload="$(node -e 'const fs=require("node:fs"); const content=fs.readFileSync(process.argv[1],"utf8").replace(/\n+$/,""); process.stdout.write(JSON.stringify({ content }));' "$memory_file")"
 {
   printf 'url = "%s"\n' "${base_url%/}/v1alpha2/mem9s/memories"
