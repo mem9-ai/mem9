@@ -238,12 +238,12 @@ d.profiles.default.baseUrl = "https://api.mem9.ai";
 fs.writeFileSync(p, JSON.stringify(d, null, 2));
 ' "${MEM9_HOME}/.credentials.json"
 
-# 2e. Missing-key repair: profile URL is carried into re-provisioning
+# 2e. Missing-key repair with no usable profile: URL carried into re-provisioning
 node -e '
 const fs = require("fs");
 const p = process.argv[1];
 const d = JSON.parse(fs.readFileSync(p, "utf8"));
-d.profiles.default = { label: "default", baseUrl: "https://selfhost.example", apiKey: "" };
+d.profiles = { default: { label: "default", baseUrl: "https://selfhost.example", apiKey: "" } };
 fs.writeFileSync(p, JSON.stringify(d, null, 2));
 ' "${MEM9_HOME}/.credentials.json"
 : > "${REQ_LOG}"
@@ -409,6 +409,14 @@ printf '%s' '{"schemaVersion":1,"profiles":{"personal":{"label":"P","baseUrl":"h
 : > "${REQ_LOG}"
 out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
 check "single usable profile wins" '[[ "${out}" == *"deploy window is Friday"* ]] && grep -q "X-API-Key: k9" "${REQ_LOG}"'
+
+# 20. broken default + one valid profile: the valid one wins (no provisioning)
+printf '%s' '{"schemaVersion":1,"profiles":{"default":{"label":"d","baseUrl":"https://selfhost.example","apiKey":""},"personal":{"label":"P","baseUrl":"https://api.mem9.ai","apiKey":"k7"}}}' > "${MEM9_HOME}/.credentials.json"
+: > "${REQ_LOG}"
+out=$(printf '%s' '{"hook_event_name":"SessionStart","session_id":"session_test123","source":"startup","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/session-start.sh")
+check "broken default does not provision when another profile works" '! grep -q "v1alpha1" "${REQ_LOG}"'
+out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
+check "usable profile beats broken default" '[[ "${out}" == *"deploy window is Friday"* ]] && grep -q "X-API-Key: k7" "${REQ_LOG}"'
 
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then

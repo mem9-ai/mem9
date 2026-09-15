@@ -176,15 +176,19 @@ const isRecord = (value) => value != null && typeof value === "object" && !Array
 const profiles = isRecord(data) && isRecord(data.profiles) ? data.profiles : {};
 // A profile is usable only with a nonempty apiKey; upserts deliberately
 // preserve incomplete profiles created by other integrations.
-const usableIds = Object.keys(profiles).filter(
-  (id) =>
-    isRecord(profiles[id]) &&
-    typeof profiles[id].apiKey === "string" &&
-    profiles[id].apiKey.trim(),
-);
-let profile = isRecord(profiles.default) ? profiles.default : null;
+const hasKey = (p) =>
+  isRecord(p) && typeof p.apiKey === "string" && p.apiKey.trim();
+const usableIds = Object.keys(profiles).filter((id) => hasKey(profiles[id]));
+// Selection order: a usable default, then the sole usable profile. A
+// record-shaped but keyless default is still selected when nothing else is
+// usable, so its baseUrl can guide re-provisioning; it never shadows a
+// working profile.
+let profile = hasKey(profiles.default) ? profiles.default : null;
 if (!profile && usableIds.length === 1) {
   profile = profiles[usableIds[0]];
+}
+if (!profile && isRecord(profiles.default) && usableIds.length === 0) {
+  profile = profiles.default;
 }
 const selection = profile ? "ok" : usableIds.length > 1 ? "ambiguous" : "missing";
 const profileBaseUrl = profile && typeof profile.baseUrl === "string" && profile.baseUrl.trim()

@@ -29,8 +29,9 @@ let data = {};
 try { data = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
 if (!isRecord(data)) data = {};
 const profiles = isRecord(data.profiles) ? data.profiles : {};
-const usableIds = Object.keys(profiles).filter((id) => isRecord(profiles[id]) && typeof profiles[id].apiKey === "string" && profiles[id].apiKey.trim());
-const profile = isRecord(profiles.default)
+const hasKey = (p) => isRecord(p) && typeof p.apiKey === "string" && p.apiKey.trim();
+const usableIds = Object.keys(profiles).filter((id) => hasKey(profiles[id]));
+const profile = hasKey(profiles.default)
   ? profiles.default
   : (usableIds.length === 1 ? profiles[usableIds[0]] : {});
 const apiKey = typeof profile.apiKey === "string" ? profile.apiKey.trim() : "";
