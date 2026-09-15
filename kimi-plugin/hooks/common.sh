@@ -174,7 +174,14 @@ const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const envBaseUrl = (process.argv[2] || "").trim();
 const isRecord = (value) => value != null && typeof value === "object" && !Array.isArray(value);
 const profiles = isRecord(data) && isRecord(data.profiles) ? data.profiles : {};
-const usableIds = Object.keys(profiles).filter((id) => isRecord(profiles[id]));
+// A profile is usable only with a nonempty apiKey; upserts deliberately
+// preserve incomplete profiles created by other integrations.
+const usableIds = Object.keys(profiles).filter(
+  (id) =>
+    isRecord(profiles[id]) &&
+    typeof profiles[id].apiKey === "string" &&
+    profiles[id].apiKey.trim(),
+);
 let profile = isRecord(profiles.default) ? profiles.default : null;
 if (!profile && usableIds.length === 1) {
   profile = profiles[usableIds[0]];

@@ -404,6 +404,12 @@ check "no false ellipsis under the code-point cap" 'printf "%s" "${fmt2_out}" | 
 fmt3_out=$(printf '{"memories":[{"id":"m3","content":"%s","tags":[],"relative_age":"1d"}]}' "$(node -e 'process.stdout.write("a".repeat(501))')" | node "${PLUGIN_ROOT}/hooks/lib/memories-formatter.mjs")
 check "ellipsis present when truncated" 'printf "%s" "${fmt3_out}" | grep -qF "..."'
 
+# 19. one valid + one incomplete profile: use the valid one (not ambiguous)
+printf '%s' '{"schemaVersion":1,"profiles":{"personal":{"label":"P","baseUrl":"https://api.mem9.ai","apiKey":"k9"},"unfinished":{"label":"U","baseUrl":"","apiKey":""}}}' > "${MEM9_HOME}/.credentials.json"
+: > "${REQ_LOG}"
+out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
+check "single usable profile wins" '[[ "${out}" == *"deploy window is Friday"* ]] && grep -q "X-API-Key: k9" "${REQ_LOG}"'
+
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
   exit 1

@@ -34,10 +34,10 @@ let data = {};
 try { data = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
 if (!isRecord(data)) data = {};
 const profiles = isRecord(data.profiles) ? data.profiles : {};
-const ids = Object.keys(profiles);
+const usableIds = Object.keys(profiles).filter((id) => isRecord(profiles[id]) && typeof profiles[id].apiKey === "string" && profiles[id].apiKey.trim());
 const profile = isRecord(profiles.default)
   ? profiles.default
-  : (ids.length === 1 && isRecord(profiles[ids[0]]) ? profiles[ids[0]] : {});
+  : (usableIds.length === 1 ? profiles[usableIds[0]] : {});
 const apiKey = typeof profile.apiKey === "string" ? profile.apiKey.trim() : "";
 const baseUrl = typeof profile.baseUrl === "string" && profile.baseUrl.trim()
   ? profile.baseUrl.trim()
@@ -101,10 +101,10 @@ try { data = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
 if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
 const isRecord = (v) => v != null && typeof v === "object" && !Array.isArray(v);
 const profiles = isRecord(data.profiles) ? data.profiles : {};
-const ids = Object.keys(profiles);
+const usableIds = Object.keys(profiles).filter((id) => isRecord(profiles[id]) && typeof profiles[id].apiKey === "string" && profiles[id].apiKey.trim());
 const profile = isRecord(profiles.default)
   ? profiles.default
-  : (ids.length === 1 && isRecord(profiles[ids[0]]) ? profiles[ids[0]] : {});
+  : (usableIds.length === 1 ? profiles[usableIds[0]] : {});
 process.stdout.write(typeof profile.baseUrl === "string" ? profile.baseUrl.trim() : "");
 ' "$credentials_file")"
 fi
