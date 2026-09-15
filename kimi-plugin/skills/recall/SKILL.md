@@ -50,11 +50,9 @@ if [ -n "${KIMI_PLUGIN_ROOT:-}" ] && [ -f "${KIMI_PLUGIN_ROOT}/kimi.plugin.json"
 fi
 
 query_file="REPLACE_WITH_FILE_PATH"
-encoded_query="$(node -e 'const fs=require("node:fs"); const raw=fs.readFileSync(process.argv[1],"utf8").trim(); process.stdout.write(encodeURIComponent(raw));' "$query_file")"
-rm -f "$query_file"
-
 curl_config="$(mktemp "${TMPDIR:-/tmp}/mem9-curl.XXXXXX")"
-trap 'rm -f "$curl_config"' EXIT
+trap 'rm -f "$curl_config" "$query_file"' EXIT
+encoded_query="$(node -e 'const fs=require("node:fs"); const raw=fs.readFileSync(process.argv[1],"utf8").trim(); process.stdout.write(encodeURIComponent(raw));' "$query_file")"
 {
   printf 'url = "%s"\n' "${base_url%/}/v1alpha2/mem9s/memories?q=${encoded_query}&limit=10"
   printf 'header = "Content-Type: application/json"\n'
