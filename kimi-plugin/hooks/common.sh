@@ -241,32 +241,65 @@ const credentialsPath = process.argv[1];
 const baseUrl = process.argv[2];
 const apiKey = process.env.MEM9_UPSERT_API_KEY || "";
 const isRecord = (value) => value != null && typeof value === "object" && !Array.isArray(value);
-let data = {};
-try {
-  data = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
-} catch {}
-if (!isRecord(data)) {
-  data = {};
+
+// Cross-process lock: the read-modify-write below merges against the latest
+// file while holding it, so concurrent provisioners or another integration
+// never lose profiles to a stale-snapshot rename. mkdir is atomic on POSIX.
+const lockPath = `${credentialsPath}.lock`;
+const lockDeadline = Date.now() + 5000;
+for (;;) {
+  try {
+    fs.mkdirSync(lockPath);
+    break;
+  } catch (error) {
+    if (error.code === "EEXIST") {
+      // Break a lock abandoned by a dead writer.
+      try {
+        if (Date.now() - fs.statSync(lockPath).mtimeMs > 30000) {
+          fs.rmdirSync(lockPath);
+          continue;
+        }
+      } catch {}
+      if (Date.now() > lockDeadline) {
+        throw new Error("mem9 credentials lock timeout");
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+      continue;
+    }
+    throw error;
+  }
 }
-const profiles = isRecord(data.profiles) ? data.profiles : {};
-const current = isRecord(profiles.default) ? profiles.default : {};
-profiles.default = {
-  label: typeof current.label === "string" && current.label.trim() ? current.label : "default",
-  baseUrl: baseUrl || (typeof current.baseUrl === "string" && current.baseUrl.trim()) || "https://api.mem9.ai",
-  apiKey,
-};
-data.schemaVersion = 1;
-data.profiles = profiles;
-fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
-const tempPath = `${credentialsPath}.${process.pid}.${Date.now()}.tmp`;
+
 try {
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
-  fs.chmodSync(tempPath, 0o600);
-  fs.renameSync(tempPath, credentialsPath);
-} catch (error) {
-  // Never leave the key behind in an orphaned temp file.
-  try { fs.unlinkSync(tempPath); } catch {}
-  throw error;
+  let data = {};
+  try {
+    data = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
+  } catch {}
+  if (!isRecord(data)) {
+    data = {};
+  }
+  const profiles = isRecord(data.profiles) ? data.profiles : {};
+  const current = isRecord(profiles.default) ? profiles.default : {};
+  profiles.default = {
+    label: typeof current.label === "string" && current.label.trim() ? current.label : "default",
+    baseUrl: baseUrl || (typeof current.baseUrl === "string" && current.baseUrl.trim()) || "https://api.mem9.ai",
+    apiKey,
+  };
+  data.schemaVersion = 1;
+  data.profiles = profiles;
+  fs.mkdirSync(path.dirname(credentialsPath), { recursive: true });
+  const tempPath = `${credentialsPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+    fs.chmodSync(tempPath, 0o600);
+    fs.renameSync(tempPath, credentialsPath);
+  } catch (error) {
+    // Never leave the key behind in an orphaned temp file.
+    try { fs.unlinkSync(tempPath); } catch {}
+    throw error;
+  }
+} finally {
+  try { fs.rmdirSync(lockPath); } catch {}
 }
 ' "${credentials_file}" "${MEM9_API_URL}"
 }

@@ -418,6 +418,26 @@ check "broken default does not provision when another profile works" '! grep -q 
 out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
 check "usable profile beats broken default" '[[ "${out}" == *"deploy window is Friday"* ]] && grep -q "X-API-Key: k7" "${REQ_LOG}"'
 
+# 21. concurrent provisioning serializes through the credential lock
+printf '%s' '{"schemaVersion":1,"profiles":{"alpha":{"label":"A","baseUrl":"","apiKey":""}}}' > "${MEM9_HOME}/.credentials.json"
+printf '%s' '{"hook_event_name":"SessionStart","session_id":"s_a","source":"startup","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/session-start.sh" &
+printf '%s' '{"hook_event_name":"SessionStart","session_id":"s_b","source":"startup","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/session-start.sh" &
+wait
+check "concurrent upserts preserve profiles" 'node -e "
+const d = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
+process.exit(d.profiles.alpha && d.profiles.default && d.profiles.default.apiKey ? 0 : 1);
+" "${MEM9_HOME}/.credentials.json"'
+
+# 22. a stale credential lock is broken instead of deadlocking
+printf '%s' '{"schemaVersion":1,"profiles":{}}' > "${MEM9_HOME}/.credentials.json"
+mkdir "${MEM9_HOME}/.credentials.json.lock"
+touch -t 202001010000 "${MEM9_HOME}/.credentials.json.lock"
+printf '%s' '{"hook_event_name":"SessionStart","session_id":"s_c","source":"startup","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/session-start.sh"
+check "stale lock broken" 'node -e "
+const d = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
+process.exit(d.profiles.default && d.profiles.default.apiKey === \"provisioned-key-123\" ? 0 : 1);
+" "${MEM9_HOME}/.credentials.json" && test ! -d "${MEM9_HOME}/.credentials.json.lock"'
+
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
   exit 1

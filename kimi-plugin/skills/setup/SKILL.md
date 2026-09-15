@@ -123,29 +123,50 @@ const fs = require("node:fs");
 const credPath = process.argv[1];
 const apiKey = process.env.MEM9_SETUP_API_KEY || "";
 const baseUrl = process.argv[2];
-let data = {};
-try { data = JSON.parse(fs.readFileSync(credPath, "utf8")); } catch {}
-if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
-const profiles = data.profiles && typeof data.profiles === "object" && !Array.isArray(data.profiles) ? data.profiles : {};
-const existing = profiles.default && typeof profiles.default === "object" && !Array.isArray(profiles.default) ? profiles.default : {};
-profiles.default = {
-  ...existing,
-  label: typeof existing.label === "string" && existing.label ? existing.label : "default",
-  baseUrl: baseUrl || (typeof existing.baseUrl === "string" && existing.baseUrl ? existing.baseUrl : "https://api.mem9.ai"),
-  apiKey,
-};
-data.schemaVersion = 1;
-data.profiles = profiles;
-// Atomic write: a mode-0600 temp file in the same directory, renamed over
-// the target, with the temp file removed if anything fails midway.
-const tempPath = `${credPath}.${process.pid}.${Date.now()}.tmp`;
+// Cross-process lock (mkdir is atomic on POSIX): read and merge against the
+// latest file while holding it, so a concurrent writer never loses profiles.
+const lockPath = `${credPath}.lock`;
+const lockDeadline = Date.now() + 5000;
+for (;;) {
+  try { fs.mkdirSync(lockPath); break; } catch (error) {
+    if (error.code === "EEXIST") {
+      try {
+        if (Date.now() - fs.statSync(lockPath).mtimeMs > 30000) { fs.rmdirSync(lockPath); continue; }
+      } catch {}
+      if (Date.now() > lockDeadline) throw new Error("mem9 credentials lock timeout");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+      continue;
+    }
+    throw error;
+  }
+}
 try {
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
-  fs.chmodSync(tempPath, 0o600);
-  fs.renameSync(tempPath, credPath);
-} catch (error) {
-  try { fs.unlinkSync(tempPath); } catch {}
-  throw error;
+  let data = {};
+  try { data = JSON.parse(fs.readFileSync(credPath, "utf8")); } catch {}
+  if (!data || typeof data !== "object" || Array.isArray(data)) data = {};
+  const profiles = data.profiles && typeof data.profiles === "object" && !Array.isArray(data.profiles) ? data.profiles : {};
+  const existing = profiles.default && typeof profiles.default === "object" && !Array.isArray(profiles.default) ? profiles.default : {};
+  profiles.default = {
+    ...existing,
+    label: typeof existing.label === "string" && existing.label ? existing.label : "default",
+    baseUrl: baseUrl || (typeof existing.baseUrl === "string" && existing.baseUrl ? existing.baseUrl : "https://api.mem9.ai"),
+    apiKey,
+  };
+  data.schemaVersion = 1;
+  data.profiles = profiles;
+  // Atomic write: a mode-0600 temp file in the same directory, renamed over
+  // the target, with the temp file removed if anything fails midway.
+  const tempPath = `${credPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+    fs.chmodSync(tempPath, 0o600);
+    fs.renameSync(tempPath, credPath);
+  } catch (error) {
+    try { fs.unlinkSync(tempPath); } catch {}
+    throw error;
+  }
+} finally {
+  try { fs.rmdirSync(lockPath); } catch {}
 }
 ' "$credentials_file" "$base_url"
 ```
