@@ -147,7 +147,9 @@ mem9_emit_context() {
   local event_name="$1"
   local text="$2"
   if mem9_require_node >/dev/null 2>&1; then
-    node "${MEM9_SCRIPT_DIR}/lib/hook-json.mjs" emit-context "${event_name}" "${text}"
+    # Text can carry recalled memories or claim URLs with embedded keys —
+    # keep it off the process argv by piping over stdin.
+    printf '%s' "${text}" | node "${MEM9_SCRIPT_DIR}/lib/hook-json.mjs" emit-context "${event_name}"
     return 0
   fi
 
@@ -401,10 +403,12 @@ mem9_ingest_transcript() {
     return 1
   fi
 
-  stats="$(PAYLOAD="${payload}" node -e 'const payload=JSON.parse(process.env.PAYLOAD); const messages=Array.isArray(payload.messages) ? payload.messages : []; let user=0; let assistant=0; let bytes=0; for (const message of messages) { if (message.role === "user") user += 1; if (message.role === "assistant") assistant += 1; bytes += new TextEncoder().encode(String(message.content || "")).byteLength; } process.stdout.write([messages.length, user, assistant, bytes].join("\t"));')"
+  # The payload can exceed the per-string limit for environment variables
+  # (Linux MAX_ARG_STRLEN), so it travels over stdin, not env.
+  stats="$(printf '%s' "${payload}" | node -e 'const fs=require("node:fs"); const payload=JSON.parse(fs.readFileSync(0,"utf8")); const messages=Array.isArray(payload.messages) ? payload.messages : []; let user=0; let assistant=0; let bytes=0; for (const message of messages) { if (message.role === "user") user += 1; if (message.role === "assistant") assistant += 1; bytes += new TextEncoder().encode(String(message.content || "")).byteLength; } process.stdout.write([messages.length, user, assistant, bytes].join("\t"));')"
   IFS=$'\t' read -r messages_count user_count assistant_count total_bytes <<< "${stats}"
 
-  body="$(SESSION_ID="${session_id}" PAYLOAD="${payload}" MEM9_AGENT_ID="${MEM9_AGENT_ID}" node -e 'const payload=JSON.parse(process.env.PAYLOAD); process.stdout.write(JSON.stringify({session_id:process.env.SESSION_ID,agent_id:process.env.MEM9_AGENT_ID,mode:"smart",messages:payload.messages}));')"
+  body="$(printf '%s' "${payload}" | MEM9_SESSION_ID="${session_id}" node -e 'const fs=require("node:fs"); const payload=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(JSON.stringify({session_id:process.env.MEM9_SESSION_ID,agent_id:process.env.MEM9_AGENT_ID,mode:"smart",messages:payload.messages}));')"
 
   if [[ "${body}" == *'"messages":[]'* ]]; then
     mem9_debug "${hook_name}" "ingest_empty" \

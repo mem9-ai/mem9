@@ -73,6 +73,7 @@ The runtime-state endpoint returns HTTP 200 with `mem9ApiKey.status: "inactive"`
 
 - `probe_status` 2xx and `credential_status` `active` (or absent from the body) — the saved credentials work. Tell the user mem9 is initialized and verified, show the credentials file path and active profile id, and stop.
 - `probe_status` 2xx with `credential_status` `inactive` — the key is known but disabled. Continue to the provisioning section below to re-provision; the upsert preserves the profile's existing `baseUrl`, so the new key comes from the same server.
+- `probe_status` `401`, `403`, or `404` — the server definitively rejected the key (invalid or deleted). Continue to the provisioning section below to re-provision.
 - `credential_status` `unknown`, `000`, or any other status — connectivity or server problem. Tell the user the probe failed and suggest retrying; do not re-provision on transient failures.
 - Never print the file contents or the API key.
 

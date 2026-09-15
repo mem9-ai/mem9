@@ -157,6 +157,23 @@ fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
 printf '{"sessionId":"session_emoji","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
   "${SESSION_EMOJI_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
 
+# --- fixture: quote-heavy oversized turn (payload JSON exceeds Linux's
+# --- 128 KiB per-env-string limit, so env-passing would fail with E2BIG) ---
+SESSION_LARGE_DIR="${KIMI_HOME}/sessions/wd_proj_abc/session_large"
+mkdir -p "${SESSION_LARGE_DIR}/agents/main"
+node -e '
+const fs = require("fs");
+const dir = process.argv[1];
+const lines = [
+  JSON.stringify({ type: "metadata", protocol_version: "1.5", created_at: 1 }),
+  JSON.stringify({ type: "context.append_message", agentId: "main", message: { role: "user", content: [{ type: "text", text: "\"".repeat(119000) }], origin: { kind: "user" }, id: "L1" }, time: 2 }),
+  JSON.stringify({ type: "context.append_loop_event", agentId: "main", event: { type: "content.part", turnId: "0", stepUuid: "s0", part: { type: "text", text: "large reply" } }, time: 3 }),
+];
+fs.writeFileSync(dir + "/agents/main/wire.jsonl", lines.join("\n") + "\n");
+' "${SESSION_LARGE_DIR}"
+printf '{"sessionId":"session_large","sessionDir":"%s","workDir":"/tmp/proj"}\n' \
+  "${SESSION_LARGE_DIR}" >> "${KIMI_HOME}/session_index.jsonl"
+
 pass=0
 fail=0
 check() {
@@ -344,6 +361,14 @@ process.exit(msgs.length === 1 && msgs[0].role === \"user\" && msgs[0].content.i
 ln -s "${PLUGIN_ROOT}" "${TMP_DIR}/plugin-link"
 link_out=$(printf '{"source":"startup"}' | node "${TMP_DIR}/plugin-link/hooks/lib/hook-json.mjs" get-string source)
 check "lib works through symlinked path" '[ "${link_out}" = "startup" ]'
+
+# 14. PreCompact with a quote-heavy 119 KB turn: payload JSON (~238 KB escaped)
+# exceeds Linux's per-env-string limit, so it must travel over stdin
+: > "${REQ_LOG}"
+out=$(printf '{"hook_event_name":"PreCompact","session_id":"session_large","trigger":"auto","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/pre-compact.sh")
+check "large precompact stdout empty" '[ -z "${out}" ]'
+check "large payload ingested" 'grep -qF "\"session_id\":\"session_large\"" "${REQ_LOG}"'
+check "large payload content present" 'grep -qE "(\\\\\"){200}" "${REQ_LOG}"'
 
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
