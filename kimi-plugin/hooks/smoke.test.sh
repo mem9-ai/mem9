@@ -370,6 +370,15 @@ check "large precompact stdout empty" '[ -z "${out}" ]'
 check "large payload ingested" 'grep -qF "\"session_id\":\"session_large\"" "${REQ_LOG}"'
 check "large payload content present" 'grep -qE "(\\\\\"){200}" "${REQ_LOG}"'
 
+# 15. auth failures are logged distinctly (status captured before negation)
+DEBUG_LOG="${KIMI_HOME}/mem9/logs/hooks.jsonl"
+rm -f "${MEM9_HOME}/.credentials.json"
+printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh"
+check "missing credentials logged as auth_missing" 'grep -q "\"stage\":\"auth_missing\"" "${DEBUG_LOG}"'
+printf 'not json' > "${MEM9_HOME}/.credentials.json"
+printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh"
+check "invalid credentials logged as auth_invalid" 'grep -q "\"stage\":\"auth_invalid\"" "${DEBUG_LOG}"'
+
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
   exit 1

@@ -16,8 +16,8 @@ if ! mem9_require_node; then
 fi
 
 load_auth_status=0
-if ! mem9_load_auth 2>/dev/null; then
-  load_auth_status=$?
+mem9_load_auth 2>/dev/null || load_auth_status=$?
+if [[ "${load_auth_status}" -ne 0 ]]; then
   if [[ "${load_auth_status}" -eq 2 ]]; then
     mem9_debug "SessionEnd" "auth_invalid"
   else
