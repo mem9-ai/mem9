@@ -41,6 +41,13 @@ if [[ "${load_auth_status}" -eq 2 ]]; then
   exit 0
 fi
 
+if [[ "${load_auth_status}" -eq 3 ]]; then
+  mem9_debug "SessionStart" "auth_ambiguous" \
+    "source" "${SESSION_SOURCE}" \
+    "auth_source" "${MEM9_AUTH_SOURCE:-ambiguous_profiles}"
+  exit 0
+fi
+
 mem9_debug "SessionStart" "provision_start" "source" "${SESSION_SOURCE}"
 response="$(mem9_provision_auth 2>/dev/null || true)"
 if [[ -z "${response}" ]]; then

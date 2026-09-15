@@ -76,6 +76,7 @@ The runtime-state endpoint returns HTTP 200 with `mem9ApiKey.status: "inactive"`
 - `probe_status` `401`, `403`, or `404` — the server definitively rejected the key (invalid or deleted). Continue to the provisioning section below to re-provision.
 - `credential_status` `unknown`, `000`, or any other status — connectivity or server problem. Tell the user the probe failed and suggest retrying; do not re-provision on transient failures.
 - Never print the file contents or the API key.
+- If the credentials file holds several profiles and none is named `default`, the probe finds no usable key and the hooks deliberately refuse to guess. Ask the user which profile to use (for example by renaming it to `default` in the credentials file); do not provision a new account in that case.
 
 ## If credentials are missing or invalid
 

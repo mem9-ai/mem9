@@ -385,6 +385,16 @@ mkdir "${MEM9_HOME}/.credentials.json"
 printf '%s' '{"hook_event_name":"SessionStart","session_id":"session_test123","source":"startup","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/session-start.sh" || true
 check "failed upsert leaves no temp key file" 'if ls "${MEM9_HOME}"/.credentials.json.*.tmp >/dev/null 2>&1; then false; else true; fi'
 
+# 17. ambiguous profiles (2+ usable, no default): never auto-provision
+rmdir "${MEM9_HOME}/.credentials.json"
+printf '%s' '{"schemaVersion":1,"profiles":{"personal":{"label":"P","baseUrl":"https://api.mem9.ai","apiKey":"k1"},"work":{"label":"W","baseUrl":"https://api.mem9.ai","apiKey":"k2"}}}' > "${MEM9_HOME}/.credentials.json"
+: > "${REQ_LOG}"
+out=$(printf '%s' '{"hook_event_name":"SessionStart","session_id":"session_test123","source":"startup","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/session-start.sh")
+check "ambiguous profiles do not provision" '! grep -q "v1alpha1" "${REQ_LOG}"'
+check "ambiguous profiles logged" 'grep -q "\"stage\":\"auth_ambiguous\"" "${DEBUG_LOG}"'
+out=$(printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"session_test123","prompt":"deploy?","cwd":"/tmp/proj"}' | bash "${PLUGIN_ROOT}/hooks/user-prompt-submit.sh")
+check "recall silent on ambiguous profiles" '[ -z "${out}" ] && ! grep -q "/memories?q=" "${REQ_LOG}"'
+
 printf 'PASS=%d FAIL=%d\n' "${pass}" "${fail}"
 if [ "${fail}" -ne 0 ]; then
   exit 1

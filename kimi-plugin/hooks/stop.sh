@@ -18,7 +18,9 @@ fi
 load_auth_status=0
 mem9_load_auth 2>/dev/null || load_auth_status=$?
 if [[ "${load_auth_status}" -ne 0 ]]; then
-  if [[ "${load_auth_status}" -eq 2 ]]; then
+  if [[ "${load_auth_status}" -eq 3 ]]; then
+    mem9_debug "Stop" "auth_ambiguous"
+  elif [[ "${load_auth_status}" -eq 2 ]]; then
     mem9_debug "Stop" "auth_invalid"
   else
     mem9_debug "Stop" "auth_missing"

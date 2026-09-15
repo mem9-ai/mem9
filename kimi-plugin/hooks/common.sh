@@ -174,30 +174,38 @@ const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
 const envBaseUrl = (process.argv[2] || "").trim();
 const isRecord = (value) => value != null && typeof value === "object" && !Array.isArray(value);
 const profiles = isRecord(data) && isRecord(data.profiles) ? data.profiles : {};
+const usableIds = Object.keys(profiles).filter((id) => isRecord(profiles[id]));
 let profile = isRecord(profiles.default) ? profiles.default : null;
-if (!profile) {
-  const ids = Object.keys(profiles);
-  if (ids.length === 1 && isRecord(profiles[ids[0]])) {
-    profile = profiles[ids[0]];
-  }
+if (!profile && usableIds.length === 1) {
+  profile = profiles[usableIds[0]];
 }
+const selection = profile ? "ok" : usableIds.length > 1 ? "ambiguous" : "missing";
 const profileBaseUrl = profile && typeof profile.baseUrl === "string" && profile.baseUrl.trim()
   ? profile.baseUrl.trim()
   : "";
 const baseUrl = envBaseUrl || profileBaseUrl || "https://api.mem9.ai";
 const apiKey = profile && typeof profile.apiKey === "string" ? profile.apiKey.trim() : "";
-process.stdout.write([baseUrl, apiKey].join("\t"));
+// Field order matters: tab is IFS whitespace, so `read` collapses empty
+// middle fields. The selection status (never empty) comes first; the key,
+// which may be empty, goes last.
+process.stdout.write([selection, baseUrl, apiKey].join("\t"));
 ' "${credentials_file}" "${MEM9_API_URL_ENV}")"; then
     MEM9_AUTH_SOURCE="invalid_file"
     return 2
   fi
 
-  IFS=$'\t' read -r auth_api_url auth_api_key <<< "${parsed}"
+  IFS=$'\t' read -r auth_selection auth_api_url auth_api_key <<< "${parsed}"
   # Carry the resolved URL (env > profile > default) even when the key is
   # missing, so re-provisioning targets the configured server and the upsert
   # does not overwrite a self-hosted baseUrl with the cloud default.
   MEM9_API_URL="${auth_api_url}"
   export MEM9_API_URL
+  if [[ "${auth_selection}" == "ambiguous" ]]; then
+    # Multiple usable profiles and no default: never guess or silently
+    # provision a new account — the user picks one via the mem9-setup skill.
+    MEM9_AUTH_SOURCE="ambiguous_profiles"
+    return 3
+  fi
   if [[ -z "${auth_api_key}" ]]; then
     return 1
   fi
