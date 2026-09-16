@@ -251,13 +251,31 @@ describe("shouldResumeSourceManagedSnapshot", () => {
 
   it("resumes a cached source-backed upload after a page reload", () => {
     expect(
-      shouldResumeSourceManagedSnapshot(true, uploadingSnapshot),
+      shouldResumeSourceManagedSnapshot(
+        true,
+        uploadingSnapshot,
+        true,
+      ),
     ).toBe(true);
   });
 
   it("does not resume legacy client-managed incomplete uploads", () => {
     expect(
-      shouldResumeSourceManagedSnapshot(undefined, uploadingSnapshot),
+      shouldResumeSourceManagedSnapshot(
+        undefined,
+        uploadingSnapshot,
+        true,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not resume an expired source-backed upload", () => {
+    expect(
+      shouldResumeSourceManagedSnapshot(
+        true,
+        uploadingSnapshot,
+        false,
+      ),
     ).toBe(false);
   });
 });

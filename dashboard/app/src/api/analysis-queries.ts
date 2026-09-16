@@ -180,9 +180,11 @@ export function shouldRestartIncompleteCachedSnapshot(
 export function shouldResumeSourceManagedSnapshot(
   sourceManaged: boolean | undefined,
   snapshot: AnalysisJobSnapshotResponse,
+  cacheFresh: boolean,
 ): boolean {
   return (
     sourceManaged === true &&
+    cacheFresh &&
     shouldRestartIncompleteCachedSnapshot(snapshot)
   );
 }
@@ -698,17 +700,17 @@ export function useSpaceAnalysis(input: {
         cached?.fingerprint === fingerprint &&
         cached.taxonomyVersion === DEFAULT_TAXONOMY_VERSION &&
         cached.snapshot !== null;
+      const cacheFresh = cached
+        ? isAnalysisCacheFresh(cached.updatedAt)
+        : false;
+      const isFreshMatchingCachedJob =
+        isMatchingCachedJob && cacheFresh;
 
-      if (
-        cached &&
-        (!isMatchingCachedJob ||
-          !cached.snapshot ||
-          !isAnalysisCacheFresh(cached.updatedAt))
-      ) {
+      if (cached && !isFreshMatchingCachedJob) {
         await clearAnalysisCache(spaceId, range);
       }
 
-      if (isMatchingCachedJob && cached?.snapshot) {
+      if (isFreshMatchingCachedJob && cached?.snapshot) {
         const cachedSnapshot = cached.snapshot;
 
         if (shouldRestartIncompleteCachedSnapshot(cachedSnapshot)) {
@@ -717,6 +719,7 @@ export function useSpaceAnalysis(input: {
             shouldResumeSourceManagedSnapshot(
               cached.sourceManaged,
               cachedSnapshot,
+              cacheFresh,
             )
           ) {
             syncStartupSnapshot(
