@@ -1040,10 +1040,36 @@ function MemoryInsightCanvas({
   onMemorySelect: (memory: Memory) => void;
 }) {
   const { t } = useTranslation();
+  const [expandedCardIds, setExpandedCardIds] = useState<string[]>([]);
+  const [activePathByCardId, setActivePathByCardId] = useState<Record<string, LanePath>>({});
+  const [tagRevealCounts, setTagRevealCounts] = useState<Record<string, number>>({});
+  const [entityRevealCounts, setEntityRevealCounts] = useState<Record<string, number>>({});
+  const [memoryRevealCounts, setMemoryRevealCounts] = useState<Record<string, number>>({});
+  const graphExpansion = useMemo(
+    () => ({
+      expandedCardIds,
+      activePathByCardId,
+      tagRevealCounts,
+      entityRevealCounts,
+      memoryRevealCounts,
+      defaultTagLimit: getBranchLimit("tags", compact),
+      defaultEntityLimit: getBranchLimit("entities", compact),
+      defaultMemoryLimit: getBranchLimit("memories", compact),
+    }),
+    [
+      activePathByCardId,
+      compact,
+      entityRevealCounts,
+      expandedCardIds,
+      memoryRevealCounts,
+      tagRevealCounts,
+    ],
+  );
   const { data: graph } = useBackgroundMemoryInsightGraph({
     cards,
     memories,
     matchMap,
+    expansion: graphExpansion,
   });
   const memoriesById = useMemo(
     () => new Map(memories.map((memory) => [memory.id, memory])),
@@ -1085,11 +1111,6 @@ function MemoryInsightCanvas({
     [graph.cards],
   );
 
-  const [expandedCardIds, setExpandedCardIds] = useState<string[]>([]);
-  const [activePathByCardId, setActivePathByCardId] = useState<Record<string, LanePath>>({});
-  const [tagRevealCounts, setTagRevealCounts] = useState<Record<string, number>>({});
-  const [entityRevealCounts, setEntityRevealCounts] = useState<Record<string, number>>({});
-  const [memoryRevealCounts, setMemoryRevealCounts] = useState<Record<string, number>>({});
   const [manualRootPositions, setManualRootPositions] = useState<Record<string, InsightPoint>>({});
   const [manualLanePositions, setManualLanePositions] = useState<Record<string, InsightPoint>>({});
   const [panMode, setPanMode] = useState(false);
@@ -1440,7 +1461,8 @@ function MemoryInsightCanvas({
       const tagLimit = getBranchLimit("tags", compact);
       const shownTagCount = tagRevealCounts[card.id] ?? tagLimit;
       const shownTags = allTags.slice(0, shownTagCount);
-      const hiddenTagCount = Math.max(allTags.length - shownTags.length, 0);
+      const totalTagCount = card.childCount ?? allTags.length;
+      const hiddenTagCount = Math.max(totalTagCount - shownTags.length, 0);
       const selectedTag = path.tagId
         ? shownTags.find((tag) => tag.id === path.tagId) ?? allTags.find((tag) => tag.id === path.tagId)
         : undefined;
@@ -1451,7 +1473,8 @@ function MemoryInsightCanvas({
         ? entityRevealCounts[selectedTag.id] ?? entityLimit
         : entityLimit;
       const shownEntities = allEntities.slice(0, shownEntityCount);
-      const hiddenEntityCount = Math.max(allEntities.length - shownEntities.length, 0);
+      const totalEntityCount = selectedTag?.childCount ?? allEntities.length;
+      const hiddenEntityCount = Math.max(totalEntityCount - shownEntities.length, 0);
       const selectedEntity = path.entityId
         ? shownEntities.find((entity) => entity.id === path.entityId) ?? allEntities.find((entity) => entity.id === path.entityId)
         : undefined;
@@ -1464,7 +1487,8 @@ function MemoryInsightCanvas({
         ? memoryRevealCounts[selectedEntity.id] ?? memoryLimit
         : memoryLimit;
       const shownMemoryNodes = allMemoryNodes.slice(0, shownMemoryCount);
-      const hiddenMemoryCount = Math.max(allMemoryNodes.length - shownMemoryNodes.length, 0);
+      const totalMemoryCount = selectedEntity?.count ?? allMemoryNodes.length;
+      const hiddenMemoryCount = Math.max(totalMemoryCount - shownMemoryNodes.length, 0);
 
       const bubbleSize = nodeDimensions("card", card.count, compact, maxCardCount);
       const bubbleDiameterValue = bubbleDiameter(card.count, maxCardCount, compact);
@@ -1513,7 +1537,7 @@ function MemoryInsightCanvas({
           onClick: () => {
             setTagRevealCounts((current) => ({
               ...current,
-              [card.id]: Math.min(allTags.length, shownTagCount + tagLimit),
+              [card.id]: Math.min(totalTagCount, shownTagCount + tagLimit),
             }));
           },
         });
@@ -1545,7 +1569,7 @@ function MemoryInsightCanvas({
           onClick: () => {
             setEntityRevealCounts((current) => ({
               ...current,
-              [selectedTag.id]: Math.min(allEntities.length, shownEntityCount + entityLimit),
+              [selectedTag.id]: Math.min(totalEntityCount, shownEntityCount + entityLimit),
             }));
           },
         });
@@ -1588,7 +1612,7 @@ function MemoryInsightCanvas({
           onClick: () => {
             setMemoryRevealCounts((current) => ({
               ...current,
-              [selectedEntity.id]: Math.min(allMemoryNodes.length, shownMemoryCount + memoryLimit),
+              [selectedEntity.id]: Math.min(totalMemoryCount, shownMemoryCount + memoryLimit),
             }));
           },
         });

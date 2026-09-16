@@ -113,6 +113,8 @@ interface EdgeAggregate {
 const SIGNIFICANT_ENTITY_MIN_COUNT = 2;
 const TOP_ENTITY_LIMIT = 30;
 const TOP_EDGE_LIMIT = 80;
+const LARGE_DATASET_MEMORY_THRESHOLD = 1_000;
+const LARGE_DATASET_MAX_ENTITIES_PER_MEMORY = 6;
 const RELATION_PRIORITY: MemoryInsightRelationType[] = [
   "depends_on",
   "deployed_to",
@@ -310,6 +312,7 @@ function collectCluster(
 }
 
 export function buildMemoryInsightRelationGraph(input: BuildInput): MemoryInsightRelationGraph {
+  const shouldBoundEntities = input.memories.length >= LARGE_DATASET_MEMORY_THRESHOLD;
   const signalIndex = input.signalIndex ?? buildLocalDerivedSignalIndex({
     memories: input.memories,
     matchMap: input.matchMap,
@@ -344,7 +347,7 @@ export function buildMemoryInsightRelationGraph(input: BuildInput): MemoryInsigh
     const isRecentHalf = timestamp >= bounds.midpoint;
     const categories = input.matchMap.get(memory.id)?.categories ?? [];
     const tags = getCombinedTagsForMemory(memory, signalIndex);
-    const entities = extractMemoryInsightEntities(memory)
+    const extractedEntities = extractMemoryInsightEntities(memory)
       .filter((entity) => isEligibleEntity(entity.label, entity.kind))
       .map((entity) => ({
         id: getEntityID(entity.kind, entity.normalizedLabel),
@@ -352,6 +355,9 @@ export function buildMemoryInsightRelationGraph(input: BuildInput): MemoryInsigh
         normalizedLabel: entity.normalizedLabel,
         kind: entity.kind,
       }));
+    const entities = shouldBoundEntities
+      ? extractedEntities.slice(0, LARGE_DATASET_MAX_ENTITIES_PER_MEMORY)
+      : extractedEntities;
     const uniqueEntities = Array.from(
       new Map(entities.map((entity) => [entity.id, entity])).values(),
     );

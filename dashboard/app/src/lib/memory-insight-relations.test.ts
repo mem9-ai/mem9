@@ -261,6 +261,30 @@ describe("memory-insight-relations", () => {
     expect(graph.topEdgeIds.length).toBeLessThanOrEqual(80);
   });
 
+  it("bounds per-memory relation expansion for large datasets", () => {
+    const memories = Array.from({ length: 1_001 }, (_, index) =>
+      createMemory(
+        `mem-${index}`,
+        "Use `entity-1` `entity-2` `entity-3` `entity-4` `entity-5` `entity-6` `entity-7` `entity-8`",
+        ["graph"],
+        "2026-03-10T00:00:00Z",
+      ),
+    );
+    const graph = buildMemoryInsightRelationGraph({
+      cards: [createCard("project", memories.length)],
+      memories,
+      matchMap: new Map(
+        memories.map((memory) => [
+          memory.id,
+          createMatch(memory.id, ["project"]),
+        ]),
+      ),
+    });
+
+    expect(graph.entities).toHaveLength(6);
+    expect(graph.edges).toHaveLength(15);
+  });
+
   it("reuses derived tags for active tag filters and shared tag summaries", () => {
     const memories = [
       createMemory(

@@ -146,6 +146,124 @@ describe("memory-insight", () => {
     ).toBe(true);
   });
 
+  it("bounds expanded memory nodes for large datasets while preserving aggregate counts", () => {
+    const memories = Array.from({ length: 11_104 }, (_, index) =>
+      createMemory(`mem-${index}`, {
+        content: "Use `shared-entity` for this workflow.",
+        tags: ["shared-tag"],
+      }),
+    );
+    const graph = buildMemoryInsightGraph({
+      cards: [createCard("activity", memories.length)],
+      memories,
+      matchMap: new Map(
+        memories.map((memory) => [
+          memory.id,
+          createMatch(memory.id, ["activity"]),
+        ]),
+      ),
+    });
+
+    expect(graph.cards[0]?.count).toBe(11_104);
+    expect(graph.tags[0]?.count).toBe(11_104);
+    expect(graph.entities[0]?.count).toBe(11_104);
+    const memoriesByEntity = new Map<string, number>();
+    graph.memories.forEach((memory) => {
+      memoriesByEntity.set(
+        memory.parentId,
+        (memoriesByEntity.get(memory.parentId) ?? 0) + 1,
+      );
+    });
+    expect([...memoriesByEntity.values()].every((count) => count <= 10)).toBe(true);
+    expect(graph.memories.length).toBeLessThanOrEqual(graph.entities.length * 10);
+  });
+
+  it("materializes insight branches only as the user expands them", () => {
+    const memories = [
+      createMemory("mem-1", {
+        content: "Use `shared-entity` for this workflow.",
+        tags: ["shared-tag"],
+      }),
+      createMemory("mem-2", {
+        content: "Use `shared-entity` for another workflow.",
+        tags: ["shared-tag"],
+      }),
+    ];
+    const cards = [createCard("activity", memories.length)];
+    const matchMap = new Map(
+      memories.map((memory) => [
+        memory.id,
+        createMatch(memory.id, ["activity"]),
+      ]),
+    );
+    const expansion = {
+      expandedCardIds: [] as string[],
+      activePathByCardId: {},
+      tagRevealCounts: {},
+      entityRevealCounts: {},
+      memoryRevealCounts: {},
+      defaultTagLimit: 6,
+      defaultEntityLimit: 6,
+      defaultMemoryLimit: 5,
+    };
+    const rootGraph = buildMemoryInsightGraph({
+      cards,
+      memories,
+      matchMap,
+      expansion,
+    });
+    const card = rootGraph.cards[0]!;
+
+    expect(rootGraph.tags).toHaveLength(0);
+    expect(rootGraph.entities).toHaveLength(0);
+    expect(rootGraph.memories).toHaveLength(0);
+
+    const tagGraph = buildMemoryInsightGraph({
+      cards,
+      memories,
+      matchMap,
+      expansion: {
+        ...expansion,
+        expandedCardIds: [card.id],
+      },
+    });
+    const tag = tagGraph.tags[0]!;
+
+    expect(card.childCount).toBeUndefined();
+    expect(tagGraph.cards[0]?.childCount).toBeGreaterThan(0);
+    expect(tagGraph.entities).toHaveLength(0);
+
+    const entityGraph = buildMemoryInsightGraph({
+      cards,
+      memories,
+      matchMap,
+      expansion: {
+        ...expansion,
+        expandedCardIds: [card.id],
+        activePathByCardId: { [card.id]: { tagId: tag.id } },
+      },
+    });
+    const entity = entityGraph.entities[0]!;
+
+    expect(entityGraph.memories).toHaveLength(0);
+    expect(entityGraph.tags.find((item) => item.id === tag.id)?.childCount).toBeGreaterThan(0);
+
+    const memoryGraph = buildMemoryInsightGraph({
+      cards,
+      memories,
+      matchMap,
+      expansion: {
+        ...expansion,
+        expandedCardIds: [card.id],
+        activePathByCardId: {
+          [card.id]: { tagId: tag.id, entityId: entity.id },
+        },
+      },
+    });
+
+    expect(memoryGraph.memories).toHaveLength(2);
+  });
+
   it("deduplicates repeated entity mentions inside the same branch", () => {
     const graph = buildMemoryInsightGraph({
       cards: [createCard("project", 2)],

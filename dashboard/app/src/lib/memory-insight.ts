@@ -59,6 +59,7 @@ export interface MemoryInsightCardNode {
   branchKey: string;
   parentId: null;
   depth: 0;
+  childCount?: number;
 }
 
 export interface MemoryInsightTagNode {
@@ -74,6 +75,7 @@ export interface MemoryInsightTagNode {
   depth: 1;
   synthetic: boolean;
   origin: DerivedTagOrigin;
+  childCount?: number;
 }
 
 export interface MemoryInsightEntityNode {
@@ -140,6 +142,18 @@ export interface BuildMemoryInsightGraphInput {
   matches?: MemoryAnalysisMatch[] | null;
   matchMap?: Map<string, MemoryAnalysisMatch> | null;
   signalIndex?: LocalDerivedSignalIndex | null;
+  expansion?: MemoryInsightGraphExpansion;
+}
+
+export interface MemoryInsightGraphExpansion {
+  expandedCardIds: string[];
+  activePathByCardId: Record<string, { tagId?: string; entityId?: string }>;
+  tagRevealCounts: Record<string, number>;
+  entityRevealCounts: Record<string, number>;
+  memoryRevealCounts: Record<string, number>;
+  defaultTagLimit: number;
+  defaultEntityLimit: number;
+  defaultMemoryLimit: number;
 }
 
 interface TagBucket {
@@ -170,6 +184,10 @@ const CATEGORY_PREFIXES = [
 ] as const;
 
 const CATEGORY_PREFIX_PATTERN = /^analysis\.category\./i;
+const LARGE_DATASET_MEMORY_THRESHOLD = 1_000;
+const LARGE_DATASET_MAX_TAGS_PER_CARD = 18;
+const LARGE_DATASET_MAX_ENTITIES_PER_TAG = 18;
+const LARGE_DATASET_MAX_MEMORIES_PER_ENTITY = 10;
 
 function createMatchLookup(
   matches?: MemoryAnalysisMatch[] | null,
@@ -419,6 +437,7 @@ function createCardNode(
     branchKey: category,
     parentId: null,
     depth: 0,
+    childCount: undefined,
   };
 }
 
@@ -444,6 +463,7 @@ function createTagNode(
     depth: 1,
     synthetic,
     origin,
+    childCount: undefined,
   };
 }
 
@@ -541,6 +561,7 @@ function createMemoryNode(
 export function buildMemoryInsightGraph(
   input: BuildMemoryInsightGraphInput,
 ): MemoryInsightGraph {
+  const shouldBoundGraph = input.memories.length >= LARGE_DATASET_MEMORY_THRESHOLD;
   const matchLookup = createMatchLookup(input.matches, input.matchMap);
   const cards = input.cards
     .filter((card) => card.count > 0)
@@ -556,6 +577,9 @@ export function buildMemoryInsightGraph(
   const memoryNodes: MemoryInsightMemoryNode[] = [];
   const nodes: MemoryInsightNode[] = [];
   const edges: MemoryInsightEdge[] = [];
+  const expandedCardIds = input.expansion
+    ? new Set(input.expansion.expandedCardIds)
+    : null;
 
   for (const card of cards) {
     const cardMemories = getCardMemories(card.category, input.memories, matchLookup);
@@ -567,7 +591,19 @@ export function buildMemoryInsightGraph(
     cardNodes.push(cardNode);
     nodes.push(cardNode);
 
-    const tagBuckets = buildTagBuckets(cardMemories, matchLookup, input.signalIndex);
+    if (expandedCardIds && !expandedCardIds.has(cardNode.id)) {
+      continue;
+    }
+
+    const allTagBuckets = buildTagBuckets(cardMemories, matchLookup, input.signalIndex);
+    cardNode.childCount = allTagBuckets.length;
+    const tagLimit = input.expansion
+      ? input.expansion.tagRevealCounts[cardNode.id] ?? input.expansion.defaultTagLimit
+      : shouldBoundGraph
+        ? LARGE_DATASET_MAX_TAGS_PER_CARD
+        : allTagBuckets.length;
+    const tagBuckets = allTagBuckets.slice(0, tagLimit);
+    const activePath = input.expansion?.activePathByCardId[cardNode.id];
     for (const tagBucket of tagBuckets) {
       const tagNode = createTagNode(
         card.category,
@@ -586,7 +622,18 @@ export function buildMemoryInsightGraph(
         branchKey: tagNode.branchKey,
       });
 
-      const entityBuckets = buildEntityBuckets(tagBucket.memories);
+      if (input.expansion && activePath?.tagId !== tagNode.id) {
+        continue;
+      }
+
+      const allEntityBuckets = buildEntityBuckets(tagBucket.memories);
+      tagNode.childCount = allEntityBuckets.length;
+      const entityLimit = input.expansion
+        ? input.expansion.entityRevealCounts[tagNode.id] ?? input.expansion.defaultEntityLimit
+        : shouldBoundGraph
+          ? LARGE_DATASET_MAX_ENTITIES_PER_TAG
+          : allEntityBuckets.length;
+      const entityBuckets = allEntityBuckets.slice(0, entityLimit);
       for (const entityBucket of entityBuckets) {
         const entityNode = createEntityNode(
           card.category,
@@ -605,8 +652,18 @@ export function buildMemoryInsightGraph(
           branchKey: entityNode.branchKey,
         });
 
+        if (input.expansion && activePath?.entityId !== entityNode.id) {
+          continue;
+        }
+
         const seenMemoryIds = new Set<string>();
-        for (const memory of entityBucket.memories) {
+        const memoryLimit = input.expansion
+          ? input.expansion.memoryRevealCounts[entityNode.id] ?? input.expansion.defaultMemoryLimit
+          : shouldBoundGraph
+            ? LARGE_DATASET_MAX_MEMORIES_PER_ENTITY
+            : entityBucket.memories.length;
+        const entityMemories = entityBucket.memories.slice(0, memoryLimit);
+        for (const memory of entityMemories) {
           if (seenMemoryIds.has(memory.id)) {
             continue;
           }

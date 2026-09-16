@@ -8,6 +8,7 @@ import {
 } from "@/lib/memory-derived-signals";
 import {
   buildMemoryInsightGraph,
+  type MemoryInsightGraphExpansion,
   type MemoryInsightGraph,
 } from "@/lib/memory-insight";
 import {
@@ -45,6 +46,7 @@ type WorkerRequest =
         cards: AnalysisCategoryCard[];
         memories: Memory[];
         matches: MemoryAnalysisMatch[];
+        expansion?: MemoryInsightGraphExpansion;
       };
     }
   | {
@@ -79,9 +81,9 @@ type WorkerResponse =
     };
 
 const MAX_MEMORY_ANALYSIS_CACHE = 2048;
-const MAX_DERIVED_SIGNAL_CACHE = 4;
-const MAX_INSIGHT_GRAPH_CACHE = 2;
-const MAX_RELATION_GRAPH_CACHE = 8;
+const MAX_DERIVED_SIGNAL_CACHE = 2;
+const MAX_INSIGHT_GRAPH_CACHE = 1;
+const MAX_RELATION_GRAPH_CACHE = 1;
 
 const memoryAnalysisCache = new Map<string, MemoryDerivedAnalysis>();
 const derivedSignalCache = new Map<string, LocalDerivedSignalIndex>();
@@ -173,8 +175,11 @@ function buildInsightKey(
   cards: AnalysisCategoryCard[],
   memories: Memory[],
   matches: MemoryAnalysisMatch[],
+  expansion?: MemoryInsightGraphExpansion,
 ): string {
-  return stableHash(`insight|${createCardsKey(cards)}|${buildSignalKey(memories, matches)}`);
+  return stableHash(
+    `insight|${createCardsKey(cards)}|${buildSignalKey(memories, matches)}|${JSON.stringify(expansion ?? null)}`,
+  );
 }
 
 function buildRelationKey(
@@ -244,8 +249,9 @@ function getOrBuildInsightGraph(
   cards: AnalysisCategoryCard[],
   memories: Memory[],
   matches: MemoryAnalysisMatch[],
+  expansion?: MemoryInsightGraphExpansion,
 ): MemoryInsightGraph {
-  const cacheKey = buildInsightKey(cards, memories, matches);
+  const cacheKey = buildInsightKey(cards, memories, matches, expansion);
   const cached = insightGraphCache.get(cacheKey);
   if (cached) {
     return cached;
@@ -257,6 +263,7 @@ function getOrBuildInsightGraph(
     memories,
     matchMap: new Map(matches.map((match) => [match.memoryId, match])),
     signalIndex,
+    expansion,
   });
 
   return setBoundedCache(
@@ -319,6 +326,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
           request.payload.cards,
           request.payload.memories,
           request.payload.matches,
+          request.payload.expansion,
         );
         break;
       case "relation-graph":

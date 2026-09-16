@@ -19,6 +19,8 @@ import type {
 
 const ANALYSIS_API_BASE =
   import.meta.env.VITE_ANALYSIS_API_BASE || "/your-memory/analysis-api";
+const MAX_BATCH_UPLOAD_RATE_LIMIT_RETRIES = 20;
+const RATE_LIMIT_RETRY_PADDING_MS = 250;
 
 export class AnalysisApiError extends Error {
   status: number;
@@ -94,6 +96,29 @@ async function requestResponse(
   return response;
 }
 
+function getBatchUploadRetryDelayMs(error: unknown): number | null {
+  if (
+    !(error instanceof AnalysisApiError) ||
+    error.status !== 429 ||
+    error.code !== "RATE_LIMIT_EXCEEDED" ||
+    error.details?.limit === "day"
+  ) {
+    return null;
+  }
+
+  const retryAfterSeconds = Number(error.details?.retryAfterSeconds);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1_000 + RATE_LIMIT_RETRY_PADDING_MS;
+  }
+
+  const now = Date.now();
+  return 60_000 - (now % 60_000) + RATE_LIMIT_RETRY_PADDING_MS;
+}
+
+async function wait(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
 export const analysisApi = {
   createJob(
     spaceId: string,
@@ -105,16 +130,37 @@ export const analysisApi = {
     });
   },
 
-  uploadBatch(
+  async uploadBatch(
     spaceId: string,
     jobId: string,
     batchIndex: number,
     input: UploadBatchRequest,
   ): Promise<UploadBatchResponse> {
-    return request(spaceId, `/v1/analysis-jobs/${jobId}/batches/${batchIndex}`, {
-      method: "PUT",
-      body: JSON.stringify(input),
-    });
+    let rateLimitRetries = 0;
+
+    while (true) {
+      try {
+        return await request(
+          spaceId,
+          `/v1/analysis-jobs/${jobId}/batches/${batchIndex}`,
+          {
+            method: "PUT",
+            body: JSON.stringify(input),
+          },
+        );
+      } catch (error) {
+        const retryDelayMs = getBatchUploadRetryDelayMs(error);
+        if (
+          retryDelayMs === null ||
+          rateLimitRetries >= MAX_BATCH_UPLOAD_RATE_LIMIT_RETRIES
+        ) {
+          throw error;
+        }
+
+        rateLimitRetries += 1;
+        await wait(retryDelayMs);
+      }
+    }
   },
 
   finalizeJob(

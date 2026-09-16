@@ -5,6 +5,7 @@ import {
 } from "@/lib/memory-derived-signals";
 import {
   buildMemoryInsightGraph,
+  type MemoryInsightGraphExpansion,
   type MemoryInsightGraph,
 } from "@/lib/memory-insight";
 import {
@@ -42,6 +43,7 @@ type WorkerRequest =
         cards: AnalysisCategoryCard[];
         memories: Memory[];
         matches: MemoryAnalysisMatch[];
+        expansion?: MemoryInsightGraphExpansion;
       };
     }
   | {
@@ -330,10 +332,12 @@ export function useBackgroundMemoryInsightGraph({
   cards,
   memories,
   matchMap,
+  expansion,
 }: {
   cards: AnalysisCategoryCard[];
   memories: Memory[];
   matchMap: Map<string, MemoryAnalysisMatch>;
+  expansion?: MemoryInsightGraphExpansion;
 }): { data: MemoryInsightGraph; isComputing: boolean } {
   const workerEnabled = shouldUseBackgroundWorker();
   const matches = useMemo(() => [...matchMap.values()], [matchMap]);
@@ -346,6 +350,7 @@ export function useBackgroundMemoryInsightGraph({
         cards,
         memories,
         matches,
+        expansion,
       },
     },
     computeSync: () =>
@@ -353,9 +358,10 @@ export function useBackgroundMemoryInsightGraph({
         cards,
         memories,
         matchMap,
+        expansion,
       }),
     emptyValue: EMPTY_MEMORY_INSIGHT_GRAPH,
-    deps: [workerEnabled, cards, memories, matches, matchMap],
+    deps: [workerEnabled, cards, memories, matches, matchMap, expansion],
   });
 }
 
