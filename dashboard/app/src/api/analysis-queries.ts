@@ -3,10 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { clearAnalysisCache, readAnalysisCache, writeAnalysisCache } from "./analysis-cache";
 import { analysisApi, AnalysisApiError } from "./analysis-client";
 import {
-  applyUploadedBatch,
   buildCreateJobRequest,
-  chunkAnalysisMemories,
-  createBatchHash,
   createMemoryFingerprint,
   createPendingSnapshot,
   DEFAULT_TAXONOMY_VERSION,
@@ -15,7 +12,6 @@ import {
   isDegradedAnalysisError,
   isTerminalJobStatus,
   mergeSnapshotWithUpdates,
-  toAnalysisMemoryInput,
 } from "./analysis-helpers";
 import {
   buildAnalysisCardsFromMatches,
@@ -282,7 +278,10 @@ async function startAnalysisStartup(
   const startupRun = (async () => {
     const batchSize = getAnalysisBatchSize();
     const createInput = buildCreateJobRequest(memories, batchSize);
-    const createResponse = await analysisApi.createJob(spaceId, createInput);
+    const createResponse = await analysisApi.createJobFromSource(
+      spaceId,
+      createInput,
+    );
     const emitSnapshot = (snapshot: AnalysisJobSnapshotResponse) => {
       if (!onSnapshot) return;
       try {
@@ -292,7 +291,7 @@ async function startAnalysisStartup(
       }
     };
 
-    let workingSnapshot = createPendingSnapshot(
+    const workingSnapshot = createPendingSnapshot(
       createResponse,
       createInput,
       memories,
@@ -306,31 +305,6 @@ async function startAnalysisStartup(
     );
     emitSnapshot(workingSnapshot);
 
-    const chunks = chunkAnalysisMemories(
-      memories.map(toAnalysisMemoryInput),
-      batchSize,
-    );
-
-    for (const [offset, batch] of chunks.entries()) {
-      const batchIndex = offset + 1;
-      const batchHash = await createBatchHash(batch);
-      await analysisApi.uploadBatch(spaceId, createResponse.jobId, batchIndex, {
-        batchHash,
-        memoryCount: batch.length,
-        memories: batch,
-      });
-      workingSnapshot = applyUploadedBatch(workingSnapshot, batchIndex);
-      await persistAnalysisSnapshot(
-        spaceId,
-        range,
-        createResponse.jobId,
-        fingerprint,
-        workingSnapshot,
-      );
-      emitSnapshot(workingSnapshot);
-    }
-
-    await analysisApi.finalizeJob(spaceId, createResponse.jobId);
     const snapshot = await analysisApi.getSnapshot(spaceId, createResponse.jobId);
     await persistAnalysisSnapshot(
       spaceId,
@@ -609,7 +583,11 @@ export function useSpaceAnalysis(input: {
           mergedSnapshot,
         );
 
-        if (!shouldStop && shouldTreatPollAsStalled(nextPollProgressState)) {
+        if (
+          !shouldStop &&
+          mergedSnapshot.status !== "UPLOADING" &&
+          shouldTreatPollAsStalled(nextPollProgressState)
+        ) {
           pollProgressState = nextPollProgressState;
           await clearAnalysisCache(spaceId, range);
           finishWithError(

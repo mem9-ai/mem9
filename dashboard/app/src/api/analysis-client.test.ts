@@ -73,6 +73,45 @@ describe("analysisApi", () => {
     expect(headers.get("Content-Type")).toBe("application/json");
   });
 
+  it("starts source-backed analysis without uploading memory content", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          jobId: "aj_1",
+          status: "UPLOADING",
+          expectedTotalBatches: 112,
+          uploadConcurrency: 3,
+          pollAfterMs: 1500,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await analysisApi.createJobFromSource("space-1", {
+      dateRange: {
+        start: "2026-03-01T00:00:00Z",
+        end: "2026-03-02T00:00:00Z",
+      },
+      expectedTotalMemories: 11_124,
+      expectedTotalBatches: 112,
+      batchSize: 100,
+      options: {
+        lang: "zh-CN",
+        taxonomyVersion: "v3",
+        llmEnabled: true,
+        includeItems: true,
+        includeSummary: true,
+      },
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(String(url)).toContain("/v1/analysis-jobs/from-source");
+    expect(init?.body).not.toContain("memories");
+  });
+
   it("waits for the minute window and retries rate-limited batch uploads", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.spyOn(globalThis, "fetch")

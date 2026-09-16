@@ -155,6 +155,18 @@ export const analysisApi = {
     );
   },
 
+  async createJobFromSource(
+    spaceId: string,
+    input: CreateAnalysisJobRequest,
+  ): Promise<CreateAnalysisJobResponse> {
+    return withMinuteRateLimitRetry(() =>
+      request(spaceId, "/v1/analysis-jobs/from-source", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    );
+  },
+
   async uploadBatch(
     spaceId: string,
     jobId: string,
