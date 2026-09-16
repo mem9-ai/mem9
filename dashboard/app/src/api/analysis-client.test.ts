@@ -155,6 +155,50 @@ describe("analysisApi", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("retries finalization when the last uploaded batch exhausts the minute window", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: "RATE_LIMIT_EXCEEDED",
+            message: "Rate limit exceeded",
+            details: {
+              limit: "minute",
+              retryAfterSeconds: 1,
+            },
+          }),
+          {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            jobId: "aj_1",
+            status: "PROCESSING",
+            uploadedBatches: 112,
+            expectedTotalBatches: 112,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+
+    const resultPromise = analysisApi.finalizeJob("space-1", "aj_1");
+    await vi.advanceTimersByTimeAsync(1_250);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      uploadedBatches: 112,
+      expectedTotalBatches: 112,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("calls the deep-analysis create endpoint with the same auth header contract", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

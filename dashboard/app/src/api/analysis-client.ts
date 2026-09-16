@@ -19,7 +19,7 @@ import type {
 
 const ANALYSIS_API_BASE =
   import.meta.env.VITE_ANALYSIS_API_BASE || "/your-memory/analysis-api";
-const MAX_BATCH_UPLOAD_RATE_LIMIT_RETRIES = 20;
+const MAX_MINUTE_RATE_LIMIT_RETRIES = 20;
 const RATE_LIMIT_RETRY_PADDING_MS = 250;
 
 export class AnalysisApiError extends Error {
@@ -96,7 +96,7 @@ async function requestResponse(
   return response;
 }
 
-function getBatchUploadRetryDelayMs(error: unknown): number | null {
+function getMinuteRateLimitRetryDelayMs(error: unknown): number | null {
   if (
     !(error instanceof AnalysisApiError) ||
     error.status !== 429 ||
@@ -119,15 +119,40 @@ async function wait(ms: number): Promise<void> {
   await new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
+async function withMinuteRateLimitRetry<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  let rateLimitRetries = 0;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      const retryDelayMs = getMinuteRateLimitRetryDelayMs(error);
+      if (
+        retryDelayMs === null ||
+        rateLimitRetries >= MAX_MINUTE_RATE_LIMIT_RETRIES
+      ) {
+        throw error;
+      }
+
+      rateLimitRetries += 1;
+      await wait(retryDelayMs);
+    }
+  }
+}
+
 export const analysisApi = {
-  createJob(
+  async createJob(
     spaceId: string,
     input: CreateAnalysisJobRequest,
   ): Promise<CreateAnalysisJobResponse> {
-    return request(spaceId, "/v1/analysis-jobs", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
+    return withMinuteRateLimitRetry(() =>
+      request(spaceId, "/v1/analysis-jobs", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    );
   },
 
   async uploadBatch(
@@ -136,47 +161,36 @@ export const analysisApi = {
     batchIndex: number,
     input: UploadBatchRequest,
   ): Promise<UploadBatchResponse> {
-    let rateLimitRetries = 0;
-
-    while (true) {
-      try {
-        return await request(
-          spaceId,
-          `/v1/analysis-jobs/${jobId}/batches/${batchIndex}`,
-          {
-            method: "PUT",
-            body: JSON.stringify(input),
-          },
-        );
-      } catch (error) {
-        const retryDelayMs = getBatchUploadRetryDelayMs(error);
-        if (
-          retryDelayMs === null ||
-          rateLimitRetries >= MAX_BATCH_UPLOAD_RATE_LIMIT_RETRIES
-        ) {
-          throw error;
-        }
-
-        rateLimitRetries += 1;
-        await wait(retryDelayMs);
-      }
-    }
+    return withMinuteRateLimitRetry(() =>
+      request(
+        spaceId,
+        `/v1/analysis-jobs/${jobId}/batches/${batchIndex}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(input),
+        },
+      ),
+    );
   },
 
-  finalizeJob(
+  async finalizeJob(
     spaceId: string,
     jobId: string,
   ): Promise<FinalizeAnalysisJobResponse> {
-    return request(spaceId, `/v1/analysis-jobs/${jobId}/finalize`, {
-      method: "POST",
-    });
+    return withMinuteRateLimitRetry(() =>
+      request(spaceId, `/v1/analysis-jobs/${jobId}/finalize`, {
+        method: "POST",
+      }),
+    );
   },
 
-  getSnapshot(
+  async getSnapshot(
     spaceId: string,
     jobId: string,
   ): Promise<AnalysisJobSnapshotResponse> {
-    return request(spaceId, `/v1/analysis-jobs/${jobId}`);
+    return withMinuteRateLimitRetry(() =>
+      request(spaceId, `/v1/analysis-jobs/${jobId}`),
+    );
   },
 
   getUpdates(
