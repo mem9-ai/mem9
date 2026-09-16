@@ -31,6 +31,7 @@ interface CachedAnalysisResultRecord {
   jobId: string;
   updatedAt: string;
   taxonomyVersion: string;
+  sourceManaged?: boolean;
   snapshot: AnalysisJobSnapshotResponse | null;
 }
 
@@ -57,6 +58,7 @@ export interface CachedAnalysisResultEntry {
   jobId: string;
   updatedAt: string;
   taxonomyVersion: string;
+  sourceManaged?: boolean;
   snapshot: AnalysisJobSnapshotResponse | null;
 }
 
@@ -366,6 +368,7 @@ export async function readCachedAnalysisResult(
       jobId: record.jobId,
       updatedAt: record.updatedAt,
       taxonomyVersion: record.taxonomyVersion ?? record.snapshot?.taxonomyVersion ?? "v3",
+      sourceManaged: record.sourceManaged,
       snapshot: record.snapshot,
     };
   }
@@ -380,6 +383,7 @@ export async function readCachedAnalysisResult(
     jobId: record.jobId,
     updatedAt: record.updatedAt,
     taxonomyVersion: record.taxonomyVersion ?? record.snapshot?.taxonomyVersion ?? "v3",
+    sourceManaged: record.sourceManaged,
     snapshot: record.snapshot,
   };
 }
@@ -397,6 +401,7 @@ export async function writeCachedAnalysisResult(
     jobId: entry.jobId,
     updatedAt: entry.updatedAt,
     taxonomyVersion: entry.taxonomyVersion,
+    sourceManaged: entry.sourceManaged,
     snapshot: entry.snapshot,
   };
 

@@ -11,6 +11,7 @@ export interface AnalysisCacheEntry {
   jobId: string;
   updatedAt: string;
   taxonomyVersion: string;
+  sourceManaged?: boolean;
   snapshot: AnalysisJobSnapshotResponse | null;
 }
 

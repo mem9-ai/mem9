@@ -265,10 +265,14 @@ describe("analysis helpers", () => {
       jobId: "aj_cached",
       updatedAt: "2026-03-03T00:00:00Z",
       taxonomyVersion: DEFAULT_TAXONOMY_VERSION,
+      sourceManaged: true,
       snapshot: null,
     });
 
-    expect((await readAnalysisCache("space-1", "30d"))?.jobId).toBe("aj_cached");
+    expect(await readAnalysisCache("space-1", "30d")).toMatchObject({
+      jobId: "aj_cached",
+      sourceManaged: true,
+    });
     expect(await readAnalysisCache("space-1", "7d")).toBeNull();
   });
 
