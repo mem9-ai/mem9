@@ -7,6 +7,7 @@ import {
   isAnalysisCacheFresh,
   resolveAnalysisCards,
   shouldRestartIncompleteCachedSnapshot,
+  shouldResumeSourceManagedSnapshot,
   shouldStopPollingSnapshot,
   shouldTreatPollAsStalled,
   shouldUseCachedAnalysisMatches,
@@ -230,6 +231,33 @@ describe("shouldRestartIncompleteCachedSnapshot", () => {
           batchSummaries: createBatchSummaries("RUNNING"),
         }),
       ),
+    ).toBe(false);
+  });
+});
+
+describe("shouldResumeSourceManagedSnapshot", () => {
+  const uploadingSnapshot = createSnapshot({
+    status: "UPLOADING",
+    expectedTotalBatches: 112,
+    progress: {
+      expectedTotalBatches: 112,
+      uploadedBatches: 68,
+      completedBatches: 40,
+      failedBatches: 0,
+      processedMemories: 4_000,
+      resultVersion: 40,
+    },
+  });
+
+  it("resumes a cached source-backed upload after a page reload", () => {
+    expect(
+      shouldResumeSourceManagedSnapshot(true, uploadingSnapshot),
+    ).toBe(true);
+  });
+
+  it("does not resume legacy client-managed incomplete uploads", () => {
+    expect(
+      shouldResumeSourceManagedSnapshot(undefined, uploadingSnapshot),
     ).toBe(false);
   });
 });
