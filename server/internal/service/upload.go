@@ -673,7 +673,7 @@ func parseSessionFile(data []byte) (SessionFile, error) {
 			// Skip lines that aren't valid JSON (metadata, etc.)
 			continue
 		}
-		if simple.Role != "" && simple.Content != "" {
+		if simple.Role != "" && (simple.Content != "" || len(simple.Media) > 0) {
 			messages = append(messages, simple)
 			continue
 		}
@@ -712,46 +712,85 @@ func parseOpenClawLine(line []byte) *IngestMessage {
 	}
 	role := entry.Message.Role
 
-	content := flattenContentBlocks(entry.Message.Content)
-	if content == "" {
+	content, media := flattenContentBlocks(entry.Message.Content)
+	if content == "" && len(media) == 0 {
 		return nil
 	}
-	return &IngestMessage{Role: role, Content: content}
+	return &IngestMessage{Role: role, Content: content, Media: media}
 }
 
-// flattenContentBlocks converts a content field to a plain string.
+// contentBlockURL is the nested URL wrapper used by media content blocks.
+type contentBlockURL struct {
+	URL string `json:"url"`
+}
+
+// flattenContentBlocks converts a content field to a plain string and collects
+// the non-text inputs the block form carries.
 // Handles both string content and array-of-blocks content
 // (e.g. [{"type":"text","text":"..."},{"type":"thinking","thinking":"..."}]).
-func flattenContentBlocks(raw json.RawMessage) string {
+// Image and video blocks are returned as media parts rather than discarded, so
+// they can still reach models that accept those input modalities.
+func flattenContentBlocks(raw json.RawMessage) (string, []llm.MediaPart) {
 	if len(raw) == 0 {
-		return ""
+		return "", nil
 	}
 
 	// Try plain string first.
 	var s string
 	if json.Unmarshal(raw, &s) == nil {
-		return s
+		return s, nil
 	}
 
 	// Try array of content blocks.
 	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type     string           `json:"type"`
+		Text     string           `json:"text"`
+		URL      string           `json:"url"`
+		ImageURL *contentBlockURL `json:"image_url"`
+		VideoURL *contentBlockURL `json:"video_url"`
+		Source   *contentBlockURL `json:"source"`
 	}
 	if json.Unmarshal(raw, &blocks) != nil {
-		return ""
+		return "", nil
 	}
 
 	var sb strings.Builder
+	var media []llm.MediaPart
 	for _, b := range blocks {
-		if b.Type == "text" && b.Text != "" {
+		switch b.Type {
+		case "text":
+			if b.Text == "" {
+				continue
+			}
 			if sb.Len() > 0 {
 				sb.WriteString("\n\n")
 			}
 			sb.WriteString(b.Text)
+		case "image", "image_url":
+			if url := firstBlockURL(b.URL, b.ImageURL, b.Source); url != "" {
+				media = append(media, llm.MediaPart{Kind: llm.MediaKindImage, URL: url})
+			}
+		case "video", "video_url":
+			if url := firstBlockURL(b.URL, b.VideoURL, b.Source); url != "" {
+				media = append(media, llm.MediaPart{Kind: llm.MediaKindVideo, URL: url})
+			}
 		}
 	}
-	return sb.String()
+	return sb.String(), media
+}
+
+// firstBlockURL returns the first non-empty URL among a block's direct url
+// field and its nested URL wrappers.
+func firstBlockURL(direct string, refs ...*contentBlockURL) string {
+	if direct != "" {
+		return direct
+	}
+	for _, ref := range refs {
+		if ref != nil && ref.URL != "" {
+			return ref.URL
+		}
+	}
+	return ""
 }
 
 func chunkMessages(msgs []IngestMessage, size int) [][]IngestMessage {

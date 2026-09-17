@@ -511,3 +511,253 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
+
+// mediaBlock mirrors the wire shape of a single content block so tests can
+// assert the raw JSON rather than the decoded form.
+type mediaBlock struct {
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	ImageURL *struct {
+		URL string `json:"url"`
+	} `json:"image_url"`
+	VideoURL *struct {
+		URL string `json:"url"`
+	} `json:"video_url"`
+}
+
+func userContentBlocks(t *testing.T, rawBody []byte) []mediaBlock {
+	t.Helper()
+	var wire struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rawBody, &wire); err != nil {
+		t.Fatalf("decode raw body: %v", err)
+	}
+	if len(wire.Messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(wire.Messages))
+	}
+	if wire.Messages[1].Role != "user" {
+		t.Fatalf("messages[1].role = %q, want user", wire.Messages[1].Role)
+	}
+	var blocks []mediaBlock
+	if err := json.Unmarshal(wire.Messages[1].Content, &blocks); err != nil {
+		t.Fatalf("user content is not an array of blocks: %v\nraw: %s", err, string(wire.Messages[1].Content))
+	}
+	return blocks
+}
+
+func userContentString(t *testing.T, rawBody []byte) string {
+	t.Helper()
+	var wire struct {
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rawBody, &wire); err != nil {
+		t.Fatalf("decode raw body: %v", err)
+	}
+	if len(wire.Messages) != 2 {
+		t.Fatalf("messages len = %d, want 2", len(wire.Messages))
+	}
+	var text string
+	if err := json.Unmarshal(wire.Messages[1].Content, &text); err != nil {
+		t.Fatalf("user content is not a plain string: %v\nraw: %s", err, string(wire.Messages[1].Content))
+	}
+	return text
+}
+
+func TestSupportsInputModality(t *testing.T) {
+	cases := []struct {
+		model string
+		kind  MediaKind
+		want  bool
+	}{
+		{model: "MiniMax-M3", kind: MediaKindImage, want: true},
+		{model: "MiniMax-M3", kind: MediaKindVideo, want: true},
+		{model: "minimax-m3", kind: MediaKindImage, want: true},
+		{model: " MiniMax-M3 ", kind: MediaKindVideo, want: true},
+		{model: "MiniMax-M2.7", kind: MediaKindImage, want: false},
+		{model: "MiniMax-M2.7", kind: MediaKindVideo, want: false},
+		{model: "gpt-4o-mini", kind: MediaKindImage, want: false},
+	}
+	for _, tc := range cases {
+		if got := supportsInputModality(tc.model, tc.kind); got != tc.want {
+			t.Fatalf("supportsInputModality(%q, %q) = %v, want %v", tc.model, tc.kind, got, tc.want)
+		}
+	}
+}
+
+func TestCompleteJSONWithMedia(t *testing.T) {
+	imagePart := MediaPart{Kind: MediaKindImage, URL: "https://example.com/frame.png"}
+	videoPart := MediaPart{Kind: MediaKindVideo, URL: "mm_file://file-id"}
+
+	t.Run("model accepting image and video sends media blocks", func(t *testing.T) {
+		var rawBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			rawBody = b
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{}"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M3"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.CompleteJSONWithMedia(context.Background(), "system-prompt", "user-prompt",
+			[]MediaPart{imagePart, videoPart}, CallScope{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "{}" {
+			t.Fatalf("content = %q, want %q", got, "{}")
+		}
+
+		blocks := userContentBlocks(t, rawBody)
+		if len(blocks) != 3 {
+			t.Fatalf("user blocks len = %d, want 3", len(blocks))
+		}
+		if blocks[0].Type != "text" || blocks[0].Text != "user-prompt" {
+			t.Fatalf("blocks[0] = %#v, want text block with user-prompt", blocks[0])
+		}
+		if blocks[1].Type != "image_url" {
+			t.Fatalf("blocks[1].type = %q, want image_url", blocks[1].Type)
+		}
+		if blocks[1].ImageURL == nil || blocks[1].ImageURL.URL != imagePart.URL {
+			t.Fatalf("blocks[1].image_url = %#v, want url %q", blocks[1].ImageURL, imagePart.URL)
+		}
+		if blocks[2].Type != "video_url" {
+			t.Fatalf("blocks[2].type = %q, want video_url", blocks[2].Type)
+		}
+		if blocks[2].VideoURL == nil || blocks[2].VideoURL.URL != videoPart.URL {
+			t.Fatalf("blocks[2].video_url = %#v, want url %q", blocks[2].VideoURL, videoPart.URL)
+		}
+		// A media block must not carry an empty text field.
+		if strings.Contains(string(rawBody), `"text":""`) {
+			t.Fatalf("media blocks must omit empty text, body: %s", string(rawBody))
+		}
+	})
+
+	t.Run("text only model drops media and keeps string content", func(t *testing.T) {
+		var rawBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			rawBody = b
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{}"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M2.7"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		if _, err := client.CompleteJSONWithMedia(context.Background(), "system-prompt", "user-prompt",
+			[]MediaPart{imagePart, videoPart}, CallScope{}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if got := userContentString(t, rawBody); got != "user-prompt" {
+			t.Fatalf("user content = %q, want %q", got, "user-prompt")
+		}
+		if strings.Contains(string(rawBody), "image_url") || strings.Contains(string(rawBody), "video_url") {
+			t.Fatalf("text-only model must not receive media blocks, body: %s", string(rawBody))
+		}
+	})
+
+	t.Run("media without url is skipped", func(t *testing.T) {
+		var rawBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			rawBody = b
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{}"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M3"})
+		if _, err := client.CompleteJSONWithMedia(context.Background(), "system-prompt", "user-prompt",
+			[]MediaPart{{Kind: MediaKindImage}}, CallScope{}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := userContentString(t, rawBody); got != "user-prompt" {
+			t.Fatalf("user content = %q, want %q", got, "user-prompt")
+		}
+	})
+
+	t.Run("400 on media blocks retries without them", func(t *testing.T) {
+		var bodies [][]byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			bodies = append(bodies, b)
+			if len(bodies) == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"message":"unsupported content block"}}`))
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{}"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M3"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.CompleteJSONWithMedia(context.Background(), "system-prompt", "user-prompt",
+			[]MediaPart{imagePart}, CallScope{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "{}" {
+			t.Fatalf("content = %q, want %q", got, "{}")
+		}
+		if len(bodies) < 2 {
+			t.Fatalf("requests = %d, want at least 2", len(bodies))
+		}
+		// The first attempt carries the media block, the retry falls back to text.
+		if !strings.Contains(string(bodies[0]), "image_url") {
+			t.Fatalf("first request should carry media block, body: %s", string(bodies[0]))
+		}
+		if got := userContentString(t, bodies[len(bodies)-1]); got != "user-prompt" {
+			t.Fatalf("retry user content = %q, want %q", got, "user-prompt")
+		}
+	})
+
+	t.Run("nil media keeps the existing string content shape", func(t *testing.T) {
+		var rawBody []byte
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			rawBody = b
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{}"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M3"})
+		if _, err := client.CompleteJSONWithScope(context.Background(), "system-prompt", "user-prompt",
+			CallScope{}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := userContentString(t, rawBody); got != "user-prompt" {
+			t.Fatalf("user content = %q, want %q", got, "user-prompt")
+		}
+	})
+}

@@ -3276,6 +3276,30 @@
           "content": {
             "type": "string"
           },
+          "media": {
+            "type": "array",
+            "description": "Optional non-text inputs for this message. Parts are forwarded to the configured model only when it accepts that input modality; otherwise they are ignored.",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "url"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "video"
+                  ]
+                },
+                "url": {
+                  "type": "string",
+                  "description": "Reachable link or provider file reference."
+                }
+              }
+            }
+          },
           "seq": {
             "type": "integer",
             "nullable": true,
