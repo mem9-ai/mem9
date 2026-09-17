@@ -123,13 +123,18 @@ type responseFormat struct {
 	Type string `json:"type"`
 }
 
+type thinkingOptions struct {
+	Type string `json:"type"`
+}
+
 type chatRequest struct {
-	Model          string          `json:"model"`
-	Messages       []Message       `json:"messages"`
-	Temperature    float64         `json:"temperature"`
-	ResponseFormat *responseFormat `json:"response_format,omitempty"`
-	EnableThinking *bool           `json:"enable_thinking,omitempty"`
-	ReasoningSplit *bool           `json:"reasoning_split,omitempty"`
+	Model          string           `json:"model"`
+	Messages       []Message        `json:"messages"`
+	Temperature    float64          `json:"temperature"`
+	ResponseFormat *responseFormat  `json:"response_format,omitempty"`
+	EnableThinking *bool            `json:"enable_thinking,omitempty"`
+	Thinking       *thinkingOptions `json:"thinking,omitempty"`
+	ReasoningSplit *bool            `json:"reasoning_split,omitempty"`
 }
 
 type chatResponse struct {
@@ -216,6 +221,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 	}
 
 	enableThinking := disableThinkingOptions(c.model)
+	thinking := minimaxThinkingOptions(c.model)
 	reasoningSplit := supportsReasoningSplit(c.model)
 
 	result, err := c.doRequest(ctx, chatRequest{
@@ -224,13 +230,15 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 		Temperature:    c.temperature,
 		ResponseFormat: respFmt,
 		EnableThinking: enableThinking,
+		Thinking:       thinking,
 		ReasoningSplit: reasoningSplit,
 	}, scope)
 	if err != nil {
 		// If 400 and any provider-specific extras were applied (thinking flags or
 		// content-block cache markers), retry once with everything stripped.
 		var httpErr *HTTPStatusError
-		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (enableThinking != nil || reasoningSplit != nil || useExplicitCache) {
+		hasThinkingFlags := enableThinking != nil || thinking != nil || reasoningSplit != nil
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusBadRequest && (hasThinkingFlags || useExplicitCache) {
 			if useExplicitCache {
 				recordRetryMetric(scope, "cache_control_400_fallback")
 			} else {
@@ -239,7 +247,7 @@ func (c *Client) complete(ctx context.Context, system, user string, respFmt *res
 			slog.Warn("LLM rejected provider-specific parameters (HTTP 400), retrying without them",
 				"model", c.model,
 				"had_cache_control", useExplicitCache,
-				"had_thinking_flags", enableThinking != nil || reasoningSplit != nil)
+				"had_thinking_flags", hasThinkingFlags)
 			plainMessages := []Message{
 				{Role: "system", Content: plainContent(system)},
 				{Role: "user", Content: plainContent(user)},
@@ -374,6 +382,13 @@ func disableThinkingOptions(model string) *bool {
 	if strings.Contains(strings.ToLower(model), "qwen") {
 		enableThinking := false
 		return &enableThinking
+	}
+	return nil
+}
+
+func minimaxThinkingOptions(model string) *thinkingOptions {
+	if strings.HasPrefix(strings.ToLower(model), "minimax-m3") {
+		return &thinkingOptions{Type: "disabled"}
 	}
 	return nil
 }
