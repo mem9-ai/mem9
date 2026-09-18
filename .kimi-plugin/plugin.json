@@ -1,0 +1,43 @@
+{
+  "name": "mem9",
+  "version": "0.1.0",
+  "description": "Persistent cloud memory for Kimi Code. Recalls relevant memories on each prompt and uploads conversation turns to mem9.",
+  "author": "mem9-ai",
+  "homepage": "https://mem9.ai",
+  "license": "Apache-2.0",
+  "skills": "./.kimi-plugin/skills/",
+  "sessionStart": {
+    "skill": "using-mem9"
+  },
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "bash ./.kimi-plugin/hooks/session-start.sh",
+      "timeout": 30
+    },
+    {
+      "event": "UserPromptSubmit",
+      "command": "bash ./.kimi-plugin/hooks/user-prompt-submit.sh",
+      "timeout": 30
+    },
+    {
+      "event": "Stop",
+      "command": "bash ./.kimi-plugin/hooks/stop.sh",
+      "timeout": 60
+    },
+    {
+      "event": "PreCompact",
+      "command": "bash ./.kimi-plugin/hooks/pre-compact.sh",
+      "timeout": 60
+    },
+    {
+      "event": "SessionEnd",
+      "command": "bash ./.kimi-plugin/hooks/session-end.sh",
+      "timeout": 60
+    }
+  ],
+  "interface": {
+    "displayName": "mem9",
+    "shortDescription": "Persistent cloud memory for Kimi Code"
+  }
+}

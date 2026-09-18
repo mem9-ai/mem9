@@ -28,6 +28,7 @@ and a small Astro site.
 | `opencode-plugin/`   | OpenCode plugin (`@mem9/opencode`)                           |
 | `claude-plugin/`     | Claude Code plugin (hooks + skills)                          |
 | `codex-plugin/`      | Codex plugin (hooks + `$mem9:*` skills)                       |
+| `.kimi-plugin/`       | Kimi Code plugin (hooks + skills)                             |
 | `dsh-plugin/`   | DeepSeek Harness DSH/Cordis bundle                            |
 | `docs/design/`       | Architecture/proposal notes and design drafts                |
 | `site/`              | Astro static site — deployed to Netlify from `main` branch   |
@@ -56,6 +57,11 @@ pnpm --dir codex-plugin test
 pnpm --dir codex-plugin typecheck
 pnpm --dir dsh-plugin test
 pnpm --dir dsh-plugin typecheck
+
+# Kimi Code plugin verification
+for f in .kimi-plugin/hooks/*.sh; do bash -n "$f"; done
+for f in .kimi-plugin/hooks/lib/*.mjs; do node --check "$f"; done
+bash .kimi-plugin/hooks/smoke.test.sh
 
 # Site dev/build
 cd site && npm run dev
@@ -197,6 +203,7 @@ Use the local file when you work in these areas:
 - `opencode-plugin/AGENTS.md`
 - `claude-plugin/AGENTS.md`
 - `codex-plugin/AGENTS.md`
+- `.kimi-plugin/AGENTS.md`
 - `site/AGENTS.md`
 - `dashboard/app/AGENTS.md`
 - `e2e/AGENTS.md`
