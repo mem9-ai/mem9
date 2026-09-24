@@ -13,7 +13,7 @@ fingerprint() {
   (
     cd "$SERVER_DIR"
     find . \
-      \( -path './bin' -o -path './coverage' -o -path './.tmp' -o -path './uploads' \) -prune -o \
+      \( -type d \( -name bin -o -name coverage -o -name .tmp -o -name uploads -o -name .git -o -name node_modules \) \) -prune -o \
       \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' -o -name 'schema*.sql' \) -type f -print |
       LC_ALL=C sort |
       while IFS= read -r file; do
@@ -46,7 +46,9 @@ start_server() {
   echo "[dev] starting $BIN"
   (
     cd "$SERVER_DIR"
-    "$BIN"
+    # Keep server_pid attached to the actual server, not a shell that can leave
+    # its child orphaned and holding the port after a rebuild.
+    exec "$BIN"
   ) &
   server_pid="$!"
   echo "[dev] mnemo-server pid=$server_pid"

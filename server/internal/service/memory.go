@@ -390,6 +390,14 @@ func (s *MemoryService) keywordOnlySearch(ctx context.Context, filter domain.Mem
 }
 
 func (s *MemoryService) looseTokenKeywordSearch(ctx context.Context, filter domain.MemoryFilter, fetchLimit int) ([]domain.Memory, error) {
+	return looseTokenKeywordSearch(ctx, filter, fetchLimit, s.memories.KeywordSearch)
+}
+
+// A whole-question LIKE match is usually empty when FTS is disabled. Keep
+// lexical evidence available even when the independent vector branch has hits.
+func looseTokenKeywordSearch(ctx context.Context, filter domain.MemoryFilter, fetchLimit int,
+	search func(context.Context, string, domain.MemoryFilter, int) ([]domain.Memory, error),
+) ([]domain.Memory, error) {
 	tokens := looseSearchTokens(filter.Query)
 	if len(tokens) == 0 {
 		return nil, nil
@@ -400,7 +408,7 @@ func (s *MemoryService) looseTokenKeywordSearch(ctx context.Context, filter doma
 
 	byID := make(map[string]domain.Memory)
 	for _, token := range tokens {
-		results, err := s.memories.KeywordSearch(ctx, token, filter, fetchLimit)
+		results, err := search(ctx, token, filter, fetchLimit)
 		if err != nil {
 			return nil, fmt.Errorf("keyword token search: %w", err)
 		}
@@ -438,6 +446,11 @@ var looseSearchStopWords = map[string]struct{}{
 	"how": {}, "if": {}, "in": {}, "is": {}, "not": {}, "of": {}, "on": {}, "or": {},
 	"the": {}, "to": {}, "was": {}, "were": {}, "what": {}, "when": {}, "where": {},
 	"whether": {}, "which": {}, "who": {}, "whom": {}, "whose": {}, "why": {}, "with": {},
+	// Spanish function words must not consume the bounded content-token budget.
+	"qué": {}, "que": {}, "cuál": {}, "cuáles": {}, "cómo": {}, "cuándo": {}, "dónde": {},
+	"el": {}, "la": {}, "los": {}, "las": {}, "un": {}, "una": {}, "unos": {}, "unas": {},
+	"de": {}, "del": {}, "al": {}, "en": {}, "con": {}, "por": {}, "para": {},
+	"su": {}, "sus": {}, "se": {}, "es": {}, "son": {}, "y": {}, "o": {},
 }
 
 func looseSearchTokens(query string) []string {
@@ -582,7 +595,7 @@ func (s *MemoryService) hybridSearch(ctx context.Context, filter domain.MemoryFi
 		}
 	}
 
-	if len(vecResults) == 0 && len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+	if len(kwResults) == 0 && (len(vecResults) == 0 || !s.memories.FTSAvailable()) && shouldRunLooseKeywordFallback(filter.Query) {
 		fallbackResults, fallbackErr := s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
 		if fallbackErr != nil {
 			return nil, 0, fallbackErr
@@ -630,7 +643,7 @@ func (s *MemoryService) hybridCandidates(ctx context.Context, filter domain.Memo
 		}
 	}
 
-	if len(vecResults) == 0 && len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+	if len(kwResults) == 0 && (len(vecResults) == 0 || !s.memories.FTSAvailable()) && shouldRunLooseKeywordFallback(filter.Query) {
 		kwResults, err = s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
 		if err != nil {
 			return nil, err
@@ -686,7 +699,7 @@ func (s *MemoryService) autoHybridSearch(ctx context.Context, filter domain.Memo
 		}
 	}
 
-	if len(vecResults) == 0 && len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+	if len(kwResults) == 0 && (len(vecResults) == 0 || !s.memories.FTSAvailable()) && shouldRunLooseKeywordFallback(filter.Query) {
 		fallbackResults, fallbackErr := s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
 		if fallbackErr != nil {
 			return nil, 0, fallbackErr
@@ -759,7 +772,7 @@ func (s *MemoryService) autoHybridCandidates(
 	}
 	keywordDuration := time.Since(keywordStart)
 
-	if len(vecResults) == 0 && len(kwResults) == 0 && shouldRunLooseKeywordFallback(filter.Query) {
+	if len(kwResults) == 0 && (len(vecResults) == 0 || !s.memories.FTSAvailable()) && shouldRunLooseKeywordFallback(filter.Query) {
 		kwResults, err = s.looseTokenKeywordSearch(ctx, filter, fetchLimit)
 		if err != nil {
 			return nil, err

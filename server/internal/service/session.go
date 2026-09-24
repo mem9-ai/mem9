@@ -339,6 +339,12 @@ func (s *SessionService) keywordCandidates(ctx context.Context, f domain.MemoryF
 	if err != nil {
 		return nil, fmt.Errorf("session keyword search: %w", err)
 	}
+	if len(results) == 0 && shouldRunLooseKeywordFallback(f.Query) {
+		results, err = looseTokenKeywordSearch(ctx, f, fetchLimit, s.sessions.KeywordSearch)
+		if err != nil {
+			return nil, err
+		}
+	}
 	adjacentResults, err := s.adjacentTurnResults(ctx, sourcePool, results, nil, f.AppID, opts)
 	if err != nil {
 		return nil, err
@@ -357,6 +363,9 @@ func (s *SessionService) ftsOrKeyword(ctx context.Context, f domain.MemoryFilter
 	r, err := s.sessions.KeywordSearch(ctx, f.Query, f, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("session keyword search: %w", err)
+	}
+	if len(r) == 0 && shouldRunLooseKeywordFallback(f.Query) {
+		return looseTokenKeywordSearch(ctx, f, fetchLimit, s.sessions.KeywordSearch)
 	}
 	return r, nil
 }
