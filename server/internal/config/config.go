@@ -24,7 +24,7 @@ type Config struct {
 
 	// Auto-embedding: TiDB Serverless generates embeddings via EMBED_TEXT().
 	// When set, takes priority over client-side embedding.
-	// Example: "tidbcloud_free/amazon/titan-embed-text-v2"
+	// Example: "tidbcloud_free/cohere/embed-multilingual-v3"
 	EmbedAutoModel string
 	EmbedAutoDims  int
 
@@ -281,6 +281,11 @@ func Load() (*Config, error) {
 		// ok
 	default:
 		return nil, fmt.Errorf("unsupported MNEMO_DB_BACKEND %q; valid values are \"tidb\", \"postgres\", and \"db9\"", cfg.DBBackend)
+	}
+
+	if (cfg.EmbedAutoModel == "tidbcloud_free/cohere/embed-multilingual-v3" ||
+		cfg.EmbedAutoModel == "tidbcloud_free/cohere/embed-english-v3") && cfg.EmbedAutoDims != 1024 {
+		return nil, fmt.Errorf("Cohere Embed v3 requires MNEMO_EMBED_AUTO_DIMS=1024")
 	}
 
 	if cfg.AutoSpendLimitIncrement <= 0 {

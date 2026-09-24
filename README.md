@@ -227,6 +227,23 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 
 #### Embedding And Ingest
 
+For built-in multilingual embeddings on TiDB Cloud Starter (AWS), configure:
+
+```bash
+export MNEMO_EMBED_AUTO_MODEL=tidbcloud_free/cohere/embed-multilingual-v3
+export MNEMO_EMBED_AUTO_DIMS=1024
+```
+
+New memory and session tables use Cohere's `search_document` input type and
+`search_query` for searches through TiDB's `input_type@search` option. The model
+has a 512-token / 2,048-character input limit; overlong inputs return an error
+rather than silently truncating stored facts. Existing generated columns keep
+their original model; use fresh Spaces for model comparisons or explicitly
+migrate/re-embed existing tables. `VEC_EMBED_COSINE_DISTANCE` follows each column's
+stored model/options, so changing this setting does not re-embed old Spaces.
+See [TiDB Cohere Auto Embedding](https://docs.pingcap.com/ai/vector-search-auto-embedding-cohere/).
+
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MNEMO_EMBED_AUTO_MODEL` | No | — | TiDB/db9 `EMBED_TEXT()` model name. When set, it takes precedence over client-side embeddings |

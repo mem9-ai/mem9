@@ -1346,3 +1346,22 @@ func TestDigestAuthRoundTrip(t *testing.T) {
 		t.Errorf("response mismatch:\ngot:      %s\nexpected: %s", fields["response"], expectedResponse)
 	}
 }
+
+func TestStarterCohereMultilingualSchemaUsesDocumentAndQueryInputs(t *testing.T) {
+	const model = "tidbcloud_free/cohere/embed-multilingual-v3"
+	p := NewTiDBCloudProvisioner("http://localhost", "pool", model, 1024, 1536, false)
+	recorder := &schemaInitConnector{}
+	db := sql.OpenDB(recorder)
+	defer db.Close()
+	if err := p.InitSchema(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	ddl := strings.Join(recorder.execs, "\n")
+	want := `embedding VECTOR(1024) GENERATED ALWAYS AS (EMBED_TEXT('tidbcloud_free/cohere/embed-multilingual-v3', content, '{"input_type": "search_document", "input_type@search": "search_query"}')) STORED`
+	if strings.Count(ddl, want) != 2 {
+		t.Fatalf("memory and session columns must both use Cohere document/query options: %s", ddl)
+	}
+	if strings.Contains(ddl, `"dimensions"`) {
+		t.Fatal("fixed-dimension Cohere v3 received unsupported dimensions option")
+	}
+}

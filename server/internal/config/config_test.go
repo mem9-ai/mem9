@@ -771,3 +771,17 @@ func TestLoad_AutoSpendLimitValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestCohereV3RequiresFixedEmbeddingDimensions(t *testing.T) {
+	t.Setenv("MNEMO_DSN", "test-dsn")
+	t.Setenv("MNEMO_EMBED_AUTO_MODEL", "tidbcloud_free/cohere/embed-multilingual-v3")
+	t.Setenv("MNEMO_EMBED_AUTO_DIMS", "1024")
+	cfg, err := Load()
+	if err != nil || cfg.EmbedAutoDims != 1024 {
+		t.Fatalf("valid Cohere config: %v", err)
+	}
+	t.Setenv("MNEMO_EMBED_AUTO_DIMS", "512")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "requires MNEMO_EMBED_AUTO_DIMS=1024") {
+		t.Fatalf("wrong dimensions accepted: %v", err)
+	}
+}

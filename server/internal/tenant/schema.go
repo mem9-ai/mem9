@@ -96,14 +96,25 @@ DROP TRIGGER IF EXISTS trg_memories_updated ON memories;
 CREATE TRIGGER trg_memories_updated BEFORE UPDATE ON memories FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 `
 
+// tiDBAutoEmbeddingOptions defines document and query encodings together.
+// TiDB applies @search options automatically in VEC_EMBED_COSINE_DISTANCE.
+func tiDBAutoEmbeddingOptions(model string, dims int) string {
+	switch model {
+	case "tidbcloud_free/cohere/embed-multilingual-v3", "tidbcloud_free/cohere/embed-english-v3":
+		return `{"input_type": "search_document", "input_type@search": "search_query"}`
+	default:
+		return fmt.Sprintf(`{"dimensions": %d}`, dims)
+	}
+}
+
 // BuildMemorySchema builds the TiDB memory schema with optional auto-embedding.
 func BuildMemorySchema(autoModel string, autoDims int, clientDims int) string {
 	var embeddingCol string
 	if autoModel != "" {
 		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
 		embeddingCol = fmt.Sprintf(
-			`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '{"dimensions": %d}')) STORED,`,
-			autoDims, sanitizedModel, autoDims,
+			`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '%s')) STORED,`,
+			autoDims, sanitizedModel, tiDBAutoEmbeddingOptions(autoModel, autoDims),
 		)
 	} else {
 		dims := clientDims
@@ -191,8 +202,8 @@ func BuildSessionsSchema(autoModel string, autoDims int, clientDims int) string 
 	if autoModel != "" {
 		sanitizedModel := strings.ReplaceAll(autoModel, "'", "''")
 		embeddingCol = fmt.Sprintf(
-			`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '{"dimensions": %d}')) STORED,`,
-			autoDims, sanitizedModel, autoDims,
+			`embedding VECTOR(%d) GENERATED ALWAYS AS (EMBED_TEXT('%s', content, '%s')) STORED,`,
+			autoDims, sanitizedModel, tiDBAutoEmbeddingOptions(autoModel, autoDims),
 		)
 	} else {
 		dims := clientDims

@@ -128,17 +128,19 @@ CREATE TABLE IF NOT EXISTS memories (
 -- Vector index requires TiFlash. May fail on plain MySQL; safe to ignore.
 -- ALTER TABLE memories ADD VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding)));
 
--- Auto-embedding variant (TiDB Cloud Serverless only):
+-- Auto-embedding variant (TiDB Cloud Starter on AWS):
 -- Replace the embedding column above with a generated column:
 --
 --   embedding VECTOR(1024) GENERATED ALWAYS AS (
---     EMBED_TEXT("tidbcloud_free/amazon/titan-embed-text-v2", content)
+--     EMBED_TEXT("tidbcloud_free/cohere/embed-multilingual-v3", content,
+--       '{"input_type":"search_document","input_type@search":"search_query"}')
 --   ) STORED,
 --
 -- Then add vector index:
 --   VECTOR INDEX idx_cosine ((VEC_COSINE_DISTANCE(embedding)))
 --
--- Set MNEMO_EMBED_AUTO_MODEL=tidbcloud_free/amazon/titan-embed-text-v2 to enable.
+-- Set MNEMO_EMBED_AUTO_MODEL=tidbcloud_free/cohere/embed-multilingual-v3
+-- and MNEMO_EMBED_AUTO_DIMS=1024 to enable for newly created tenant tables.
 
 
 -- Migration: tombstone -> state (4-step plan).
