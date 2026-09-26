@@ -964,7 +964,13 @@ func sortByScore(mems map[string]domain.Memory, scores map[string]float64) []dom
 		result = append(result, mems[id])
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return scores[result[i].ID] > scores[result[j].ID]
+		left, right := scores[result[i].ID], scores[result[j].ID]
+		if left != right {
+			return left > right
+		}
+		// Map iteration must not choose different second-hop seeds or pages
+		// when RRF assigns the same score to multiple memories.
+		return result[i].ID < result[j].ID
 	})
 	return result
 }

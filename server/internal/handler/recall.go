@@ -283,7 +283,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	mixed, cutoffReason, stats := selectMixedRecallCandidates(profile, budget-len(pinned), append(insightCandidates, sessionCandidates...), seen)
 	selectionDuration := time.Since(selectionStart)
 
-	memories := append(pinned, mixed...)
+	memories := service.FinalizeSearchResults(append(pinned, mixed...), filter.Query)
 	logger := s.logger
 	if logger == nil {
 		logger = slog.Default()
@@ -654,6 +654,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		stats.mode = "top"
 	}
 	selectionDuration := time.Since(selectionStart)
+	memories = service.FinalizeSearchResults(memories, filter.Query)
 
 	pinnedSelected := 0
 	if filter.MemoryType == string(domain.TypePinned) {
@@ -784,6 +785,7 @@ func keywordContentEvidenceBonus(profile recallQueryProfile, candidate service.R
 }
 
 func looseRecallQueryTokens(query string) []string {
+	spanish := isSpanishRecallQuestion(query)
 	var tokens []string
 	seen := make(map[string]struct{})
 	var current strings.Builder
@@ -793,7 +795,7 @@ func looseRecallQueryTokens(query string) []string {
 		}
 		token := strings.ToLower(current.String())
 		current.Reset()
-		if len(token) < 2 || isRecallCoverageStopword(token) || isLooseRecallQueryStopword(token) {
+		if len(token) < 2 || isRecallCoverageStopword(token) || isLooseRecallQueryStopword(token) || (spanish && isSpanishRecallQueryStopword(token)) {
 			return
 		}
 		if _, exists := seen[token]; exists {
@@ -818,9 +820,84 @@ func isLooseRecallQueryStopword(token string) bool {
 	switch token {
 	case "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "if", "in", "is", "me", "not", "of", "on", "or", "say", "says", "said", "tell", "the", "to", "was", "were", "whether", "who", "whom", "whose", "why":
 		return true
+
 	default:
 		return false
 	}
+}
+
+// Keep words such as English "son" meaningful outside Spanish questions.
+func isSpanishRecallQuestion(query string) bool {
+	lower := strings.ToLower(strings.TrimSpace(query))
+	return strings.HasPrefix(lower, "¿") || hasAnyPrefix(lower,
+		"qué ", "que ", "cuál ", "cual ", "cuáles ", "cuales ", "cómo ", "como ",
+		"cuándo ", "cuando ", "dónde ", "donde ", "adónde ", "adonde ",
+		"quién ", "quien ", "quiénes ", "quienes ", "cuánto ", "cuanto ", "cuánta ", "cuanta ",
+		"cuántos ", "cuantos ", "cuántas ", "cuantas ", "por qué ", "por que ", "en qué ", "en que ", "a qué ", "a que ")
+}
+
+func isSpanishRecallQueryStopword(token string) bool {
+	switch token {
+	case "qué", "que", "cuál", "cual", "cuáles", "cuales", "cómo", "como", "cuándo", "cuando", "dónde", "donde", "quién", "quien", "quiénes", "quienes", "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "al", "en", "con", "por", "para", "su", "sus", "se", "es", "son", "y", "o":
+		return true
+	default:
+		return false
+	}
+}
+
+// recallCoverageWordTokens keeps accented Latin words intact. Go regexp word
+// boundaries are ASCII-only, so using them splits e.g. devolución into devoluci.
+// Keep the existing four-letter minimum and the separate Han coverage path.
+func recallCoverageWordTokens(content string) []string {
+	ascii := true
+	for i := 0; i < len(content); i++ {
+		if content[i] >= 0x80 {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		return recallCoverageEnglishTokenRe.FindAllString(content, -1)
+	}
+	var tokens []string
+	start := -1
+	length := 0
+	valid := false
+	flush := func(end int) {
+		// The original trailing word boundary excludes punctuation suffixes.
+		for start >= 0 && end > start && (content[end-1] == '-' || content[end-1] == '\'') {
+			end--
+			length--
+		}
+		if start >= 0 && valid && length >= 4 {
+			tokens = append(tokens, content[start:end])
+		}
+		start, length, valid = -1, 0, false
+	}
+	for i, r := range content {
+		if unicode.In(r, unicode.Latin) || (r >= '0' && r <= '9') || unicode.IsMark(r) || r == '_' || r == '\'' || r == '-' {
+			if (r == '-' || r == '\'') && start >= 0 && !valid {
+				flush(i)
+				continue
+			}
+			if start < 0 && (r == '\'' || r == '-') {
+				continue
+			}
+			if start < 0 {
+				start, valid = i, unicode.In(r, unicode.Latin) && unicode.IsLower(r)
+			}
+			if !((unicode.In(r, unicode.Latin) && unicode.IsLower(r)) || (r >= '0' && r <= '9') || unicode.IsMark(r) || r == '\'' || r == '-') {
+				valid = false
+			}
+			if !unicode.IsMark(r) {
+				length++
+			}
+		} else {
+			flush(i)
+		}
+	}
+	flush(len(content))
+	return tokens
 }
 
 func recallExactTokenMatchCount(memory domain.Memory, queryTokens []string) int {
@@ -829,7 +906,7 @@ func recallExactTokenMatchCount(memory domain.Memory, queryTokens []string) int 
 	}
 	content, _, _ := recallContentForScoring(memory)
 	contentTokens := make(map[string]struct{})
-	for _, match := range recallCoverageEnglishTokenRe.FindAllString(strings.ToLower(content), -1) {
+	for _, match := range recallCoverageWordTokens(strings.ToLower(content)) {
 		contentTokens[match] = struct{}{}
 	}
 	for _, match := range recallCoverageCJKTokenRe.FindAllString(content, -1) {
@@ -1382,22 +1459,32 @@ func sourcePrior(shape recallQueryShape, pool service.RecallSourcePool) float64 
 
 func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float64 {
 	content, temporalDisplay, temporalKind := recallContentForScoring(memory)
+	fullContent := content
+	content = stripRecallEvidenceHeaders(content)
+	evidenceMemory := memory
+	evidenceMemory.Content = content
 	shape := profile.shape
 	lower := strings.ToLower(content)
 	spokenBody, hasCaption := recallSpokenBodyForScoring(content)
 	questionLike := strings.ContainsAny(spokenBody, "?？")
-	speaker := extractRecallSpeaker(content)
+	speaker := extractRecallSpeaker(fullContent)
 	selfFactCues := recallSelfFactCueCount(lower)
 	unitCount := recallAnswerUnitCount(content)
 	entitySignals := recallEntitySignalCount(content)
 	namedCJKAnswer := hasStandaloneCJKNamedAnswer(content)
-	focusMatches := recallFocusMatchCount(memory, profile.focusTokens)
+	focusMatches := recallFocusMatchCount(evidenceMemory, profile.focusTokens)
 	durationAnswer := containsRecallDurationAnswer(content)
 	durationRangeAnswer := containsRecallDurationRange(content)
 	frequencyAnswer := containsRecallFrequencyAnswer(content)
 
 	bonus := 0.0
-	if unitCount > 0 && unitCount <= 18 {
+	// Brief session turns include acknowledgements and follow-up questions.
+	// For a general query, brevity alone is not evidence of an answer. Keep
+	// the bonus for concrete duration/frequency answers, which share that shape.
+	structuredAnswer := (profile.durationQuery && (durationAnswer || durationRangeAnswer)) ||
+		(profile.frequencyQuery && frequencyAnswer)
+	if unitCount > 0 && unitCount <= 18 &&
+		(shape != recallQueryShapeGeneral || memory.MemoryType != domain.TypeSession || structuredAnswer) {
 		bonus += 0.05
 	}
 	if profile.targetSpeaker != "" {
@@ -1490,7 +1577,7 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 			bonus += 0.12
 		}
 	case recallQueryShapeTime:
-		bonus += timeAnswerEvidenceBonus(profile, content, temporalDisplay, temporalKind)
+		bonus += timeAnswerEvidenceBonus(profile, fullContent, temporalDisplay, temporalKind)
 	case recallQueryShapeLocation:
 		if containsRecallLocationCue(content) {
 			bonus += 0.20
@@ -1503,7 +1590,7 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 		}
 	case recallQueryShapeEnumeration:
 		queryTokens := extractRecallQueryTokens(profile.lower)
-		coverageTokens := extractRecallCoverageTokens(memory, queryTokens)
+		coverageTokens := extractRecallCoverageTokens(evidenceMemory, queryTokens)
 		if containsRecallEnumerationCue(lower, content) {
 			bonus += 0.12
 		}
@@ -1569,6 +1656,30 @@ func answerEvidenceBonus(profile recallQueryProfile, memory domain.Memory) float
 	return bonus
 }
 
+// stripRecallEvidenceHeaders excludes transport provenance from answer-content
+// signals. Keep the full content separately for speaker and temporal grounding.
+// Only known leading tags are removed: bracketed answer text is still evidence.
+func stripRecallEvidenceHeaders(content string) string {
+	body := strings.TrimSpace(content)
+	for strings.HasPrefix(body, "[") {
+		end := strings.IndexByte(body, ']')
+		if end < 0 || end > 160 {
+			break
+		}
+		key, _, ok := strings.Cut(body[1:end], ":")
+		if !ok {
+			break
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "session_timestamp", "session_id", "source_session_id", "speaker", "role":
+			body = strings.TrimSpace(body[end+1:])
+		default:
+			return body
+		}
+	}
+	return body
+}
+
 func containsRecallEnumerationCue(lower, content string) bool {
 	switch {
 	case containsRecallListCue(lower, content):
@@ -1588,7 +1699,7 @@ func extractRecallQueryTokens(lower string) map[string]struct{} {
 	}
 
 	tokens := make(map[string]struct{})
-	for _, match := range recallCoverageEnglishTokenRe.FindAllString(lower, -1) {
+	for _, match := range recallCoverageWordTokens(lower) {
 		addRecallCoverageToken(tokens, match, nil)
 	}
 	for _, match := range recallCoverageCJKTokenRe.FindAllString(lower, -1) {
@@ -1612,7 +1723,7 @@ func extractRecallCoverageTokens(memory domain.Memory, queryTokens map[string]st
 	}
 
 	lower := strings.ToLower(content)
-	for _, match := range recallCoverageEnglishTokenRe.FindAllString(lower, -1) {
+	for _, match := range recallCoverageWordTokens(lower) {
 		addRecallCoverageToken(tokens, match, queryTokens)
 	}
 	for _, match := range recallCoverageCJKTokenRe.FindAllString(content, -1) {
@@ -1845,7 +1956,7 @@ func buildRecallFocusTokens(profile recallQueryProfile) []string {
 		return nil
 	}
 	tokens := make(map[string]struct{})
-	for _, match := range recallCoverageEnglishTokenRe.FindAllString(profile.lower, -1) {
+	for _, match := range recallCoverageWordTokens(profile.lower) {
 		token := normalizeRecallCoverageToken(match)
 		if token == "" || isRecallFocusStopword(token) {
 			continue
@@ -2012,6 +2123,24 @@ func classifyRecallQueryShape(query string) recallQueryShape {
 	trimmed := strings.TrimSpace(query)
 	lower := strings.ToLower(trimmed)
 
+	// Inverted question marks are punctuation, not a general-query signal.
+	// Broad qué/cuál questions can ask for multi-event summaries. Do not grant
+	// the exact-answer prior solely from those interrogatives: it overwhelms
+	// retrieval relevance with entity/short-answer bonuses on unrelated turns.
+	spanish := strings.TrimSpace(strings.TrimLeft(lower, "¿¡"))
+	switch {
+	case hasAnyPrefix(spanish, "dónde ", "donde ", "adónde ", "adonde ", "en dónde ", "en donde ", "a dónde ", "a donde "):
+		return recallQueryShapeLocation
+	case hasAnyPrefix(spanish, "cuándo ", "cuando ", "en qué fecha ", "en que fecha ", "a qué hora ", "a que hora "):
+		return recallQueryShapeTime
+	case hasAnyPrefix(spanish, "quién ", "quien ", "quiénes ", "quienes "):
+		return recallQueryShapeEntity
+	case hasAnyPrefix(spanish, "cuánto tiempo ", "cuanto tiempo "):
+		return recallQueryShapeGeneral
+	case hasAnyPrefix(spanish, "cuánto ", "cuanto ", "cuánta ", "cuanta ", "cuántos ", "cuantos ", "cuántas ", "cuantas "):
+		return recallQueryShapeCount
+	}
+
 	switch {
 	case hasAnyPrefix(trimmed, "什么时候", "何时", "什么时间", "哪天", "哪年", "几月", "几号", "几点"):
 		return recallQueryShapeTime
@@ -2175,12 +2304,14 @@ func recallAnswerUnitCount(content string) int {
 				inASCIIWord = false
 			}
 			cjkRunes++
-		case r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)):
+		case (r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r))) || unicode.In(r, unicode.Latin):
 			flushCJK()
 			if !inASCIIWord {
 				units++
 				inASCIIWord = true
 			}
+		case inASCIIWord && r > unicode.MaxASCII && unicode.IsMark(r):
+			// A combining accent belongs to the preceding Latin word.
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
 			flushCJK()
 			inASCIIWord = false

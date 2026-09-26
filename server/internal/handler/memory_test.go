@@ -5679,3 +5679,125 @@ func TestListMemories_RejectsMalformedTimeParam(t *testing.T) {
 		t.Fatalf("status = %d, want 400 on non-RFC3339: %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestListMemories_ConfidenceRecallDecoratesSelectedSourceEvidence(t *testing.T) {
+	for _, pool := range []string{"", "insight", "session", "pinned"} {
+		t.Run("pool="+pool, func(t *testing.T) {
+			metadata := json.RawMessage(`{"source_seqs":[1,2,3],"source_turns":[{"seq":1,"content":"abc-1234 first profile detail"},{"seq":2,"content":"abc-1234 second profile detail"},{"seq":3,"content":"abc-1234 third profile detail"}],"preserved":"value"}`)
+			original := append(json.RawMessage(nil), metadata...)
+			memoryType := domain.TypeInsight
+			if pool == "session" {
+				memoryType = domain.TypeSession
+			} else if pool == "pinned" {
+				memoryType = domain.TypePinned
+			}
+			inputs := []domain.Memory{
+				{ID: "first", Content: "abc-1234 stored profile", MemoryType: memoryType, UpdatedAt: time.Now(), State: domain.StateActive},
+				{ID: "second", Content: "abc-1234 another profile", MemoryType: memoryType, UpdatedAt: time.Now().Add(-time.Minute), State: domain.StateActive},
+			}
+			run := func(withSource bool) (listResponse, map[string]int) {
+				var mu sync.Mutex
+				calls := map[string]int{}
+				search := func(kind string, filter domain.MemoryFilter, limit int) ([]domain.Memory, error) {
+					mu.Lock()
+					calls[fmt.Sprintf("%s:%s:%d", kind, filter.MemoryType, limit)]++
+					mu.Unlock()
+					if kind == "session" && memoryType != domain.TypeSession || kind == "memory" && filter.MemoryType != string(memoryType) {
+						return nil, nil
+					}
+					out := append([]domain.Memory(nil), inputs...)
+					if withSource {
+						for i := range out {
+							out[i].Metadata = metadata
+						}
+					}
+					return out, nil
+				}
+				memRepo := &testMemoryRepo{keywordSearchHook: func(_ context.Context, _ string, f domain.MemoryFilter, n int) ([]domain.Memory, error) {
+					return search("memory", f, n)
+				}}
+				sessRepo := &testSessionRepo{keywordSearchHook: func(_ context.Context, _ string, f domain.MemoryFilter, n int) ([]domain.Memory, error) {
+					return search("session", f, n)
+				}}
+				srv := newTestServer(memRepo, sessRepo)
+				rr := httptest.NewRecorder()
+				srv.listMemories(rr, makeRequest(t, http.MethodGet, "/memories?q=abc-1234&limit=1&memory_type="+pool, nil))
+				if rr.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+				}
+				var response listResponse
+				if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				return response, calls
+			}
+			plain, plainCalls := run(false)
+			decorated, decoratedCalls := run(true)
+			if len(plain.Memories) != 1 || len(decorated.Memories) != 1 {
+				t.Fatalf("selected counts changed: plain=%+v decorated=%+v", plain.Memories, decorated.Memories)
+			}
+			if !reflect.DeepEqual(plainCalls, decoratedCalls) {
+				t.Fatalf("repository calls/limits changed: plain=%v decorated=%v", plainCalls, decoratedCalls)
+			}
+			before, after := plain.Memories[0], decorated.Memories[0]
+			if before.ID != after.ID || !reflect.DeepEqual(before.Score, after.Score) || !reflect.DeepEqual(before.Confidence, after.Confidence) {
+				t.Fatalf("selected rank/scores changed: before=%+v after=%+v", before, after)
+			}
+			if memoryType == domain.TypeInsight {
+				if !strings.Contains(after.Content, "\n[source-turns]\nabc-1234 first profile detail\nabc-1234 second profile detail") || strings.Contains(after.Content, "third profile detail") {
+					t.Fatalf("source evidence not capped to two: %q", after.Content)
+				}
+				var got struct {
+					SourceSeqs []int  `json:"source_seqs"`
+					Preserved  string `json:"preserved"`
+				}
+				if err := json.Unmarshal(after.Metadata, &got); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(got.SourceSeqs, []int{1, 2}) || got.Preserved != "value" {
+					t.Fatalf("response metadata=%s", after.Metadata)
+				}
+			} else if after.Content != before.Content || !bytes.Equal(after.Metadata, metadata) {
+				t.Fatalf("non-insight changed: %+v", after)
+			}
+			if !bytes.Equal(metadata, original) {
+				t.Fatalf("stored metadata mutated: before=%s after=%s", original, metadata)
+			}
+		})
+	}
+}
+
+func TestListMemories_ConfidenceRecallSkipsInvalidSourceMetadata(t *testing.T) {
+	for name, metadata := range map[string]json.RawMessage{
+		"malformed_source_turns": json.RawMessage(`{"source_seqs":[1],"source_turns":"invalid-shape","preserved":"value"}`),
+		"oversized":              json.RawMessage(`{"source_seqs":[1],"source_turns":[{"seq":1,"content":"abc-1234 ` + strings.Repeat("x", 70<<10) + `"}]}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			memory := domain.Memory{ID: "insight", Content: "abc-1234 profile", MemoryType: domain.TypeInsight, UpdatedAt: time.Now(), State: domain.StateActive, Metadata: metadata}
+			memRepo := &testMemoryRepo{keywordSearchResults: []domain.Memory{memory}}
+			srv := newTestServer(memRepo, &testSessionRepo{})
+			rr := httptest.NewRecorder()
+			srv.listMemories(rr, makeRequest(t, http.MethodGet, "/memories?q=abc-1234&memory_type=insight&limit=1", nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			var response listResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Memories) != 1 || response.Memories[0].Content != memory.Content {
+				t.Fatalf("selected result changed: %+v", response.Memories)
+			}
+			var before, after any
+			if err := json.Unmarshal(metadata, &before); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(response.Memories[0].Metadata, &after); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Fatal("source metadata unexpectedly removed or changed")
+			}
+		})
+	}
+}

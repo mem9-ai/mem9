@@ -73,6 +73,8 @@ flowchart TD
 
 系统先构造 `recallQueryProfile`，识别中英文查询中的时间、地点、数量、人物、列举、精确问句、目标 speaker、时态、持续时间、频率、视觉内容和引号文本等信号。
 
+西班牙语的 `dónde`、`cuándo`、`quién`、`cuántos` 等明确问法分别识别为地点、时间、人物、数量。宽泛的 `qué` / `cuál` / `cuáles` 仍使用 general，避免仅凭疑问词就把多事件问题当作精确答案题。西语问句不会触发更大的 enumeration 预算。重音拉丁词按完整单词处理；西语停用词仅应用于西语问句，英文与中文的既有分词路径保留。
+
 主 shape 有七类：
 
 | Shape | 典型问题 | 选择重点 |
@@ -175,6 +177,12 @@ confidence = round(clamp(confidenceRaw, 0, 1) * 100)
 ```
 
 其中 vector 与 keyword 同时命中加 0.10；长标识符原文命中可加 0.35，一般长 literal 可加 0.22；更新时间 7 天内可加 0.05、30 天内可加 0.02。`answerEvidenceBonus` 根据 shape 检查实体、时间、地点、数字、speaker、视觉描述等答案证据；`sourcePrior` 让 session 更适合 exact/事件语境，让 insight 更适合稳定的一般事实。
+
+答案正文特征会排除开头的已知来源标签（`session_timestamp`、`session_id`、`source_session_id`、`speaker`、`role`），避免时间戳数字被当作数量答案、人名标签被当作正文实体。原始内容仍用于时间锚定和 speaker 判断；`[New York]` 等普通括号答案不会被当作元数据删除。RRF 同分时按 memory ID 稳定排序，使第二跳种子和分页不再取决于 Go map 遍历顺序。
+
+对于 general 查询，session 中的简短问候和追问不会仅因长度短获得加分；包含明确时长或频率证据的短答仍保留原加分。其他查询类型及 insight/pinned 的短答案能力保持原逻辑。
+
+默认三池和单池置信度 Recall 在完成选择后执行来源片段装配，不改变选中 ID、排序、置信度或条数。每条 insight 最多追加 2 个已有来源片段，整次响应最多 12 个；新增片段各限 800 runes、累计限 2400 runes（包括标签和截断标记）。超过 64 KiB 的 metadata 跳过装配，辅助来源打分仅扫描有界前缀。原始存储、主 insight 正文及主检索查询不被截断，也不新增数据库或模型调用。
 
 Confidence 不是纯余弦相似度，也不是 LLM 评分；它是确定性特征组合。排障时必须同时看 RRF、vector、keyword、答案证据和来源池。
 

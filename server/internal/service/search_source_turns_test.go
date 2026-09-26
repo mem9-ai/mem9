@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 )
@@ -127,4 +128,82 @@ func TestDecorateSearchResultsWithSourceTurnsClearsUnselectedProvenance(t *testi
 			t.Fatalf("source_turns should be cleared from decorated response metadata: %s", memories[0].Metadata)
 		}
 	})
+}
+
+func TestFinalizeSearchResultsBoundsUnicodeSourceEvidence(t *testing.T) {
+	content := "profile detail " + strings.Repeat("证据ñ🙂", 500)
+	memories := make([]domain.Memory, 5)
+	confidence := 87
+	for i := range memories {
+		memories[i] = domain.Memory{ID: string(rune('a' + i)), Content: "profile fact remains intact", MemoryType: domain.TypeInsight, Confidence: &confidence,
+			Metadata: SetSourceProvenanceMetadata(nil, []int{1, 2, 3}, []sourceTurnMetadata{{Seq: 1, Content: content}, {Seq: 2, Role: "assistant", Content: content}, {Seq: 3, Content: content}})}
+	}
+	before, _ := json.Marshal(memories)
+	out := FinalizeSearchResults(memories, "profile detail")
+	added, turns := 0, 0
+	for i := range out {
+		if out[i].ID != memories[i].ID || out[i].Confidence != memories[i].Confidence || !strings.HasPrefix(out[i].Content, memories[i].Content) {
+			t.Fatalf("selected memory changed: %+v", out[i])
+		}
+		added += len([]rune(out[i].Content)) - len([]rune(memories[i].Content))
+		selected := parseSourceTurnsFromMetadata(out[i].Metadata)
+		if len(selected) > defaultSearchSourceTurnPerMemoryCap {
+			t.Fatalf("per-memory turn count=%d", len(selected))
+		}
+		for _, turn := range selected {
+			turns++
+			if len([]rune(turn.Content))+searchSourceRoleRunes(turn) > maxSearchSourceTurnRunes {
+				t.Fatal("source fragment exceeded rune budget")
+			}
+			if !strings.HasSuffix(turn.Content, searchSourceTruncationMarker) {
+				t.Fatalf("missing truncation marker: %q", turn.Content)
+			}
+			if !utf8.ValidString(turn.Content) {
+				t.Fatal("invalid UTF-8 in clipped source")
+			}
+		}
+	}
+	if added == 0 || added > maxSearchSourceResponseRunes || turns > defaultSearchSourceTurnTotalCap {
+		t.Fatalf("response evidence budget violated: addedRunes=%d turns=%d", added, turns)
+	}
+	after, _ := json.Marshal(memories)
+	if string(before) != string(after) {
+		t.Fatal("input content or stored metadata mutated")
+	}
+}
+
+func TestFinalizeSearchResultsDoesNotSelectEvidenceOutsideVisiblePrefix(t *testing.T) {
+	memory := domain.Memory{ID: "m", Content: "A fact.", MemoryType: domain.TypeInsight, Metadata: SetSourceProvenanceMetadata(nil, []int{1}, []sourceTurnMetadata{{Seq: 1, Content: strings.Repeat("unrelated ", 5000) + "rareword"}})}
+	out := FinalizeSearchResults([]domain.Memory{memory}, "rareword")
+	if out[0].Content != memory.Content {
+		t.Fatal("invisible tail match selected unrelated evidence")
+	}
+}
+
+func TestFinalizeSearchResultsSkipsOversizedSourceMetadata(t *testing.T) {
+	metadata := SetSourceProvenanceMetadata(nil, []int{1}, []sourceTurnMetadata{{Seq: 1, Content: "profile " + strings.Repeat("x", maxSearchSourceMetadataBytes)}})
+	memory := domain.Memory{ID: "m", Content: "profile", MemoryType: domain.TypeInsight, Metadata: metadata}
+	out := FinalizeSearchResults([]domain.Memory{memory}, "profile")
+	if out[0].Content != memory.Content || string(out[0].Metadata) != string(metadata) {
+		t.Fatal("oversized metadata should pass through without decoration")
+	}
+}
+
+func TestFinalizeSearchResultsPreservesMalformedSourceMetadata(t *testing.T) {
+	metadata := json.RawMessage(`{"source_turns":[`)
+	memory := domain.Memory{ID: "m", Content: "profile", MemoryType: domain.TypeInsight, Metadata: metadata}
+	out := FinalizeSearchResults([]domain.Memory{memory}, "profile")
+	if out[0].Content != memory.Content || string(out[0].Metadata) != string(metadata) {
+		t.Fatal("malformed metadata should pass through without decoration")
+	}
+}
+
+func BenchmarkFinalizeSearchResultsOversizedMetadata(b *testing.B) {
+	metadata := json.RawMessage(`{"source_turns":"` + strings.Repeat("x", 1<<20) + `"}`)
+	memories := []domain.Memory{{ID: "m", Content: "profile", MemoryType: domain.TypeInsight, Metadata: metadata}}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		FinalizeSearchResults(memories, "profile")
+	}
 }

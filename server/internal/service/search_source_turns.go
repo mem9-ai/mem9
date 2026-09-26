@@ -14,6 +14,11 @@ const (
 	defaultSearchSourceTurnMinScore     = 2
 	defaultSearchSourceTurnPerMemoryCap = 2
 	defaultSearchSourceTurnTotalCap     = 12
+	maxSearchSourceTurnRunes            = 800
+	maxSearchSourceResponseRunes        = 2400
+	maxSearchSourceMetadataBytes        = 64 << 10
+	searchSourceTurnHeader              = "\n[source-turns]\n"
+	searchSourceTruncationMarker        = "\n[truncated]"
 )
 
 var targetSpeakerQuestionRe = regexp.MustCompile(`(?i)\bhow\s+(?:does|did)\s+([a-z][a-z'-]*)\s+(?:describe|feel|respond|react|view|think|say)\b`)
@@ -23,6 +28,12 @@ type searchSourceTurnCandidate struct {
 	score       int
 	sourceOrder int
 	turn        sourceTurnMetadata
+}
+
+// FinalizeSearchResults adds response-only source evidence and relative ages after recall selection.
+// It preserves selected memory IDs, ordering, scores, confidence, and result count.
+func FinalizeSearchResults(memories []domain.Memory, query string) []domain.Memory {
+	return finalizeSearchResults(memories, query)
 }
 
 func finalizeSearchResults(memories []domain.Memory, query string) []domain.Memory {
@@ -63,6 +74,11 @@ func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]s
 		}
 		turns := parseSourceTurnsFromMetadata(memory.Metadata)
 		for sourceOrder, turn := range turns {
+			// Bound both source scoring work and response context; rank only visible evidence.
+			turn.Content = boundSearchSourceContent(turn, maxSearchSourceTurnRunes)
+			if turn.Content == "" {
+				continue
+			}
 			score := scoreSearchSourceTurn(query, memory.Content, turn.Content)
 			if score < minScore {
 				continue
@@ -93,6 +109,7 @@ func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]s
 	selectedByMemory := make(map[int][]sourceTurnMetadata, len(memories))
 	selectedOrders := make(map[int][]int, len(memories))
 	selectedTotal := 0
+	selectedRunes := 0
 	for _, candidate := range candidates {
 		if selectedTotal >= totalCap {
 			break
@@ -100,6 +117,18 @@ func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]s
 		if perMemoryCounts[candidate.memoryIndex] >= perMemoryCap {
 			continue
 		}
+		separatorRunes := 1
+		if perMemoryCounts[candidate.memoryIndex] == 0 {
+			separatorRunes = len([]rune(searchSourceTurnHeader))
+		}
+		remaining := maxSearchSourceResponseRunes - selectedRunes - separatorRunes
+		turn := candidate.turn
+		turn.Content = boundSearchSourceContent(turn, minInt(maxSearchSourceTurnRunes, remaining))
+		if turn.Content == "" || scoreSearchSourceTurn(query, memories[candidate.memoryIndex].Content, turn.Content) < minScore {
+			continue
+		}
+		candidate.turn = turn
+		selectedRunes += separatorRunes + len([]rune(turn.Content)) + searchSourceRoleRunes(turn)
 		perMemoryCounts[candidate.memoryIndex]++
 		selectedTotal++
 		selectedByMemory[candidate.memoryIndex] = append(selectedByMemory[candidate.memoryIndex], candidate.turn)
@@ -117,6 +146,9 @@ func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]s
 }
 
 func shouldDecorateSearchMemory(memory domain.Memory) bool {
+	if len(memory.Metadata) > maxSearchSourceMetadataBytes {
+		return false
+	}
 	if memory.MemoryType != domain.TypeInsight {
 		return false
 	}
@@ -192,10 +224,13 @@ func formatSearchMemoryWithSourceTurns(content string, turns []sourceTurnMetadat
 		}
 		parts = append(parts, content)
 	}
-	return content + "\n[source-turns]\n" + strings.Join(parts, "\n")
+	return content + searchSourceTurnHeader + strings.Join(parts, "\n")
 }
 
 func scoreSearchSourceTurn(question, memoryContent, sourceContent string) int {
+	question = searchSourceScoringPrefix(question)
+	memoryContent = searchSourceScoringPrefix(memoryContent)
+	sourceContent = searchSourceScoringPrefix(sourceContent)
 	questionTokens := tokenizeForSourceTurnScoring(question)
 	sourceTokens := tokenSet(tokenizeForSourceTurnScoring(sourceContent))
 	memoryTokens := tokenSet(tokenizeForSourceTurnScoring(memoryContent))
@@ -293,4 +328,46 @@ func minInt(left, right int) int {
 		return left
 	}
 	return right
+}
+
+// boundSearchSourceContent limits only evidence appended to a search result.
+// Source storage and the main insight are never modified. The marker and role
+// label count toward the fragment budget. Inspecting at most maxRunes+1 runes
+// also bounds lexical scoring work for an unusually large source message.
+func boundSearchSourceContent(turn sourceTurnMetadata, maxRunes int) string {
+	maxRunes -= searchSourceRoleRunes(turn)
+	markerRunes := len([]rune(searchSourceTruncationMarker))
+	if maxRunes <= markerRunes {
+		return ""
+	}
+	prefix := make([]rune, 0, maxRunes+1)
+	for _, r := range turn.Content {
+		prefix = append(prefix, r)
+		if len(prefix) > maxRunes {
+			break
+		}
+	}
+	if len(prefix) <= maxRunes {
+		return string(prefix)
+	}
+	return strings.TrimSpace(string(prefix[:maxRunes-markerRunes])) + searchSourceTruncationMarker
+}
+
+func searchSourceRoleRunes(turn sourceTurnMetadata) int {
+	if turn.Role == "assistant" {
+		return len("Assistant: ")
+	}
+	return 0
+}
+
+// Search decoration must not scan arbitrarily large content to score a bounded snippet.
+func searchSourceScoringPrefix(content string) string {
+	runes := 0
+	for index := range content {
+		if runes >= maxSearchSourceTurnRunes {
+			return content[:index]
+		}
+		runes++
+	}
+	return content
 }
