@@ -53,6 +53,17 @@ func TestSessionContextKeepsVerifiedNeighborWithoutChangingSelection(t *testing.
 	}
 }
 
+func TestSessionContextPreservesEmptyResultArray(t *testing.T) {
+	got := FinalizeSearchResultsWithSessionContext([]domain.Memory{}, nil, "¿Qué cambió?")
+	if got == nil || len(got) != 0 {
+		t.Fatal("empty selection must remain an empty array")
+	}
+	raw, err := json.Marshal(got)
+	if err != nil || string(raw) != "[]" {
+		t.Fatalf("empty response contract: %s %v", raw, err)
+	}
+}
+
 func TestSessionAndInsightEvidenceShareResponseCap(t *testing.T) {
 	var selected []domain.Memory
 	var candidates []RecallCandidate

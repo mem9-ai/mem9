@@ -12,6 +12,9 @@ import (
 // Selected IDs, confidence, order and count are unchanged; source snippets share
 // the same 800-rune/2400-rune caps with insight evidence. No I/O is performed.
 func FinalizeSearchResultsWithSessionContext(memories []domain.Memory, candidates []RecallCandidate, query string) []domain.Memory {
+	if len(memories) == 0 {
+		return memories // preserve a non-nil empty slice for the JSON array contract
+	}
 	type turnKey struct {
 		app, agent, session string
 		seq                 int
