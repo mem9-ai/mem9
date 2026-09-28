@@ -607,6 +607,7 @@ func sessionToMemory(session *domain.Session) domain.Memory {
 		Tags:       append([]string(nil), session.Tags...),
 		Metadata:   metadata,
 		AgentID:    session.AgentID,
+		AppID:      session.AppID,
 		SessionID:  session.SessionID,
 		State:      session.State,
 		CreatedAt:  session.CreatedAt,

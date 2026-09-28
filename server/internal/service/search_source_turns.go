@@ -41,15 +41,19 @@ func finalizeSearchResults(memories []domain.Memory, query string) []domain.Memo
 }
 
 func decorateSearchResultsWithSourceTurns(memories []domain.Memory, query string) []domain.Memory {
+	return decorateSearchResultsWithEvidence(memories, query, nil)
+}
+
+func decorateSearchResultsWithEvidence(memories []domain.Memory, query string, sessionEvidence map[string]bool) []domain.Memory {
 	if len(memories) == 0 || strings.TrimSpace(query) == "" {
 		return memories
 	}
 
-	selectedByMemory := selectSearchSourceTurns(memories, query)
+	selectedByMemory := selectSearchSourceTurnsWithEvidence(memories, query, sessionEvidence)
 	out := make([]domain.Memory, len(memories))
 	copy(out, memories)
 	for i := range out {
-		if !shouldDecorateSearchMemory(out[i]) {
+		if !shouldDecorateSearchEvidence(out[i], sessionEvidence) {
 			continue
 		}
 		selected := selectedByMemory[i]
@@ -63,13 +67,17 @@ func decorateSearchResultsWithSourceTurns(memories []domain.Memory, query string
 }
 
 func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]sourceTurnMetadata {
+	return selectSearchSourceTurnsWithEvidence(memories, query, nil)
+}
+
+func selectSearchSourceTurnsWithEvidence(memories []domain.Memory, query string, sessionEvidence map[string]bool) map[int][]sourceTurnMetadata {
 	minScore := readPositiveEnvInt("MEM9_SOURCE_TURN_MIN_SCORE", defaultSearchSourceTurnMinScore)
 	perMemoryCap := readPositiveEnvInt("MEM9_SOURCE_TURN_PER_MEMORY_LIMIT", defaultSearchSourceTurnPerMemoryCap)
 	totalCap := readPositiveEnvInt("MEM9_SOURCE_TURN_TOTAL_LIMIT", defaultSearchSourceTurnTotalCap)
 
 	candidates := make([]searchSourceTurnCandidate, 0)
 	for memoryIndex, memory := range memories {
-		if !shouldDecorateSearchMemory(memory) {
+		if !shouldDecorateSearchEvidence(memory, sessionEvidence) {
 			continue
 		}
 		turns := parseSourceTurnsFromMetadata(memory.Metadata)
@@ -79,7 +87,7 @@ func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]s
 			if turn.Content == "" {
 				continue
 			}
-			score := scoreSearchSourceTurn(query, memory.Content, turn.Content)
+			score := scoreSearchEvidence(query, memory, turn.Content, sessionEvidence)
 			if score < minScore {
 				continue
 			}
@@ -107,7 +115,6 @@ func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]s
 
 	perMemoryCounts := make(map[int]int, len(memories))
 	selectedByMemory := make(map[int][]sourceTurnMetadata, len(memories))
-	selectedOrders := make(map[int][]int, len(memories))
 	selectedTotal := 0
 	selectedRunes := 0
 	for _, candidate := range candidates {
@@ -124,7 +131,7 @@ func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]s
 		remaining := maxSearchSourceResponseRunes - selectedRunes - separatorRunes
 		turn := candidate.turn
 		turn.Content = boundSearchSourceContent(turn, minInt(maxSearchSourceTurnRunes, remaining))
-		if turn.Content == "" || scoreSearchSourceTurn(query, memories[candidate.memoryIndex].Content, turn.Content) < minScore {
+		if turn.Content == "" || scoreSearchEvidence(query, memories[candidate.memoryIndex], turn.Content, sessionEvidence) < minScore {
 			continue
 		}
 		candidate.turn = turn
@@ -132,17 +139,34 @@ func selectSearchSourceTurns(memories []domain.Memory, query string) map[int][]s
 		perMemoryCounts[candidate.memoryIndex]++
 		selectedTotal++
 		selectedByMemory[candidate.memoryIndex] = append(selectedByMemory[candidate.memoryIndex], candidate.turn)
-		selectedOrders[candidate.memoryIndex] = append(selectedOrders[candidate.memoryIndex], candidate.sourceOrder)
 	}
 
 	for memoryIndex, turns := range selectedByMemory {
-		orders := selectedOrders[memoryIndex]
 		sort.SliceStable(turns, func(i, j int) bool {
-			return orders[i] < orders[j]
+			return turns[i].Seq < turns[j].Seq
 		})
 		selectedByMemory[memoryIndex] = turns
 	}
 	return selectedByMemory
+}
+
+func shouldDecorateSearchEvidence(memory domain.Memory, sessionEvidence map[string]bool) bool {
+	if sessionEvidence[memory.ID] && memory.MemoryType == domain.TypeSession {
+		return len(memory.Metadata) <= maxSearchSourceMetadataBytes && len(parseSourceTurnsFromMetadata(memory.Metadata)) > 0
+	}
+	return shouldDecorateSearchMemory(memory)
+}
+
+func scoreSearchEvidence(query string, memory domain.Memory, content string, sessionEvidence map[string]bool) int {
+	score := scoreSearchSourceTurn(query, memory.Content, content)
+	if sessionEvidence[memory.ID] {
+		// A short answer can lack the noun in its immediately preceding question.
+		// Eligibility was established using same-session/role/sequence checks.
+		if anchorScore := scoreSearchSourceTurn(query, memory.Content, memory.Content); anchorScore > score {
+			score = anchorScore
+		}
+	}
+	return score
 }
 
 func shouldDecorateSearchMemory(memory domain.Memory) bool {

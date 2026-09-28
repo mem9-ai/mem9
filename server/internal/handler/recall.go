@@ -283,7 +283,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 	mixed, cutoffReason, stats := selectMixedRecallCandidates(profile, budget-len(pinned), append(insightCandidates, sessionCandidates...), seen)
 	selectionDuration := time.Since(selectionStart)
 
-	memories := service.FinalizeSearchResults(append(pinned, mixed...), filter.Query)
+	memories := finalizeRecallContext(append(pinned, mixed...), sessionCandidates, filter.Query)
 	logger := s.logger
 	if logger == nil {
 		logger = slog.Default()
@@ -654,7 +654,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		stats.mode = "top"
 	}
 	selectionDuration := time.Since(selectionStart)
-	memories = service.FinalizeSearchResults(memories, filter.Query)
+	memories = finalizeRecallContext(memories, candidates, filter.Query)
 
 	pinnedSelected := 0
 	if filter.MemoryType == string(domain.TypePinned) {
@@ -949,6 +949,9 @@ func selectMixedRecallCandidates(
 	candidates []service.RecallCandidate,
 	seen map[string]struct{},
 ) ([]domain.Memory, string, recallSelectionStats) {
+	if profile.shape == recallQueryShapeGeneral && isSpanishOverviewQuestion(profile.lower) {
+		return selectSpanishOverviewCandidates(profile, budget, candidates, seen)
+	}
 	if profile.shape == recallQueryShapeEnumeration {
 		return selectEnumerationRecallCandidates(profile, budget, candidates, seen)
 	}
