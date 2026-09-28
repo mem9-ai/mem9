@@ -903,7 +903,10 @@ func (s *MemoryService) secondHopAutoSearch(
 		result = append(result, m)
 	}
 	sort.Slice(result, func(i, j int) bool {
-		return bestScore[result[i].ID] > bestScore[result[j].ID]
+		if bestScore[result[i].ID] != bestScore[result[j].ID] {
+			return bestScore[result[i].ID] > bestScore[result[j].ID]
+		}
+		return result[i].ID < result[j].ID
 	})
 	return result
 }
