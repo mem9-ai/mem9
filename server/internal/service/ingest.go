@@ -183,15 +183,12 @@ func (s *IngestService) Ingest(ctx context.Context, agentName string, req Ingest
 	}
 
 	// Format conversation for LLM.
-	formatted := formatConversation(req.Messages)
-	if formatted == "" {
+	input := prepareExtractionInputWithPolicy(req.Messages, maxExtractionConversationRunes, s.includeAssistantFacts)
+	if input.formatted == "" {
 		return &IngestResult{Status: "complete"}, nil
 	}
 
-	// Cap conversation size to avoid blowing LLM token limits.
-	formatted = truncateRunes(formatted, maxExtractionConversationRunes)
-
-	changes, warnings, err := s.extractAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, formatted, req.ExternalProvenance)
+	changes, warnings, err := s.extractPreparedAndReconcile(ctx, agentName, req.AgentID, req.AppID, req.SessionID, input, req.ExternalProvenance)
 	if err != nil {
 		slog.Error("insight extraction failed", "err", err)
 		return &IngestResult{Status: "failed", Warnings: warnings}, nil
@@ -332,6 +329,7 @@ type preparedExtractionInput struct {
 	originalIndices       []int
 	formatted             string
 	includeAssistantFacts bool
+	visibleSourceSeqs     map[int]bool
 }
 
 func prepareExtractionInput(messages []IngestMessage, maxConversationRunes int) preparedExtractionInput {
@@ -355,7 +353,7 @@ func prepareExtractionInputWithPolicy(messages []IngestMessage, maxConversationR
 	if len(input.messages) == 0 {
 		return input
 	}
-	input.formatted = truncateRunes(formatConversation(input.messages), maxConversationRunes)
+	input.formatted, input.visibleSourceSeqs = formatExtractionConversation(input.messages, maxConversationRunes)
 	return input
 }
 
@@ -413,7 +411,7 @@ func parseConversationMessages(conversation string) []IngestMessage {
 func finalizeExtractedFacts(input preparedExtractionInput, parsed []ExtractedFact, emptyReason string) []ExtractedFact {
 	facts := filterLongTermFacts(parsed)
 	if len(facts) > 0 {
-		return annotateFactsWithSourceSeqs(input, normalizeTemporalFacts(input, facts))
+		return normalizeTemporalFacts(input, annotateFactsWithSourceSeqs(input, facts))
 	}
 	reason := emptyReason
 	if len(parsed) > 0 {
@@ -522,9 +520,8 @@ func factExtractionSourceRule(includeAssistantFacts bool) string {
    or self-referential chatter. Never infer personal facts about the user from an assistant statement alone.`
 }
 
-func normalizeReconciledTemporalContent(content string) (string, *TemporalMetadata) {
-	content = StripTemporalProjection(content)
-	return NormalizeStandaloneTemporalContent(content, time.Now())
+func normalizeReconciledTemporalContent(content string, facts []ExtractedFact) (string, *TemporalMetadata) {
+	return normalizeReconciledTemporalContentAt(content, facts, time.Now())
 }
 
 // ExtractPhase1 runs fact extraction and per-message tagging in a single LLM call.
@@ -543,12 +540,12 @@ func (s *IngestService) ExtractPhase1WithRouting(ctx context.Context, messages [
 		return &Phase1Result{}, nil
 	}
 
-	facts, messageTags, err := s.extractFactsAndTagsWithRouting(ctx, input.formatted, len(input.messages), routingTargets)
+	facts, messageTags, err := s.extractPreparedFactsAndTagsWithRouting(ctx, input, len(input.messages), routingTargets)
 	if err != nil {
 		return nil, err
 	}
 	return &Phase1Result{
-		Facts:       annotateFactsWithSourceSeqs(input, facts),
+		Facts:       facts,
 		MessageTags: expandMessageTags(messageTags, input, len(messages)),
 	}, nil
 }
@@ -730,11 +727,16 @@ func (s *IngestService) ingestRaw(ctx context.Context, agentName string, req Ing
 
 // extractAndReconcile runs Phase 1a (extraction) + Phase 2 (reconciliation).
 func (s *IngestService) extractAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID, conversation string, externalProvenance *ExternalProvenance) ([]MemoryChange, int, error) {
+	input := prepareExtractionInputFromConversationWithPolicy(conversation, maxExtractionConversationRunes, s.includeAssistantFacts)
+	return s.extractPreparedAndReconcile(ctx, agentName, agentID, appID, sessionID, input, externalProvenance)
+}
+
+func (s *IngestService) extractPreparedAndReconcile(ctx context.Context, agentName, agentID, appID, sessionID string, input preparedExtractionInput, externalProvenance *ExternalProvenance) ([]MemoryChange, int, error) {
 	const maxFacts = 50 // Cap extracted facts to bound reconciliation prompt size
 
 	// Phase 1a: Extract facts only — no message_tags needed here (smart-ingest / raw-ingest path).
 	// Use extractFacts instead of extractFactsAndTags to avoid wasting tokens on tag generation.
-	facts, err := s.extractFacts(ctx, conversation)
+	facts, err := s.extractPreparedFactsWithRouting(ctx, input, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("extract facts: %w", err)
 	}
@@ -832,7 +834,11 @@ func (s *IngestService) extractFactsWithRouting(ctx context.Context, conversatio
 		return nil, nil
 	}
 	input := prepareExtractionInputFromConversationWithPolicy(conversation, maxExtractionConversationRunes, s.includeAssistantFacts)
-	if input.formatted == "" {
+	return s.extractPreparedFactsWithRouting(ctx, input, routingTargets)
+}
+
+func (s *IngestService) extractPreparedFactsWithRouting(ctx context.Context, input preparedExtractionInput, routingTargets []RoutingTarget) ([]ExtractedFact, error) {
+	if s.llm == nil || input.formatted == "" {
 		return nil, nil
 	}
 
@@ -959,7 +965,7 @@ The "facts" array must contain durable facts only. Return {"facts": []} when eve
 candidate is a query, transient status, one-off intent, activity log, or operational log.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}]}`
-	systemPrompt += routingPromptSection(routingTargets)
+	systemPrompt += extractionSourcePrompt(input) + routingPromptSection(routingTargets)
 
 	userPrompt := fmt.Sprintf("Extract facts.\n\n%s", input.formatted)
 
@@ -1015,7 +1021,11 @@ func (s *IngestService) extractFactsAndTags(ctx context.Context, conversation st
 
 func (s *IngestService) extractFactsAndTagsWithRouting(ctx context.Context, conversation string, messageCount int, routingTargets []RoutingTarget) ([]ExtractedFact, [][]string, error) {
 	input := prepareExtractionInputFromConversationWithPolicy(conversation, maxExtractionConversationRunes, s.includeAssistantFacts)
-	if input.formatted == "" {
+	return s.extractPreparedFactsAndTagsWithRouting(ctx, input, messageCount, routingTargets)
+}
+
+func (s *IngestService) extractPreparedFactsAndTagsWithRouting(ctx context.Context, input preparedExtractionInput, messageCount int, routingTargets []RoutingTarget) ([]ExtractedFact, [][]string, error) {
+	if s.llm == nil || input.formatted == "" {
 		return nil, normalizeMessageTags(nil, messageCount), nil
 	}
 
@@ -1171,7 +1181,7 @@ The "facts" array must contain durable facts only. Return an empty array when al
 eligible source content is non-durable, while still returning message_tags for every message.
 
 {"facts": [{"text": "fact one", "tags": ["tag1", "tag2"], "fact_type": "fact"}], "message_tags": [["tag1", "tag2"], ["tag3"]]}`
-	systemPrompt += routingPromptSection(routingTargets)
+	systemPrompt += extractionSourcePrompt(input) + routingPromptSection(routingTargets)
 
 	userPrompt := fmt.Sprintf("Extract facts and assign message tags.\n\n%s", input.formatted)
 
@@ -1467,7 +1477,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 	for _, event := range parsed.Memory {
 		switch strings.ToUpper(event.Event) {
 		case "ADD":
-			normalizedText, temporal := normalizeReconciledTemporalContent(event.Text)
+			normalizedText, temporal := normalizeReconciledTemporalContent(event.Text, facts)
 			if normalizedText == "" {
 				continue
 			}
@@ -1501,7 +1511,7 @@ Analyze the new facts and determine whether each should be added, updated, or de
 				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
 				continue
 			}
-			normalizedText, temporal := normalizeReconciledTemporalContent(event.Text)
+			normalizedText, temporal := normalizeReconciledTemporalContent(event.Text, facts)
 			if normalizedText == "" {
 				slog.Warn("skipping UPDATE with invalid ID or empty text", "id", event.ID)
 				continue

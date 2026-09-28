@@ -14,7 +14,7 @@ const (
 	maxSourceSeqsPerFact   = 6
 )
 
-var sourceProvenanceTokenRe = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?|\d+|[\p{Han}]{2,}`)
+var sourceProvenanceTokenRe = regexp.MustCompile(`[\p{Latin}][\p{Latin}\p{M}]*(?:'[\p{Latin}\p{M}]+)?|\d+|[\p{Han}]{2,}`)
 
 var sourceProvenanceStopwords = map[string]struct{}{
 	"a": {}, "an": {}, "and": {}, "are": {}, "as": {}, "at": {}, "be": {}, "by": {},
@@ -41,13 +41,43 @@ func annotateFactsWithSourceSeqs(input preparedExtractionInput, facts []Extracte
 	copy(out, facts)
 	for i := range out {
 		if len(out[i].SourceSeqs) > 0 {
-			out[i].SourceSeqs = normalizeSourceSeqs(out[i].SourceSeqs)
-		} else if strings.EqualFold(out[i].FactType, factTypeRawFallback) {
+			out[i].SourceSeqs = validateExtractionSourceSeqs(input, out[i].SourceSeqs)
+		}
+		if len(out[i].SourceSeqs) == 0 && strings.EqualFold(out[i].FactType, factTypeRawFallback) {
 			out[i].SourceSeqs = messageSourceSeqs(input.messages, input.includeAssistantFacts)
-		} else {
+		} else if len(out[i].SourceSeqs) == 0 {
 			out[i].SourceSeqs = inferSourceSeqs(out[i].Text, input.messages, input.includeAssistantFacts)
 		}
+		out[i].SourceSeqs = validateExtractionSourceSeqs(input, out[i].SourceSeqs)
+		// Source payloads are always rebuilt from the actual input, never model text.
 		out[i].SourceTurns = sourceTurnsFromMessages(input.messages, out[i].SourceSeqs, input.includeAssistantFacts)
+	}
+	return out
+}
+
+// Reject unknown, duplicated, ineligible and truncated-away message references.
+func validateExtractionSourceSeqs(input preparedExtractionInput, seqs []int) []int {
+	counts := make(map[int]int, len(input.messages))
+	allowed := make(map[int]bool, len(input.messages))
+	for _, msg := range input.messages {
+		if msg.Seq == nil || *msg.Seq < 0 {
+			continue
+		}
+		counts[*msg.Seq]++
+		allowed[*msg.Seq] = factSourceRoleAllowed(msg.Role, input.includeAssistantFacts)
+	}
+	var out []int
+	for _, seq := range normalizeSourceSeqs(seqs) {
+		if counts[seq] != 1 || !allowed[seq] {
+			continue
+		}
+		if input.visibleSourceSeqs != nil && !input.visibleSourceSeqs[seq] {
+			continue
+		}
+		out = append(out, seq)
+		if len(out) == maxSourceSeqsPerFact {
+			break
+		}
 	}
 	return out
 }

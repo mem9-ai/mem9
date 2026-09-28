@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	temporalKindExplicitAbsolute    = "explicit_absolute"
-	temporalKindLocalAnchorRelative = "local_anchor_relative"
+	temporalKindExplicitAbsolute     = "explicit_absolute"
+	temporalKindLocalAnchorRelative  = "local_anchor_relative"
 	temporalKindHeaderAnchorRelative = "header_anchor_relative"
-	temporalKindDeicticRelative     = "deictic_relative"
+	temporalKindDeicticRelative      = "deictic_relative"
 )
 
 const (
@@ -57,6 +57,7 @@ var (
 	temporalAnchorBracketRunRe = regexp.MustCompile(`^(?:\[[^\]\n]{0,160}\]\s*)+`)
 	temporalAnchorDateOnRe     = regexp.MustCompile(`(?i)\bon\s+(\d{1,2}\s+[A-Za-z]+,\s+\d{4})`)
 	temporalAnchorDateTagRe    = regexp.MustCompile(`(?i)\bdate:\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})`)
+	temporalISOHeaderRe        = regexp.MustCompile(`(?i)\[(?:session_timestamp|timestamp|date):\s*([^\]\r\n]+)\]`)
 
 	temporalLegacyAnnotationRe = regexp.MustCompile(`\(([^()|]*?(?:19|20)\d{2}[^()|]*)\|[^()]+\)`)
 	temporalProjectionSuffixRe = regexp.MustCompile(`\s*\[time:\s*[^\]]+\]\s*$`)
@@ -72,7 +73,7 @@ var (
 
 	temporalRelativeCueRe = regexp.MustCompile(`(?i)\b(?:yesterday|today|tomorrow|last\s+(?:night|week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|next\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn|friday|saturday|sunday|monday|tuesday|wednesday|thursday)|this\s+(?:week|weekend|month|year|summer|winter|spring|fall|autumn)|the\s+(?:past\s+)?(?:week|weekend))\b`)
 	temporalCNRelativeRe  = regexp.MustCompile(`上周[一二三四五六日天]|下周[一二三四五六日天]|前天|昨天|今天|明天|后天|上周|本周|这周|下周|上个月|这个月|本月|下个月|去年|今年|明年`)
-	temporalWordTokenRe   = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?|\d+`)
+	temporalWordTokenRe   = regexp.MustCompile(`[\p{Latin}][\p{Latin}\p{M}]*(?:'[\p{Latin}\p{M}]+)?|\d+`)
 
 	temporalLastYearRe    = regexp.MustCompile(`(?i)\blast year\b`)
 	temporalThisYearRe    = regexp.MustCompile(`(?i)\bthis year\b`)
@@ -232,7 +233,18 @@ func normalizeTemporalFactsAt(input preparedExtractionInput, facts []ExtractedFa
 			out = append(out, normalizeRawFallbackFact(fact, anchors, now))
 			continue
 		}
-		fact.Text, fact.Temporal = normalizeTemporalFactContent(fact.Text, anchors, now)
+		factAnchors := anchors
+		factMessages := input.messages
+		if len(fact.SourceTurns) > 0 {
+			factMessages = sourceTemporalMessages(fact.SourceTurns)
+			factAnchors = buildTemporalAnchorCandidates(factMessages, true)
+		}
+		if len(factAnchors) == 0 && (hasSourceTimeHeader(factMessages) || len(anchors) > 0) {
+			fact.Temporal = nil
+			out = append(out, fact)
+			continue
+		}
+		fact.Text, fact.Temporal = normalizeTemporalFactContent(fact.Text, factAnchors, now)
 		out = append(out, fact)
 	}
 	return out
@@ -266,6 +278,10 @@ func normalizeRawFallbackFact(fact ExtractedFact, anchors []temporalAnchorCandid
 		fact.Temporal = buildDeicticTemporalMetadata(cleaned, anchor, temporalAnchorSourceHeader)
 		return fact
 	}
+	if len(anchors) > 0 {
+		fact.Temporal = nil
+		return fact
+	}
 	fact.Temporal = buildDeicticTemporalMetadata(cleaned, now, temporalAnchorSourceNow)
 	return fact
 }
@@ -290,6 +306,10 @@ func normalizeTemporalFactContent(text string, anchors []temporalAnchorCandidate
 		if meta := buildDeicticTemporalMetadata(cleaned, anchor, temporalAnchorSourceHeader); meta != nil {
 			return cleaned, meta
 		}
+	}
+	// Historical evidence with conflicting anchors is not evidence for today's date.
+	if len(anchors) > 0 {
+		return cleaned, nil
 	}
 
 	if meta := buildDeicticTemporalMetadata(cleaned, now, temporalAnchorSourceNow); meta != nil {
@@ -327,6 +347,11 @@ func extractTemporalAnchor(content string) (time.Time, string, bool) {
 	if header == "" {
 		return time.Time{}, body, false
 	}
+	if match := temporalISOHeaderRe.FindStringSubmatch(header); len(match) == 2 {
+		if anchor, ok := parseTemporalAnchorDate(match[1]); ok {
+			return anchor, body, true
+		}
+	}
 
 	if match := temporalAnchorDateOnRe.FindStringSubmatch(header); len(match) == 2 {
 		if anchor, ok := parseTemporalAnchorDate(match[1]); ok {
@@ -343,7 +368,7 @@ func extractTemporalAnchor(content string) (time.Time, string, bool) {
 
 func parseTemporalAnchorDate(value string) (time.Time, bool) {
 	value = strings.TrimSpace(value)
-	for _, layout := range []string{"2 January, 2006", "02 January, 2006", "2 January 2006", "02 January 2006"} {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "2006-01-02 15:04:05", "2006-01-02", "2 January, 2006", "02 January, 2006", "2 January 2006", "02 January 2006"} {
 		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
 			return parsed, true
 		}
@@ -570,12 +595,12 @@ func selectTemporalAnchor(text string, anchors []temporalAnchorCandidate) (time.
 			continue
 		}
 		if score > 0 && score == bestScore {
-			ambiguous = true
+			ambiguous = ambiguous || !startOfDay(anchor.anchor).Equal(startOfDay(anchors[bestIdx].anchor))
 		}
 	}
 
 	if bestScore == 0 {
-		if len(anchors) == 1 {
+		if temporalAnchorsAgree(anchors) {
 			return anchors[0].anchor, true
 		}
 		return time.Time{}, false
@@ -624,6 +649,9 @@ func buildDeicticTemporalMetadata(text string, anchor time.Time, anchorSource st
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return nil
+	}
+	if meta := spanishRelativeTemporalMetadata(trimmed, anchor, anchorSource); meta != nil {
+		return meta
 	}
 
 	switch {
@@ -712,9 +740,9 @@ func buildRangeTemporalMetadata(kind, anchorSource, granularity string, start, e
 	start = startOfDay(start)
 	end = startOfDay(end)
 	meta := &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  granularity,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   granularity,
 		ResolvedStart: formatISODate(start),
 		ResolvedEnd:   formatISODate(end),
 	}
@@ -729,33 +757,33 @@ func buildRangeTemporalMetadata(kind, anchorSource, granularity string, start, e
 func buildMonthTemporalMetadata(kind, anchorSource string, month time.Time) *TemporalMetadata {
 	month = startOfMonth(month)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularityMonth,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularityMonth,
 		ResolvedStart: month.Format("2006-01"),
-		Display:      month.Format("2006-01"),
+		Display:       month.Format("2006-01"),
 	}
 }
 
 func buildYearTemporalMetadata(kind, anchorSource string, year int) *TemporalMetadata {
 	display := strconv.Itoa(year)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularityYear,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularityYear,
 		ResolvedStart: display,
-		Display:      display,
+		Display:       display,
 	}
 }
 
 func buildSeasonTemporalMetadata(kind, anchorSource, season string, year int) *TemporalMetadata {
 	display := season + " " + strconv.Itoa(year)
 	return &TemporalMetadata{
-		Kind:         kind,
-		AnchorSource: anchorSource,
-		Granularity:  temporalGranularitySeason,
+		Kind:          kind,
+		AnchorSource:  anchorSource,
+		Granularity:   temporalGranularitySeason,
 		ResolvedStart: display,
-		Display:      display,
+		Display:       display,
 	}
 }
 
