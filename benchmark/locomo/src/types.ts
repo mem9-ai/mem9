@@ -3,7 +3,7 @@ export interface BenchmarkOutput {
     base_url: string
     data_file: string
     model: string
-    tenant_id: string
+    tenant_ids: Record<string, string>
     timestamp: string
   }
   results: QAResult[]
@@ -13,9 +13,15 @@ export interface BenchmarkOutput {
 export interface BenchmarkStats {
   by_category: Record<QACategory, number>
   by_category_count: Record<QACategory, number>
-  by_category_llm: Record<QACategory, number>
+  by_category_llm: Record<QACategory, number | null>
+  by_category_llm_count: Record<QACategory, number>
+  by_category_evidence_recall: Record<QACategory, number | null>
   overall: number
-  overall_llm: number
+  overall_macro: number
+  overall_llm: number | null
+  overall_llm_macro: number | null
+  overall_llm_count: number
+  overall_evidence_recall: number | null
   total: number
 }
 
@@ -49,10 +55,12 @@ export interface QAResult {
   category: QACategory
   context_retrieved: string
   evidence: string[]
+  evidence_recall: number | null
   gold_answer: string
-  llm_judge_score: number
+  llm_judge_score: number | null
   prediction: string
   question: string
+  retrieved_dia_ids: string[]
   sample_id: string
   score: number
 }
