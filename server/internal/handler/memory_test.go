@@ -395,6 +395,44 @@ func (s *testSessionRepo) DeleteSessionEdit(_ context.Context, id string) (int64
 	return 0, nil
 }
 
+func (s *testSessionRepo) MarkSessionEdit(_ context.Context, edit *domain.SessionEdit) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.overlays == nil {
+		s.overlays = map[string]*domain.SessionEdit{}
+	}
+	if existing, ok := s.overlays[edit.ID]; ok {
+		existing.Correctness = edit.Correctness // preserve content/tags
+		existing.Version++
+		return nil
+	}
+	cp := *edit // mark-only: no content override
+	cp.EditedContent = ""
+	cp.EditedContentSet = false
+	cp.Version = 1
+	if cp.State == "" {
+		cp.State = domain.StateActive
+	}
+	s.overlays[edit.ID] = &cp
+	return nil
+}
+
+func (s *testSessionRepo) ClearSessionEditMark(_ context.Context, id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ov, ok := s.overlays[id]
+	if !ok || ov.Correctness == "" {
+		return false, nil
+	}
+	if !ov.EditedContentSet {
+		delete(s.overlays, id) // mark-only row → remove
+		return true, nil
+	}
+	ov.Correctness = ""
+	ov.Version++
+	return true, nil
+}
+
 func intPtr(v int) *int {
 	return &v
 }

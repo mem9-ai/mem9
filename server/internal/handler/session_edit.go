@@ -112,3 +112,61 @@ func (s *Server) deleteSessionMessageEdit(w http.ResponseWriter, r *http.Request
 	}
 	respond(w, http.StatusOK, map[string]any{"id": id, "reverted": removed > 0})
 }
+
+type markSessionMessageRequest struct {
+	Correctness string `json:"correctness"`
+}
+
+// markSessionMessage handles PUT /session-messages/{id}/mark: set the
+// correctness review mark (correct|incorrect) on a raw session row without
+// touching any content/tag overlay.
+func (s *Server) markSessionMessage(w http.ResponseWriter, r *http.Request) {
+	auth := authInfo(r)
+	if auth.IsChain() {
+		s.handleError(r.Context(), w, &domain.ValidationError{
+			Field: "session_edit", Message: "raw session edit is not supported on chain keys",
+		})
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		s.handleError(r.Context(), w, &domain.ValidationError{Field: "id", Message: "required"})
+		return
+	}
+	var req markSessionMessageRequest
+	if err := decode(r, &req); err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+	svc := s.resolveServices(auth)
+	edit, err := svc.session.MarkSessionOverlay(r.Context(), id, strings.TrimSpace(req.Correctness), auth.AgentName)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"id":          edit.ID,
+		"correctness": edit.Correctness,
+		"version":     edit.Version,
+	})
+}
+
+// unmarkSessionMessage handles DELETE /session-messages/{id}/mark: clear the
+// correctness mark (and remove the overlay row if it had no content edit).
+func (s *Server) unmarkSessionMessage(w http.ResponseWriter, r *http.Request) {
+	auth := authInfo(r)
+	if auth.IsChain() {
+		s.handleError(r.Context(), w, &domain.ValidationError{
+			Field: "session_edit", Message: "raw session edit is not supported on chain keys",
+		})
+		return
+	}
+	id := chi.URLParam(r, "id")
+	svc := s.resolveServices(auth)
+	cleared, err := svc.session.ClearSessionOverlayMark(r.Context(), id)
+	if err != nil {
+		s.handleError(r.Context(), w, err)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"id": id, "unmarked": cleared})
+}

@@ -142,6 +142,9 @@ func (c *schemaInitConnector) recordDDL(query string) {
 	case strings.Contains(lowerQuery, "create table if not exists session_edits"):
 		c.existingTables["session_edits"] = true
 		c.existingCols["session_edits.edited_content"] = true
+		c.existingCols["session_edits.correctness"] = true
+	case strings.Contains(lowerQuery, "alter table session_edits add column correctness"):
+		c.existingCols["session_edits.correctness"] = true
 	case strings.Contains(lowerQuery, "create table if not exists sessions"):
 		c.existingTables["sessions"] = true
 		c.existingCols["sessions.app_id"] = true

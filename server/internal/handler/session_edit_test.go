@@ -215,3 +215,166 @@ func TestSessionSearch_ExplicitTagsOverride(t *testing.T) {
 		t.Fatalf("explicit tags must override, got %v", resp.Memories[0].Tags)
 	}
 }
+
+// --- correctness mark ---
+
+func TestMarkSessionMessage_SetsAndUpdates(t *testing.T) {
+	sessionRepo := &testSessionRepo{getResult: sessionRow("turn-1", "original text")}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+
+	mark := func(status string) map[string]any {
+		req := withURLParam(makeRequest(t, http.MethodPut, "/session-messages/turn-1/mark",
+			markSessionMessageRequest{Correctness: status}), "id", "turn-1")
+		rr := httptest.NewRecorder()
+		srv.markSessionMessage(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("mark %s status = %d: %s", status, rr.Code, rr.Body.String())
+		}
+		var resp map[string]any
+		_ = json.NewDecoder(rr.Body).Decode(&resp)
+		return resp
+	}
+
+	r1 := mark("correct")
+	if r1["correctness"] != "correct" || r1["version"].(float64) != 1 {
+		t.Fatalf("first mark = %v, want correct/v1", r1)
+	}
+	r2 := mark("incorrect")
+	if r2["correctness"] != "incorrect" || r2["version"].(float64) != 2 {
+		t.Fatalf("re-mark = %v, want incorrect/v2", r2)
+	}
+	// Mark-only: no content override stored.
+	if ov := sessionRepo.overlays["turn-1"]; ov == nil || ov.EditedContentSet {
+		t.Fatalf("mark-only row must have no content override: %+v", ov)
+	}
+}
+
+func TestMarkSessionMessage_InvalidValue(t *testing.T) {
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{getResult: sessionRow("turn-1", "x")})
+	req := withURLParam(makeRequest(t, http.MethodPut, "/session-messages/turn-1/mark",
+		markSessionMessageRequest{Correctness: "bogus"}), "id", "turn-1")
+	rr := httptest.NewRecorder()
+	srv.markSessionMessage(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestMarkSessionMessage_NotFound(t *testing.T) {
+	srv := newTestServer(&testMemoryRepo{}, &testSessionRepo{})
+	req := withURLParam(makeRequest(t, http.MethodPut, "/session-messages/missing/mark",
+		markSessionMessageRequest{Correctness: "correct"}), "id", "missing")
+	rr := httptest.NewRecorder()
+	srv.markSessionMessage(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+func TestSessionSearch_MarkOnlySurfacesCorrectnessNoContentChange(t *testing.T) {
+	row := sessionRow("turn-1", "original text")
+	sessionRepo := &testSessionRepo{getResult: row, listResults: []domain.Memory{*row}, listTotal: 1}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+
+	srv.markSessionMessage(httptest.NewRecorder(), withURLParam(makeRequest(t, http.MethodPut,
+		"/session-messages/turn-1/mark", markSessionMessageRequest{Correctness: "incorrect"}), "id", "turn-1"))
+
+	rr := httptest.NewRecorder()
+	srv.listMemories(rr, makeRequest(t, http.MethodGet, "/memories?memory_type=session", nil))
+	var resp listResponse
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if len(resp.Memories) != 1 || resp.Memories[0].Content != "original text" {
+		t.Fatalf("mark-only must not change content: %+v", resp.Memories)
+	}
+	var meta map[string]any
+	_ = json.Unmarshal(resp.Memories[0].Metadata, &meta)
+	if meta["correctness"] != "incorrect" {
+		t.Fatalf("correctness not surfaced: %v", meta)
+	}
+	if _, edited := meta["edited"]; edited {
+		t.Fatalf("mark-only must not set edited marker: %v", meta)
+	}
+}
+
+func TestEditSessionMessage_AutoSetsCorrect(t *testing.T) {
+	sessionRepo := &testSessionRepo{getResult: sessionRow("turn-1", "original text")}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+
+	srv.editSessionMessage(httptest.NewRecorder(), withURLParam(makeRequest(t, http.MethodPut,
+		"/session-messages/turn-1", editSessionMessageRequest{Content: "fixed text"}), "id", "turn-1"))
+
+	rr := httptest.NewRecorder()
+	srv.getSessionMessageEdit(rr, withURLParam(makeRequest(t, http.MethodGet,
+		"/session-messages/turn-1/edit", nil), "id", "turn-1"))
+	var ov domain.SessionEdit
+	_ = json.NewDecoder(rr.Body).Decode(&ov)
+	if ov.Correctness != "correct" {
+		t.Fatalf("content edit must auto-set correct, got %q", ov.Correctness)
+	}
+}
+
+func TestUnmarkSessionMessage_DeletesMarkOnlyRow(t *testing.T) {
+	sessionRepo := &testSessionRepo{getResult: sessionRow("turn-1", "original text")}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+
+	srv.markSessionMessage(httptest.NewRecorder(), withURLParam(makeRequest(t, http.MethodPut,
+		"/session-messages/turn-1/mark", markSessionMessageRequest{Correctness: "incorrect"}), "id", "turn-1"))
+	dr := httptest.NewRecorder()
+	srv.unmarkSessionMessage(dr, withURLParam(makeRequest(t, http.MethodDelete,
+		"/session-messages/turn-1/mark", nil), "id", "turn-1"))
+	if dr.Code != http.StatusOK {
+		t.Fatalf("unmark status = %d", dr.Code)
+	}
+	if _, ok := sessionRepo.overlays["turn-1"]; ok {
+		t.Fatal("mark-only row must be removed after unmark")
+	}
+}
+
+func TestUnmarkSessionMessage_PreservesContentEdit(t *testing.T) {
+	sessionRepo := &testSessionRepo{getResult: sessionRow("turn-1", "original text")}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+
+	// Content edit (auto-correct), then unmark — content overlay must survive.
+	srv.editSessionMessage(httptest.NewRecorder(), withURLParam(makeRequest(t, http.MethodPut,
+		"/session-messages/turn-1", editSessionMessageRequest{Content: "fixed text"}), "id", "turn-1"))
+	srv.unmarkSessionMessage(httptest.NewRecorder(), withURLParam(makeRequest(t, http.MethodDelete,
+		"/session-messages/turn-1/mark", nil), "id", "turn-1"))
+
+	ov := sessionRepo.overlays["turn-1"]
+	if ov == nil || ov.EditedContent != "fixed text" || ov.Correctness != "" {
+		t.Fatalf("unmark must keep content edit and clear mark: %+v", ov)
+	}
+}
+
+func TestRawBrowse_SurfacesCorrectnessNotContent(t *testing.T) {
+	row := sessionRow("turn-1", "original text")
+	sessionRepo := &testSessionRepo{
+		getResult:          row,
+		sessionListResults: []*domain.Session{{ID: "turn-1", SessionID: "sess-1", Seq: 3, Role: "user", Content: "original text", ContentType: "text", State: domain.StateActive}},
+	}
+	srv := newTestServer(&testMemoryRepo{}, sessionRepo)
+
+	// Edit content (overlay) AND it auto-marks correct.
+	srv.editSessionMessage(httptest.NewRecorder(), withURLParam(makeRequest(t, http.MethodPut,
+		"/session-messages/turn-1", editSessionMessageRequest{Content: "edited text"}), "id", "turn-1"))
+
+	rr := httptest.NewRecorder()
+	srv.handleListSessionMessages(rr, makeRequest(t, http.MethodGet, "/session-messages?session_id=sess-1", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		Messages []sessionMessageResponse `json:"messages"`
+	}
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if len(resp.Messages) != 1 {
+		t.Fatalf("want 1 message, got %d", len(resp.Messages))
+	}
+	// Raw browse: original content, but correctness annotation present.
+	if resp.Messages[0].Content != "original text" {
+		t.Fatalf("raw browse must show original content, got %q", resp.Messages[0].Content)
+	}
+	if resp.Messages[0].Correctness != "correct" {
+		t.Fatalf("raw browse must surface correctness, got %q", resp.Messages[0].Correctness)
+	}
+}
