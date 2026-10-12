@@ -152,6 +152,39 @@ test("runRecall calls mem9 with the current runtime and prints a safe summary", 
   }
 });
 
+test("runRecall ignores the configured agentId in the request", async () => {
+  /** @type {{url?: string, options?: any}} */
+  const request = {};
+
+  await runRecall(
+    ["--query", "team preferences"],
+    {
+      state: {
+        configSource: "project",
+        runtime: {
+          profileId: "work",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-search",
+          agentId: "ana-work",
+          searchTimeoutMs: 15200,
+        },
+      },
+      fetchJson: async (
+        /** @type {string} */ url,
+        /** @type {any} */ options,
+      ) => {
+        request.url = url;
+        request.options = options;
+        return { memories: [] };
+      },
+      stdout: { write() {} },
+    },
+  );
+
+  assert.equal(new URL(request.url ?? "").searchParams.has("agent_id"), false);
+  assert.equal(request.options.headers["X-Mnemo-Agent-Id"], "codex");
+});
+
 test("runRecall accepts the query from stdin text", async () => {
   const result = await runRecall(
     [],

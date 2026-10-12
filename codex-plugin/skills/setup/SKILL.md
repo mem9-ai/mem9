@@ -66,7 +66,7 @@ node ./scripts/setup.mjs inspect
    Do not jump straight to `scope apply`.
    `scope apply` only runs after the user has chosen a profile and that profile already has an API key.
 4. Keep the default flow global-first.
-   Apply project scope only when the user explicitly asks for a repo-local profile, timeout, or recall prompt-length override.
+   Apply project scope only when the user explicitly asks for a repo-local profile, Agent ID, timeout, or recall prompt-length override.
    Remote release-check settings live in user scope.
 5. When the user wants mem9 to create a new API key, run:
 
@@ -127,8 +127,11 @@ set -euo pipefail
 node ./scripts/setup.mjs scope clear --scope project
 ```
 
-Project scope keeps `profileId`, `defaultTimeoutMs`, `searchTimeoutMs`, and `recallMinPromptLength`.
+Project scope keeps `profileId`, `agentId`, `defaultTimeoutMs`, `searchTimeoutMs`, and `recallMinPromptLength`.
 User scope also owns `updateCheck.enabled` and `updateCheck.intervalHours`.
+
+`agentId` is optional. Add `--agent-id <id>` to a `scope apply` command only when the user explicitly asks for an Agent ID.
+Leaving the flag out keeps the `agentId` already in that scope's file. Project scope never copies the user-scope `agentId`; it inherits it at runtime.
 
 Common flags:
 
@@ -143,6 +146,7 @@ Common flags:
 - `--provision-api-key`
 - `--api-key-env MEM9_API_KEY`
 - `--scope user|project`
+- `--agent-id <id>`
 - `--default-timeout-ms <ms>`
 - `--search-timeout-ms <ms>`
 - `--recall-min-prompt-length <chars>`
@@ -151,6 +155,7 @@ Common flags:
 - `--cwd <repo-root>`
 
 `--update-check` flags apply to `scope apply --scope user`.
+`--agent-id` takes 1-100 characters with no control characters and applies to both scopes. `MEM9_AGENT_ID` overrides it at runtime, the same variable name the Claude Code plugin uses. Recall ignores it, and the `X-Mnemo-Agent-Id` header stays `codex`.
 `--recall-min-prompt-length` defaults to `5`; use `0` to recall on every non-empty stripped user prompt.
 Most mem9 plugin releases take effect after a Codex restart. Migration releases may ask for `$mem9:setup` once after restart.
 

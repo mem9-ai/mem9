@@ -11,6 +11,7 @@ import {
 } from "./update-check.mjs";
 
 export const DEFAULT_AGENT_ID = "codex";
+export const MAX_AGENT_ID_LENGTH = 100;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 export const DEFAULT_SEARCH_TIMEOUT_MS = 15_000;
 export const DEFAULT_RECALL_MIN_PROMPT_LENGTH = 5;
@@ -83,6 +84,7 @@ const PLUGINS_CACHE_DIR = path.join("plugins", "cache");
  *   schemaVersion?: number,
  *   enabled?: boolean,
  *   profileId?: string,
+ *   agentId?: string,
  *   defaultTimeoutMs?: number,
  *   searchTimeoutMs?: number,
  *   recallMinPromptLength?: number,
@@ -228,6 +230,27 @@ function normalizeProfileId(value) {
   return normalizeString(value);
 }
 
+/**
+ * Returns the trimmed Agent ID, or an empty string when the value is not
+ * usable: not a string, empty, longer than the server's 100-character limit
+ * (counted in characters), or containing control characters.
+ *
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function normalizeAgentId(value) {
+  const agentId = normalizeString(value);
+  if (
+    !agentId
+    || [...agentId].length > MAX_AGENT_ID_LENGTH
+    || /\p{Cc}/u.test(agentId)
+  ) {
+    return "";
+  }
+
+  return agentId;
+}
+
 function isValidPluginVersionSegment(pluginVersion) {
   return pluginVersion.length > 0
     && pluginVersion !== "."
@@ -291,6 +314,11 @@ function asCredentialsFile(value) {
 function resolveScopedProfileId(globalConfig, projectConfig) {
   return normalizeProfileId(projectConfig?.profileId)
     || normalizeProfileId(globalConfig?.profileId);
+}
+
+function resolveScopedAgentId(globalConfig, projectConfig) {
+  return normalizeAgentId(projectConfig?.agentId)
+    || normalizeAgentId(globalConfig?.agentId);
 }
 
 function resolveScopedTimeout(projectValue, globalValue, fallback) {
@@ -358,6 +386,7 @@ function buildEffectiveScopeConfig(globalConfig, projectConfig) {
     schemaVersion: 1,
     enabled: resolveScopedEnabled(globalConfig, projectConfig),
     profileId: resolveScopedProfileId(globalConfig, projectConfig),
+    agentId: resolveScopedAgentId(globalConfig, projectConfig),
     defaultTimeoutMs: resolveScopedTimeout(
       projectConfig?.defaultTimeoutMs,
       globalConfig?.defaultTimeoutMs,
@@ -678,7 +707,10 @@ export function resolveRuntimeConfig(input) {
     profileId,
     baseUrl: baseUrl.replace(/\/+$/, ""),
     apiKey,
-    agentId: DEFAULT_AGENT_ID,
+    agentId:
+      normalizeAgentId(input.env?.MEM9_AGENT_ID)
+      || normalizeAgentId(config.agentId)
+      || DEFAULT_AGENT_ID,
     defaultTimeoutMs: normalizeTimeoutMs(
       config.defaultTimeoutMs,
       DEFAULT_REQUEST_TIMEOUT_MS,

@@ -57,6 +57,7 @@ test("parseArgs supports the setup subcommands", () => {
       apiKeyEnv: "",
       provisionApiKey: false,
       scope: "",
+      agentId: "",
       defaultTimeoutMs: undefined,
       searchTimeoutMs: undefined,
       recallMinPromptLength: undefined,
@@ -87,6 +88,7 @@ test("parseArgs supports the setup subcommands", () => {
       apiKeyEnv: "",
       provisionApiKey: true,
       scope: "",
+      agentId: "",
       defaultTimeoutMs: undefined,
       searchTimeoutMs: undefined,
       recallMinPromptLength: undefined,
@@ -120,6 +122,7 @@ test("parseArgs supports the setup subcommands", () => {
       apiKeyEnv: "",
       provisionApiKey: false,
       scope: "project",
+      agentId: "",
       defaultTimeoutMs: 8100,
       searchTimeoutMs: 15100,
       recallMinPromptLength: 0,
@@ -151,6 +154,7 @@ test("parseArgs supports the setup subcommands", () => {
       apiKeyEnv: "",
       provisionApiKey: false,
       scope: "user",
+      agentId: "",
       defaultTimeoutMs: undefined,
       searchTimeoutMs: undefined,
       recallMinPromptLength: undefined,
@@ -225,6 +229,31 @@ test("main prints command-specific setup help", async () => {
   assert.match(stdoutText, /^mem9 setup profile save-key\n/m);
   assert.match(stdoutText, /--api-key-env <env-var>/);
   assert.match(stdoutText, /MEM9_API_KEY='<your-mem9-api-key>' node \.\/scripts\/setup\.mjs profile save-key/);
+});
+
+test("setup help lists --agent-id for scope apply", async () => {
+  let rootText = "";
+  let applyText = "";
+
+  await main(["--help"], {
+    stdout: {
+      write(chunk) {
+        rootText += chunk;
+      },
+    },
+  });
+  await main(["scope", "apply", "--help"], {
+    stdout: {
+      write(chunk) {
+        applyText += chunk;
+      },
+    },
+  });
+
+  assert.match(rootText, /scope apply .*\[--agent-id <id>\]/);
+  assert.match(applyText, /\[--agent-id <id>\]/);
+  assert.match(applyText, /^ {2}--agent-id <id> {2,}.*1-100 characters/m);
+  assert.match(applyText, /scope apply --scope project .*--agent-id <id>/);
 });
 
 test("assertNodeVersion rejects runtimes below Node 22", () => {
@@ -1361,6 +1390,227 @@ test("scope apply project writes a local override and clears legacy enabled fals
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+function createAgentIdFixture(tempRoot, { userConfig, projectConfig } = {}) {
+  const projectRoot = path.join(tempRoot, "repo");
+  const codexHome = path.join(tempRoot, "codex-home");
+  const mem9Home = path.join(tempRoot, "mem9-home");
+  const userConfigPath = path.join(codexHome, "mem9", "config.json");
+  const projectConfigPath = path.join(projectRoot, ".codex", "mem9", "config.json");
+
+  mkdirSync(path.join(projectRoot, ".git"), { recursive: true });
+  mkdirSync(path.join(codexHome, "mem9"), { recursive: true });
+  mkdirSync(mem9Home, { recursive: true });
+  writeJson(path.join(mem9Home, ".credentials.json"), {
+    schemaVersion: 1,
+    profiles: {
+      default: {
+        label: "Default",
+        baseUrl: "https://api.mem9.ai",
+        apiKey: "key-default",
+      },
+      work: {
+        label: "Work",
+        baseUrl: "https://api.mem9.ai",
+        apiKey: "key-work",
+      },
+    },
+  });
+  writeJson(userConfigPath, userConfig ?? { schemaVersion: 1, profileId: "default" });
+  if (projectConfig !== undefined) {
+    writeJson(projectConfigPath, projectConfig);
+  }
+
+  return {
+    userConfigPath,
+    projectConfigPath,
+    options: {
+      cwd: projectRoot,
+      codexHome,
+      mem9Home,
+      userWritable: true,
+      execFileSync() {
+        throw new Error("codex unavailable");
+      },
+    },
+  };
+}
+
+test("scope apply --agent-id writes agentId into the project override", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const fixture = createAgentIdFixture(tempRoot);
+
+    await runSetup(
+      ["scope", "apply", "--scope", "project", "--profile", "work", "--agent-id", "  ana-work  "],
+      fixture.options,
+    );
+
+    assert.equal(readJson(fixture.projectConfigPath).agentId, "ana-work");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply without --agent-id keeps the agentId already in the target file", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const fixture = createAgentIdFixture(tempRoot, {
+      userConfig: { schemaVersion: 1, profileId: "default", agentId: "ana" },
+      projectConfig: { schemaVersion: 1, profileId: "work", agentId: "ana-work" },
+    });
+
+    await runSetup(
+      ["scope", "apply", "--scope", "project", "--profile", "work", "--search-timeout-ms", "15100"],
+      fixture.options,
+    );
+    await runSetup(
+      ["scope", "apply", "--scope", "user", "--profile", "default", "--search-timeout-ms", "15200"],
+      fixture.options,
+    );
+
+    assert.equal(readJson(fixture.projectConfigPath).agentId, "ana-work");
+    assert.equal(readJson(fixture.userConfigPath).agentId, "ana");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply --agent-id at user scope writes the user config", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const fixture = createAgentIdFixture(tempRoot);
+
+    await runSetup(
+      ["scope", "apply", "--scope", "user", "--profile", "default", "--agent-id", "ana"],
+      fixture.options,
+    );
+
+    assert.equal(readJson(fixture.userConfigPath).agentId, "ana");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply at project scope does not copy the user-level agentId into the project file", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const fixture = createAgentIdFixture(tempRoot, {
+      userConfig: { schemaVersion: 1, profileId: "default", agentId: "ana" },
+    });
+
+    await runSetup(
+      ["scope", "apply", "--scope", "project", "--profile", "work"],
+      fixture.options,
+    );
+
+    assert.equal("agentId" in readJson(fixture.projectConfigPath), false);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply --agent-id rejects missing, empty, overlong, and control-character values", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const fixture = createAgentIdFixture(tempRoot);
+    const scopeArgs = ["scope", "apply", "--scope", "project", "--profile", "work", "--agent-id"];
+
+    for (const value of ["", "   ", "a".repeat(101), "😀".repeat(101), "bad\nid", "tab\tid"]) {
+      await assert.rejects(
+        runSetup([...scopeArgs, value], fixture.options),
+        /--agent-id must be 1-100 characters with no control characters/,
+      );
+    }
+    await assert.rejects(
+      runSetup(scopeArgs, fixture.options),
+      /--agent-id must be 1-100 characters with no control characters/,
+    );
+
+    assert.equal(existsSync(fixture.projectConfigPath), false);
+    assert.equal(parseArgs([...scopeArgs, "😀".repeat(100)]).agentId, "😀".repeat(100));
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("inspect reports the effective agentId and each file's own agentId", () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const unset = createAgentIdFixture(path.join(tempRoot, "unset"));
+    const inherited = createAgentIdFixture(path.join(tempRoot, "inherited"), {
+      userConfig: { schemaVersion: 1, profileId: "default", agentId: "ana" },
+      projectConfig: { schemaVersion: 1, profileId: "work" },
+    });
+    const overridden = createAgentIdFixture(path.join(tempRoot, "overridden"), {
+      userConfig: { schemaVersion: 1, profileId: "default", agentId: "ana" },
+      projectConfig: { schemaVersion: 1, profileId: "work", agentId: "ana-work" },
+    });
+
+    const unsetSummary = inspectSetup(["inspect"], unset.options);
+    const inheritedSummary = inspectSetup(["inspect"], inherited.options);
+    const overriddenSummary = inspectSetup(["inspect"], overridden.options);
+
+    assert.equal(unsetSummary.runtime.agentId, "codex");
+    assert.equal(unsetSummary.globalConfig.summary.agentId, undefined);
+    assert.equal(inheritedSummary.runtime.agentId, "ana");
+    assert.equal(inheritedSummary.globalConfig.summary.agentId, "ana");
+    assert.equal(inheritedSummary.projectConfig.summary.agentId, undefined);
+    assert.equal(overriddenSummary.runtime.agentId, "ana-work");
+    assert.equal(overriddenSummary.projectConfig.summary.agentId, "ana-work");
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("scope apply reports the written agentId in its config summary", async () => {
+  const tempRoot = createTempRoot();
+
+  try {
+    const withAgentId = createAgentIdFixture(path.join(tempRoot, "with"));
+    const withoutAgentId = createAgentIdFixture(path.join(tempRoot, "without"));
+
+    const written = await runSetup(
+      ["scope", "apply", "--scope", "project", "--profile", "work", "--agent-id", "ana-work"],
+      withAgentId.options,
+    );
+    const unset = await runSetup(
+      ["scope", "apply", "--scope", "project", "--profile", "work"],
+      withoutAgentId.options,
+    );
+
+    assert.equal(written.configSummary.agentId, "ana-work");
+    assert.equal(unset.configSummary.agentId, undefined);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("--agent-id is rejected outside scope commands", () => {
+  assert.throws(
+    () => parseArgs(["inspect", "--agent-id", "ana"]),
+    /`--agent-id` only supports `scope apply`/,
+  );
+  assert.throws(
+    () => parseArgs([
+      "profile", "create", "--profile", "work", "--provision-api-key", "--agent-id", "ana",
+    ]),
+    /`--agent-id` only supports `scope apply`/,
+  );
+});
+
+test("scope clear rejects --agent-id", () => {
+  assert.throws(
+    () => parseArgs(["scope", "clear", "--scope", "project", "--agent-id", "ana"]),
+    /`scope clear` only accepts/,
+  );
 });
 
 test("scope clear removes the project override", async () => {

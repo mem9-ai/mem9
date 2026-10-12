@@ -105,11 +105,15 @@ export async function mem9FetchJson(url, options = {}) {
   return JSON.parse(body);
 }
 
-export function mem9Headers(apiKey, agentId) {
+// The header names the writing tool (stored as source/updated_by); the
+// configurable Agent ID is sent in request bodies instead.
+const MEM9_WRITER_ID = "codex";
+
+export function mem9Headers(apiKey) {
   return {
     "Content-Type": "application/json",
     "X-API-Key": apiKey,
-    "X-Mnemo-Agent-Id": agentId,
+    "X-Mnemo-Agent-Id": MEM9_WRITER_ID,
     "User-Agent": MEM9_PLUGIN_USER_AGENT,
   };
 }

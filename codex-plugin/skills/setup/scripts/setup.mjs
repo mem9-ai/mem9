@@ -22,7 +22,9 @@ import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_RECALL_MIN_PROMPT_LENGTH,
   DEFAULT_SEARCH_TIMEOUT_MS,
+  MAX_AGENT_ID_LENGTH,
   loadRuntimeStateFromDisk,
+  normalizeAgentId,
   resolveInstalledPluginCacheVersion,
   resolveCodexHome,
   resolveMem9Home,
@@ -120,6 +122,15 @@ function parseNonNegativeIntegerArg(flag, value) {
   }
 
   return parsed;
+}
+
+function parseAgentIdArg(flag, value) {
+  const agentId = normalizeAgentId(value);
+  if (!agentId) {
+    throw new Error(`${flag} must be 1-${MAX_AGENT_ID_LENGTH} characters with no control characters.`);
+  }
+
+  return agentId;
 }
 
 function parseSemver(value) {
@@ -370,6 +381,7 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "  node ./scripts/setup.mjs scope apply \\",
         "    --scope <user|project> \\",
         "    --profile <profile-id> \\",
+        "    [--agent-id <id>] \\",
         "    [--default-timeout-ms <ms>] \\",
         "    [--search-timeout-ms <ms>] \\",
         "    [--recall-min-prompt-length <chars>] \\",
@@ -382,6 +394,7 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "  --profile <profile-id>",
         "",
         "Optional flags:",
+        "  --agent-id <id>                       Memory bucket id sent as agent_id (1-100 characters, no control characters). Defaults to the existing value in the target file, else inherited, else codex.",
         "  --default-timeout-ms <ms>             Defaults to the existing value or runtime default.",
         "  --search-timeout-ms <ms>              Defaults to the existing value or runtime default.",
         "  --recall-min-prompt-length <chars>    Defaults to the existing value or 5. Set 0 to recall every non-empty prompt.",
@@ -391,7 +404,7 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "",
         "Examples:",
         "  node ./scripts/setup.mjs scope apply --scope user --profile default --default-timeout-ms 8000 --search-timeout-ms 15000 --recall-min-prompt-length 5 --update-check enabled --update-check-interval-hours 24",
-        "  node ./scripts/setup.mjs scope apply --scope project --profile work --default-timeout-ms 8000 --search-timeout-ms 15000 --recall-min-prompt-length 5 --cwd .",
+        "  node ./scripts/setup.mjs scope apply --scope project --profile work --agent-id <id> --default-timeout-ms 8000 --search-timeout-ms 15000 --recall-min-prompt-length 5 --cwd .",
         "",
       ].join("\n");
     case "scope:clear":
@@ -421,7 +434,7 @@ function buildSetupHelpText(command = "", subcommand = "") {
         "  node ./scripts/setup.mjs inspect [--cwd <path>]",
         "  node ./scripts/setup.mjs profile create --profile <profile-id> [--label <profile-label>] [--base-url <mem9-api-base-url>] --provision-api-key [--cwd <path>]",
         "  node ./scripts/setup.mjs profile save-key --profile <profile-id> [--label <profile-label>] [--base-url <mem9-api-base-url>] --api-key-env <env-var> [--cwd <path>]",
-        "  node ./scripts/setup.mjs scope apply --scope <user|project> --profile <profile-id> [--default-timeout-ms <ms>] [--search-timeout-ms <ms>] [--recall-min-prompt-length <chars>] [--update-check <enabled|disabled>] [--update-check-interval-hours <hours>] [--cwd <path>]",
+        "  node ./scripts/setup.mjs scope apply --scope <user|project> --profile <profile-id> [--agent-id <id>] [--default-timeout-ms <ms>] [--search-timeout-ms <ms>] [--recall-min-prompt-length <chars>] [--update-check <enabled|disabled>] [--update-check-interval-hours <hours>] [--cwd <path>]",
         "  node ./scripts/setup.mjs scope clear --scope project [--cwd <path>]",
         "",
         "Commands:",
@@ -936,8 +949,10 @@ function summarizeScopeConfigState(config, options = {}) {
     return null;
   }
 
+  const agentId = normalizeAgentId(config.agentId);
   const summary = {
     profileId: normalizeString(config.profileId),
+    ...(agentId ? { agentId } : {}),
     defaultTimeoutMs: normalizeTimeoutMs(
       config.defaultTimeoutMs,
       DEFAULT_REQUEST_TIMEOUT_MS,
@@ -1047,6 +1062,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     apiKeyEnv: "",
     provisionApiKey: false,
     scope: "",
+    agentId: "",
     defaultTimeoutMs: undefined,
     searchTimeoutMs: undefined,
     recallMinPromptLength: undefined,
@@ -1106,6 +1122,10 @@ export function parseArgs(argv = process.argv.slice(2)) {
         args.scope = normalizeString(nextValue);
         index += 1;
         break;
+      case "--agent-id":
+        args.agentId = parseAgentIdArg(token, nextValue);
+        index += 1;
+        break;
       case "--default-timeout-ms":
         args.defaultTimeoutMs = parseIntegerArg(token, nextValue);
         index += 1;
@@ -1141,6 +1161,10 @@ export function parseArgs(argv = process.argv.slice(2)) {
     && !(args.command === "scope" && args.subcommand === "apply")
   ) {
     throw new Error("`--update-check` flags only support `scope apply`.");
+  }
+
+  if (args.agentId && args.command !== "scope") {
+    throw new Error("`--agent-id` only supports `scope apply`.");
   }
 
   if (args.command === "profile" && !["create", "save-key"].includes(args.subcommand)) {
@@ -1184,6 +1208,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
       || args.baseUrl
       || args.apiKeyEnv
       || args.provisionApiKey
+      || args.agentId
       || args.defaultTimeoutMs !== undefined
       || args.searchTimeoutMs !== undefined
       || args.recallMinPromptLength !== undefined
@@ -1576,10 +1601,13 @@ export function buildScopeConfig(profileId, options = {}) {
   const existingConfig = isRecord(options.existingConfig) ? options.existingConfig : {};
   const scope = normalizeString(options.scope);
   const currentUpdateCheck = normalizeUpdateCheckConfig(existingConfig.updateCheck);
+  const agentId = normalizeAgentId(options.agentId)
+    || normalizeAgentId(existingConfig.agentId);
 
   return {
     schemaVersion: 1,
     profileId,
+    ...(agentId ? { agentId } : {}),
     defaultTimeoutMs: normalizeTimeoutMs(
       options.defaultTimeoutMs ?? existingConfig.defaultTimeoutMs,
       DEFAULT_REQUEST_TIMEOUT_MS,
@@ -1966,6 +1994,7 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
       configSource: runtimeState.configSource,
       projectConfigMatched: runtimeState.projectConfigMatched,
       profileId: runtimeState.runtime.profileId,
+      agentId: runtimeState.runtime.agentId,
       defaultTimeoutMs: runtimeState.runtime.defaultTimeoutMs,
       searchTimeoutMs: runtimeState.runtime.searchTimeoutMs,
       recallMinPromptLength: runtimeState.runtime.recallMinPromptLength,
@@ -2157,7 +2186,9 @@ function resolveConfigWriteFallback(scope, targetConfig, globalConfig) {
     return targetConfig;
   }
 
+  // agentId is inherited at resolution time, so it is never snapshotted from the user config.
   return {
+    agentId: targetConfig?.agentId,
     defaultTimeoutMs: targetConfig?.defaultTimeoutMs ?? globalConfig?.defaultTimeoutMs,
     searchTimeoutMs: targetConfig?.searchTimeoutMs ?? globalConfig?.searchTimeoutMs,
     recallMinPromptLength: targetConfig?.recallMinPromptLength ?? globalConfig?.recallMinPromptLength,
@@ -2229,6 +2260,7 @@ async function runScopeApply(args, options = {}) {
   const nextConfig = buildScopeConfig(args.profileId, {
     scope: args.scope,
     existingConfig: resolveConfigWriteFallback(args.scope, targetConfig, globalConfig),
+    agentId: args.agentId,
     defaultTimeoutMs: args.defaultTimeoutMs,
     searchTimeoutMs: args.searchTimeoutMs,
     recallMinPromptLength: args.recallMinPromptLength,

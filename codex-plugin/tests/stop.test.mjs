@@ -53,10 +53,19 @@ function writeJson(filePath, value) {
 
 async function createCountingServer() {
   let requestCount = 0;
-  const server = createServer((_request, response) => {
+  /** @type {Array<{url: string | undefined, headers: Record<string, string | string[] | undefined>, body: string}>} */
+  const requests = [];
+  const server = createServer((request, response) => {
     requestCount += 1;
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end('{"status":"complete"}');
+    let body = "";
+    request.on("data", (chunk) => {
+      body += String(chunk);
+    });
+    request.on("end", () => {
+      requests.push({ url: request.url, headers: request.headers, body });
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end('{"status":"complete"}');
+    });
   });
 
   await new Promise((resolve, reject) => {
@@ -76,6 +85,9 @@ async function createCountingServer() {
     origin: `http://127.0.0.1:${address.port}`,
     getRequestCount() {
       return requestCount;
+    },
+    getRequests() {
+      return requests;
     },
     async close() {
       await new Promise((resolve, reject) => {
@@ -128,10 +140,11 @@ async function runNodeHook(scriptPath, input) {
 
 /**
  * @param {string} tempRoot
- * @param {"plugin_disabled" | "plugin_missing" | "legacy_paused"} issueCode
+ * @param {"ready" | "plugin_disabled" | "plugin_missing" | "legacy_paused"} issueCode
  * @param {string} baseUrl
+ * @param {Record<string, unknown>} [configOverrides]
  */
-function createRuntimeLayout(tempRoot, issueCode, baseUrl) {
+function createRuntimeLayout(tempRoot, issueCode, baseUrl, configOverrides = {}) {
   const codexHome = path.join(tempRoot, "codex-home");
   const mem9Home = path.join(tempRoot, "mem9-home");
   const cwd = path.join(tempRoot, "workspace");
@@ -141,6 +154,7 @@ function createRuntimeLayout(tempRoot, issueCode, baseUrl) {
     schemaVersion: 1,
     enabled: issueCode === "legacy_paused" ? false : true,
     profileId: "default",
+    ...configOverrides,
   });
   writeJson(path.join(mem9Home, ".credentials.json"), {
     schemaVersion: 1,
@@ -486,6 +500,32 @@ test("stop posts smart ingest with a recent message window", async () => {
   );
 });
 
+test("stop sends the configured agentId in the ingest body", async () => {
+  /** @type {any} */
+  let requestBody = null;
+
+  await runStop({
+    sessionId: "session-1",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "ana-work",
+      defaultTimeoutMs: 8_000,
+    },
+    transcriptMessages: [
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "a1" },
+    ],
+    async post(_url, body) {
+      requestBody = body;
+      return { status: "complete" };
+    },
+    debug() {},
+  });
+
+  assert.equal(requestBody.agent_id, "ana-work");
+});
+
 test("stop records runtime quota denial without failing the hook", async () => {
   /** @type {Array<{stage: string, fields: Record<string, unknown> | undefined}>} */
   const debugEvents = [];
@@ -529,6 +569,63 @@ test("stop records runtime quota denial without failing the hook", async () => {
     actionType: "openUrl",
     hasActionUrl: true,
   });
+});
+
+test("stop entrypoint sends the configured agentId in the body and keeps the writer header fixed", async () => {
+  const tempRoot = createTempRoot();
+  const server = await createCountingServer();
+
+  try {
+    const runtime = createRuntimeLayout(tempRoot, "ready", server.origin, {
+      agentId: "ana-work",
+    });
+    const transcriptPath = path.join(tempRoot, "session.jsonl");
+    writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "user_message", message: "hello" },
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: { type: "agent_message", message: "world" },
+        }),
+      ].join("\n"),
+    );
+    const input = JSON.stringify({
+      cwd: runtime.cwd,
+      session_id: "session-1",
+      transcript_path: transcriptPath,
+    });
+    const run = (/** @type {string} */ envAgentId) => runNodeHook(STOP_ENTRY, {
+      cwd: runtime.cwd,
+      env: {
+        ...process.env,
+        CODEX_HOME: runtime.codexHome,
+        MEM9_HOME: runtime.mem9Home,
+        MEM9_AGENT_ID: envAgentId,
+      },
+      input,
+    });
+
+    const fromConfig = await run("");
+    const fromEnv = await run("ana-env");
+
+    assert.equal(fromConfig.code, 0);
+    assert.equal(fromEnv.code, 0);
+    const requests = server.getRequests();
+    assert.equal(requests.length, 2);
+    for (const request of requests) {
+      assert.equal(request.url, "/v1alpha2/mem9s/memories");
+      assert.equal(request.headers["x-mnemo-agent-id"], "codex");
+    }
+    assert.equal(JSON.parse(requests[0].body).agent_id, "ana-work");
+    assert.equal(JSON.parse(requests[1].body).agent_id, "ana-env");
+  } finally {
+    await server.close();
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 for (const issueCode of NON_READY_ISSUE_CODES) {

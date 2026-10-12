@@ -96,6 +96,7 @@ test("runStore posts a synchronous memory create and prints a safe summary", asy
       },
       body: JSON.stringify({
         content: "The user prefers concise release notes.",
+        agent_id: "codex",
         sync: true,
       }),
       timeoutMs: 8100,
@@ -110,6 +111,38 @@ test("runStore posts a synchronous memory create and prints a safe summary", asy
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("runStore sends the configured agentId in the body and keeps the writer header fixed", async () => {
+  /** @type {{options?: any}} */
+  const request = {};
+
+  await runStore(
+    ["--content", "The user prefers concise release notes."],
+    {
+      state: {
+        configSource: "project",
+        runtime: {
+          profileId: "default",
+          baseUrl: "https://api.mem9.ai",
+          apiKey: "key-save",
+          agentId: "ana-work",
+          defaultTimeoutMs: 8100,
+        },
+      },
+      fetchJson: async (
+        /** @type {string} */ _url,
+        /** @type {any} */ options,
+      ) => {
+        request.options = options;
+        return { status: "ok" };
+      },
+      stdout: { write() {} },
+    },
+  );
+
+  assert.equal(request.options.headers["X-Mnemo-Agent-Id"], "codex");
+  assert.equal(JSON.parse(request.options.body).agent_id, "ana-work");
 });
 
 test("runStore accepts the content from stdin text", async () => {

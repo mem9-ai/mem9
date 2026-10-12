@@ -759,6 +759,148 @@ test("env overrides still replace api url and api key", () => {
   assert.equal(runtime.updateCheck.intervalHours, 24);
 });
 
+test("a user-level agentId reaches the runtime", () => {
+  const runtime = loadRuntimeFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+      agentId: "ana",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: "",
+  }));
+
+  assert.equal(runtime.agentId, "ana");
+});
+
+test("a project-level agentId wins over the user-level one and works alone", () => {
+  const withBoth = loadRuntimeFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+      agentId: "ana",
+    },
+    projectConfig: {
+      schemaVersion: 1,
+      profileId: "work",
+      agentId: "ana-work",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: "",
+  }));
+  const projectOnly = loadRuntimeFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+    },
+    projectConfig: {
+      schemaVersion: 1,
+      profileId: "work",
+      agentId: "ana-work",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: "",
+  }));
+
+  assert.equal(withBoth.agentId, "ana-work");
+  assert.equal(projectOnly.agentId, "ana-work");
+});
+
+test("MEM9_AGENT_ID overrides the project and user agentId and is trimmed", () => {
+  const runtime = loadRuntimeFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+      agentId: "ana",
+    },
+    projectConfig: {
+      schemaVersion: 1,
+      profileId: "work",
+      agentId: "ana-work",
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: "",
+    env: { MEM9_AGENT_ID: "  ana-env  " },
+  }));
+
+  assert.equal(runtime.agentId, "ana-env");
+});
+
+test("invalid agentId values are skipped layer by layer without throwing", () => {
+  const load = (options) => loadRuntimeFromDisk(createRuntimeDisk({
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: "",
+    ...options,
+  }));
+  const userConfig = (agentId) => ({
+    schemaVersion: 1,
+    profileId: "default",
+    agentId,
+  });
+  const projectConfig = (agentId) => ({
+    schemaVersion: 1,
+    profileId: "work",
+    agentId,
+  });
+
+  assert.equal(
+    load({
+      globalConfig: userConfig("ana"),
+      projectConfig: projectConfig("x".repeat(101)),
+    }).agentId,
+    "ana",
+  );
+  assert.equal(
+    load({
+      globalConfig: userConfig("ana"),
+      projectConfig: projectConfig("   "),
+    }).agentId,
+    "ana",
+  );
+  assert.equal(
+    load({
+      globalConfig: userConfig("bad\nid"),
+      projectConfig: projectConfig(42),
+    }).agentId,
+    DEFAULT_AGENT_ID,
+  );
+  assert.equal(
+    load({
+      globalConfig: userConfig("ana"),
+      env: { MEM9_AGENT_ID: "tab\tid" },
+    }).agentId,
+    "ana",
+  );
+  assert.equal(
+    load({
+      globalConfig: userConfig("ana"),
+      env: { MEM9_AGENT_ID: "y".repeat(101) },
+    }).agentId,
+    "ana",
+  );
+});
+
+test("agentId length is counted in characters, not bytes", () => {
+  const load = (agentId) => loadRuntimeFromDisk(createRuntimeDisk({
+    globalConfig: {
+      schemaVersion: 1,
+      profileId: "default",
+      agentId,
+    },
+    credentials: DEFAULT_CREDENTIALS,
+    installMetadata: DEFAULT_INSTALL,
+    configToml: "",
+  }));
+
+  assert.equal(load("😀".repeat(100)).agentId, "😀".repeat(100));
+  assert.equal(load("😀".repeat(101)).agentId, DEFAULT_AGENT_ID);
+});
+
 test("resolveMem9Home uses MEM9_HOME and otherwise falls back to home .mem9", () => {
   assert.equal(
     resolveMem9Home(undefined, { MEM9_HOME: "/shared/mem9" }, "/home/example"),

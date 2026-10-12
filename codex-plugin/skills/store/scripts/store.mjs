@@ -129,9 +129,10 @@ export async function runStore(argv = process.argv.slice(2), options = {}) {
       buildMem9Url(state.runtime.baseUrl, "v1alpha2/mem9s/memories").toString(),
       {
         method: "POST",
-        headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
+        headers: mem9Headers(state.runtime.apiKey),
         body: JSON.stringify({
           content,
+          agent_id: state.runtime.agentId,
           sync: true,
         }),
         timeoutMs: state.runtime.defaultTimeoutMs,

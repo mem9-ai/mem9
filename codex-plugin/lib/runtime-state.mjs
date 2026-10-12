@@ -325,7 +325,7 @@ export async function resolveRuntimeStateNotice(input) {
   const fetchState = input.fetchState ?? ((url, options) =>
     mem9FetchJson(url, {
       method: "GET",
-      headers: mem9Headers(input.runtime.apiKey, input.runtime.agentId),
+      headers: mem9Headers(input.runtime.apiKey),
       timeoutMs: options.timeoutMs,
     }));
 

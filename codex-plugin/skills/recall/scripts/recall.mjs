@@ -187,7 +187,7 @@ export async function runRecall(argv = process.argv.slice(2), options = {}) {
       ),
       {
         method: "GET",
-        headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
+        headers: mem9Headers(state.runtime.apiKey),
         timeoutMs: state.runtime.searchTimeoutMs,
       },
     );

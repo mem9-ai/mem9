@@ -102,6 +102,7 @@ This selects the default profile Codex uses across repositories.
 Project scope can override:
 
 - `profileId`
+- `agentId`
 - `defaultTimeoutMs`
 - `searchTimeoutMs`
 - `recallMinPromptLength`
@@ -382,6 +383,7 @@ Project override example:
 {
   "schemaVersion": 1,
   "profileId": "work",
+  "agentId": "work-notes",
   "recallMinPromptLength": 5
 }
 ```
@@ -389,11 +391,38 @@ Project override example:
 Remote update-check settings stay in the global config.
 Set `recallMinPromptLength` to `0` to recall on every non-empty stripped user prompt.
 
+### Agent ID
+
+`agentId` is optional. It is sent as `agent_id` in the request body when the plugin saves memories (`$mem9:store` and the automatic save at session end). mem9 reconciles new facts only against existing memories with the same Agent ID, so it acts as the memory bucket for that save. The default is `codex`.
+
+Resolution order, first valid value wins:
+
+1. `MEM9_AGENT_ID`
+2. project `agentId`
+3. user `agentId`
+4. `codex`
+
+An Agent ID is 1-100 characters after trimming, counted as characters rather than bytes, with no control characters. `scope apply --agent-id <id>` rejects any other value. At runtime an invalid saved or environment value is skipped silently, so the next layer applies.
+
+Set it with:
+
+```bash
+node ./skills/setup/scripts/setup.mjs scope apply --scope user --profile default --agent-id <id>
+node ./skills/setup/scripts/setup.mjs scope apply --scope project --profile work --agent-id <id> --cwd .
+```
+
+Leaving `--agent-id` out of a later `scope apply` keeps the value already in that file. Project scope does not copy the user-scope value; a project without its own `agentId` inherits the user-scope one when the plugin runs. `inspect` reports the Agent ID in effect under `runtime.agentId`.
+
+Recall does not filter by Agent ID, so automatic and manual recall still search every memory in the space. The `X-Mnemo-Agent-Id` request header stays `codex` and is not configurable, so a memory's source and last updater keep naming the tool.
+
+This matches the Claude Code plugin, where `MEM9_AGENT_ID` sets the same body field. The Claude Code plugin also has `MEM9_WRITER_ID` for the header; the Codex plugin has no equivalent.
+
 ### Environment Overrides
 
 Runtime and setup can use environment variables:
 
 - `MEM9_API_URL`
 - `MEM9_API_KEY`
+- `MEM9_AGENT_ID`
 - `CODEX_HOME`
 - `MEM9_HOME`

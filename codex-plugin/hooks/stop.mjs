@@ -223,7 +223,7 @@ export async function main() {
     post: (url, body, options) =>
       mem9FetchJson(url, {
         method: "POST",
-        headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
+        headers: mem9Headers(state.runtime.apiKey),
         body: JSON.stringify(body),
         timeoutMs: options.timeoutMs,
       }),

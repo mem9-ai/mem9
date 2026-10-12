@@ -53,8 +53,11 @@ function writeJson(filePath, value) {
 
 async function createCountingServer() {
   let requestCount = 0;
+  /** @type {Array<{url: string | undefined, headers: Record<string, string | string[] | undefined>}>} */
+  const requests = [];
   const server = createServer((request, response) => {
     requestCount += 1;
+    requests.push({ url: request.url, headers: request.headers });
     response.writeHead(200, { "content-type": "application/json" });
     response.end(request.method === "GET" ? '{"memories":[]}' : '{"status":"complete"}');
   });
@@ -76,6 +79,9 @@ async function createCountingServer() {
     origin: `http://127.0.0.1:${address.port}`,
     getRequestCount() {
       return requestCount;
+    },
+    getRequests() {
+      return requests;
     },
     async close() {
       await new Promise((resolve, reject) => {
@@ -290,6 +296,30 @@ test("user prompt submit recalls memories with the search timeout bucket", async
     debugEvents.map((event) => event.stage),
     ["recall_request", "recall_response", "context_injected"],
   );
+});
+
+test("user prompt submit recall ignores the configured agentId", async () => {
+  /** @type {string | null} */
+  let requestedUrl = null;
+
+  await runUserPromptSubmit({
+    prompt: "remember my preference",
+    runtime: {
+      baseUrl: "https://api.mem9.ai",
+      apiKey: "key-1",
+      agentId: "ana-work",
+      searchTimeoutMs: 15_000,
+      recallMinPromptLength: 5,
+    },
+    async search(url) {
+      requestedUrl = url;
+      return { memories: [] };
+    },
+    debug() {},
+  });
+
+  assert.ok(requestedUrl);
+  assert.equal(new URL(requestedUrl).searchParams.has("agent_id"), false);
 });
 
 test("user prompt submit injects success response message without memories", async () => {
@@ -724,6 +754,46 @@ test("user prompt submit allows short non-empty queries when the configured mini
   const url = new URL(requestedUrl);
   assert.equal(url.searchParams.get("q"), "hi");
   assert.match(output, /Short prompts can still recall/);
+});
+
+test("user prompt submit entrypoint recalls without the configured agentId and keeps the writer header fixed", async () => {
+  const tempRoot = createTempRoot();
+  const server = await createCountingServer();
+
+  try {
+    const runtime = createRuntimeLayout(tempRoot, "ready", server.origin);
+    writeJson(path.join(runtime.codexHome, "mem9", "config.json"), {
+      schemaVersion: 1,
+      enabled: true,
+      profileId: "default",
+      agentId: "ana-work",
+    });
+
+    const result = await runNodeHook(USER_PROMPT_SUBMIT_ENTRY, {
+      cwd: runtime.cwd,
+      env: {
+        CODEX_HOME: runtime.codexHome,
+        MEM9_HOME: runtime.mem9Home,
+        PATH: process.env.PATH,
+      },
+      input: JSON.stringify({
+        cwd: runtime.cwd,
+        prompt: "remember my preference",
+      }),
+    });
+
+    assert.equal(result.code, 0);
+    const requests = server.getRequests();
+    const recall = requests.find((request) => request.url?.startsWith("/v1alpha2/mem9s/memories?"));
+    assert.ok(recall);
+    assert.equal(new URL(recall.url ?? "", server.origin).searchParams.has("agent_id"), false);
+    for (const request of requests) {
+      assert.equal(request.headers["x-mnemo-agent-id"], "codex");
+    }
+  } finally {
+    await server.close();
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("user prompt submit entrypoint skips short prompts using runtime config from disk", async () => {

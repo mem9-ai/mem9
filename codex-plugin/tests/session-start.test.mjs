@@ -61,8 +61,9 @@ async function runNodeHook(scriptPath, input) {
 /**
  * @param {string} tempRoot
  * @param {string} baseUrl
+ * @param {Record<string, unknown>} [configOverrides]
  */
-function createReadyRuntimeLayout(tempRoot, baseUrl) {
+function createReadyRuntimeLayout(tempRoot, baseUrl, configOverrides = {}) {
   const cwd = path.join(tempRoot, "workspace");
   const codexHome = path.join(tempRoot, "codex-home");
   const mem9Home = path.join(tempRoot, "mem9-home");
@@ -86,6 +87,7 @@ function createReadyRuntimeLayout(tempRoot, baseUrl) {
     updateCheck: {
       enabled: false,
     },
+    ...configOverrides,
   });
   writeJson(path.join(mem9Home, ".credentials.json"), {
     schemaVersion: 1,
@@ -340,9 +342,11 @@ test("session start entrypoint fetches runtime-state when ready", async () => {
     });
     const address = server.address();
     assert.ok(address && typeof address === "object");
+    // A configured Agent ID must not leak into the writer header.
     const runtime = createReadyRuntimeLayout(
       tempRoot,
       `http://127.0.0.1:${address.port}`,
+      { agentId: "ana-work" },
     );
 
     const result = await runNodeHook(SESSION_START_ENTRY, {

@@ -274,7 +274,7 @@ export async function main() {
     search: (url, options) =>
       mem9FetchJson(url, {
         method: "GET",
-        headers: mem9Headers(state.runtime.apiKey, state.runtime.agentId),
+        headers: mem9Headers(state.runtime.apiKey),
         timeoutMs: options.timeoutMs,
       }),
   });
