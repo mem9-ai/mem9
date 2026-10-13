@@ -10,6 +10,7 @@ on:
       - "openclaw-plugin/**"
       - "opencode-plugin/**"
       - "claude-plugin/**"
+      - ".kimi-plugin/**"
       - "dsh-plugin/**"
   push:
     branches: [main]
@@ -20,6 +21,7 @@ on:
       - "openclaw-plugin/**"
       - "opencode-plugin/**"
       - "claude-plugin/**"
+      - ".kimi-plugin/**"
       - "dsh-plugin/**"
   workflow_dispatch:
 
@@ -97,6 +99,13 @@ jobs:
           node --check hooks/lib/hook-json.mjs
           node --check hooks/lib/memories-formatter.mjs
           node --check hooks/lib/transcript-parser.mjs
+
+      - name: Check Kimi plugin hooks
+        working-directory: .kimi-plugin
+        run: |
+          for f in hooks/*.sh; do bash -n "$f"; done
+          for f in hooks/lib/*.mjs; do node --check "$f"; done
+          bash hooks/smoke.test.sh
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
