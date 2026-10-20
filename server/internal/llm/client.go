@@ -387,10 +387,15 @@ func disableThinkingOptions(model string) *bool {
 }
 
 func minimaxThinkingOptions(model string) *thinkingOptions {
-	if strings.HasPrefix(strings.ToLower(model), "minimax-m3") {
+	switch strings.ToLower(model) {
+	case "minimax-m3.1-flash":
+		// Flash only supports adaptive thinking; disabling it is rejected.
+		return &thinkingOptions{Type: "adaptive"}
+	case "minimax-m3":
 		return &thinkingOptions{Type: "disabled"}
+	default:
+		return nil
 	}
-	return nil
 }
 
 func supportsReasoningSplit(model string) *bool {

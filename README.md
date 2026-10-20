@@ -241,6 +241,14 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_DISABLE_SESSION_SAVE` | No | `false` | Disable raw session row persistence for message ingest while still extracting and reconciling facts |
 | `MNEMO_FTS_ENABLED` | No | `false` | Enable TiDB full-text search path. Only set this on clusters that support TiDB FTS |
 
+For MiniMax smart ingest, set `MNEMO_LLM_BASE_URL=https://api.minimax.io/v1`
+(or `https://api.minimaxi.com/v1` for the China endpoint), supply your API key
+through `MNEMO_LLM_API_KEY`, and set `MNEMO_LLM_MODEL=MiniMax-M3.1-Flash`.
+Flash uses adaptive thinking with the API's default reasoning effort.
+`MiniMax-M3` is also supported, with thinking disabled for structured extraction.
+Explicit model IDs remain unchanged, including legacy and custom models.
+See the [MiniMax API guide](https://platform.minimax.io/docs/api-reference/text-openai-api.md).
+
 #### Search Source Turns
 
 The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations are attached to search results as contextual decorations.
