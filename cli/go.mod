@@ -2,6 +2,8 @@ module github.com/qiffang/mnemos/cli
 
 go 1.23
 
+toolchain go1.26.10
+
 require github.com/spf13/cobra v1.8.1
 
 require (
