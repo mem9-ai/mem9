@@ -32,7 +32,7 @@
     "typecheck": "tsc -p ./tsconfig.json"
   },
   "engines": {
-    "node": ">=22"
+    "node": "^22.23.4 || ^24.22.1 || ^26.12.1"
   },
   "dependencies": {},
   "devDependencies": {
