@@ -275,6 +275,10 @@ func main() {
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst, cfg.RuntimeUsageInternalSecret)
 	defer rl.Stop()
 	rateMW := rl.Middleware()
+	tenantAuthMW := tenantMW
+	tenantMW = func(next http.Handler) http.Handler {
+		return rl.TenantMiddleware()(tenantAuthMW(next))
+	}
 
 	activityTracker := service.NewActivityTracker(tenantRepo, logger)
 
@@ -291,11 +295,12 @@ func main() {
 	router := srv.Router(tenantMW, rateMW, apiKeyMW, middleware.CORS(cfg.CORSAllowedOrigins))
 
 	httpSrv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      router,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 15 * time.Minute, // keep transport timeout above sync ingest so callers can receive structured 504s
-		IdleTimeout:  60 * time.Second,
+		Addr:           ":" + cfg.Port,
+		Handler:        router,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   15 * time.Minute, // keep transport timeout above sync ingest so callers can receive structured 504s
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 16 << 10,
 	}
 
 	// Upload worker (async file ingest).

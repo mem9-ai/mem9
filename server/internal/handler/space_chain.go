@@ -99,7 +99,11 @@ func (s *Server) deleteSpaceChain(w http.ResponseWriter, r *http.Request) {
 	}
 	var req deleteSpaceChainRequest
 	if r.Body != nil {
-		_ = decode(r, &req)
+		var sizeErr *http.MaxBytesError
+		if err := decode(r, &req); errors.As(err, &sizeErr) {
+			s.handleError(r.Context(), w, err)
+			return
+		}
 	}
 	if err := s.chains.Delete(r.Context(), chi.URLParam(r, "chainID"), req.DeletedByUserID); err != nil {
 		s.handleError(r.Context(), w, err)

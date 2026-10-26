@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,12 +28,15 @@ type visitor struct {
 	lastSeen time.Time
 }
 
-const rateLimitFingerprintKeyDomain = "mnemo/local-rate-limit-fingerprint/v1\x00"
+const (
+	rateLimitFingerprintKeyDomain = "mnemo/local-rate-limit-fingerprint/v1\x00"
+	maxAPIKeyBytes                = 128
+	maxRateLimitEntries           = 100_000
+)
 
 // RateLimiter provides per-tenant rate limiting middleware.
-// The rate-limit key is the tenantID extracted from the URL path parameter
-// {tenantID} or the X-API-Key header on v1alpha2 routes. For routes without a
-// tenant key (e.g. POST /v1alpha1/mem9s), the client IP is used as fallback.
+// IP and API-key buckets share a bounded map with separate namespaces.
+// API keys are validated and fingerprinted before they enter the map.
 type RateLimiter struct {
 	mu             sync.Mutex
 	visitors       map[string]*visitor
@@ -64,25 +68,24 @@ func (rl *RateLimiter) Stop() {
 func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rawKey := r.Header.Get(APIKeyHeader)
+			key := strings.TrimSpace(rawKey)
+			if len(r.Header.Values(APIKeyHeader)) > 1 || len(rawKey) > maxAPIKeyBytes || (rawKey != "" && !validAPIKey(key)) {
+				writeError(w, http.StatusBadRequest, "malformed X-API-Key")
+				return
+			}
 			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 			if ip == "" {
 				ip = r.RemoteAddr
 			}
 
-			if allowed, retryDelay := allowRateLimit(rl.getLimiter(ip)); !allowed {
+			if allowed, retryDelay := allowRateLimit(rl.getLimiter("ip:" + ip)); !allowed {
 				rl.deny(w, r, "ip", "", retryDelay)
 				return
 			}
 
-			key := chi.URLParam(r, "tenantID")
-			if key == "" {
-				key = r.Header.Get(APIKeyHeader)
-			}
-			if key != "" {
-				if allowed, retryDelay := allowRateLimit(rl.getLimiter(key)); !allowed {
-					rl.deny(w, r, "api_key", key, retryDelay)
-					return
-				}
+			if key != "" && !rl.allowKey(w, r, key) {
+				return
 			}
 
 			next.ServeHTTP(w, r)
@@ -90,7 +93,48 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	}
 }
 
+// TenantMiddleware runs after chi has resolved the legacy {tenantID} parameter.
+func (rl *RateLimiter) TenantMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			key := chi.URLParam(r, "tenantID")
+			if !validAPIKey(key) {
+				writeError(w, http.StatusBadRequest, "malformed API key in path")
+				return
+			}
+			// A matching header has already consumed this bucket globally.
+			if key != strings.TrimSpace(r.Header.Get(APIKeyHeader)) && !rl.allowKey(w, r, key) {
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func validAPIKey(key string) bool {
+	if len(key) == 0 || len(key) > maxAPIKeyBytes {
+		return false
+	}
+	for i := range len(key) {
+		if key[i] < '!' || key[i] > '~' {
+			return false
+		}
+	}
+	return true
+}
+
+func (rl *RateLimiter) allowKey(w http.ResponseWriter, r *http.Request, key string) bool {
+	if allowed, retryDelay := allowRateLimit(rl.getLimiter("key:" + rl.apiKeyFingerprint(key))); !allowed {
+		rl.deny(w, r, "api_key", key, retryDelay)
+		return false
+	}
+	return true
+}
+
 func allowRateLimit(visitor *visitor) (bool, time.Duration) {
+	if visitor == nil {
+		return false, time.Minute
+	}
 	return allowRateLimitAt(visitor, time.Now())
 }
 
@@ -165,6 +209,9 @@ func (rl *RateLimiter) getLimiter(key string) *visitor {
 
 	v, ok := rl.visitors[key]
 	if !ok {
+		if len(rl.visitors) >= maxRateLimitEntries {
+			return nil
+		}
 		v = &visitor{limiter: rate.NewLimiter(rl.limit, rl.burst), lastSeen: time.Now()}
 		rl.visitors[key] = v
 		return v

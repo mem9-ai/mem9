@@ -217,13 +217,20 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_DSN` | Yes | — | Database connection string |
 | `MNEMO_PORT` | No | `8080` | HTTP listen port |
 | `MNEMO_DB_BACKEND` | No | `tidb` | Database backend: `tidb`, `postgres`, or `db9` |
-| `MNEMO_RATE_LIMIT` | No | `100` | Requests/sec per IP |
+| `MNEMO_RATE_LIMIT` | No | `100` | Requests/sec per IP and API key (header or legacy path) |
 | `MNEMO_RATE_BURST` | No | `200` | Burst size |
 | `MNEMO_UPLOAD_DIR` | No | `./uploads` | Directory used for uploaded file storage |
 | `MNEMO_WORKER_CONCURRENCY` | No | `5` | Parallelism for async upload ingest workers |
 | `MNEMO_UTM_ENABLED` | No | `false` | Enable UTM campaign tracking. When enabled, `utm_*` query params on provisioning requests are stored in the control-plane DB. Requires the `tenant_utm` table to exist |
 | `MNEMO_ENV` | No | `development` | Deployment environment. Controls the default CORS origin set (`https://mem9.ai` in production; `https://mem9.ai,http://localhost:4321,http://127.0.0.1:4321` in development). Also settable via `APP_ENV` |
 | `MNEMO_CORS_ALLOWED_ORIGINS` | No | `https://mem9.ai` in production; `https://mem9.ai,http://localhost:4321,http://127.0.0.1:4321` in development | Comma-separated allowed CORS origins. Overrides the `MNEMO_ENV`-based defaults |
+
+API keys must be at most 128 bytes and contain only printable ASCII characters
+without internal whitespace. The limiter stores key fingerprints in a shared map
+of at most 100,000 IP/key buckets. At capacity, requests requiring a new bucket
+receive 429 until stale entries are cleaned up; existing buckets retain their limits.
+Request headers have a 16 KiB budget. JSON bodies are limited to 1 MiB (413 when
+exceeded); multipart imports retain their separate 50 MiB limit.
 
 #### Embedding And Ingest
 

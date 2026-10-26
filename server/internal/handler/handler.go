@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"runtime"
@@ -336,7 +337,10 @@ func respondError(w http.ResponseWriter, status int, msg string) error {
 // handleError maps domain errors to HTTP status codes.
 func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err error) error {
 	var budgetErr *memoryListBudgetExceededError
+	var sizeErr *http.MaxBytesError
 	switch {
+	case errors.As(err, &sizeErr):
+		return respondError(w, http.StatusRequestEntityTooLarge, "request body too large")
 	case isRecallServerDeadline(err):
 		attrs := []any{
 			"error_role", "final",
@@ -413,8 +417,20 @@ func decode(r *http.Request, dst any) error {
 	if r.Body == nil {
 		return &domain.ValidationError{Message: "request body required"}
 	}
-	dec := json.NewDecoder(r.Body)
-	if err := dec.Decode(dst); err != nil {
+	const maxJSONBodyBytes = 1 << 20
+	if r.ContentLength > maxJSONBodyBytes {
+		return &http.MaxBytesError{Limit: maxJSONBodyBytes}
+	}
+	r.Body = http.MaxBytesReader(nil, r.Body, maxJSONBodyBytes)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		var sizeErr *http.MaxBytesError
+		if errors.As(err, &sizeErr) {
+			return err
+		}
+		return &domain.ValidationError{Message: "invalid JSON: " + err.Error()}
+	}
+	if err := json.Unmarshal(body, dst); err != nil {
 		return &domain.ValidationError{Message: "invalid JSON: " + err.Error()}
 	}
 	return nil
