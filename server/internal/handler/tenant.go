@@ -139,6 +139,7 @@ func (s *Server) resolveAPIKeyStatus(w http.ResponseWriter, r *http.Request) (ap
 	}
 	auth := &domain.AuthInfo{
 		TenantID:      statusResult.TenantID,
+		CredentialID:  statusResult.CredentialID,
 		ClusterID:     statusResult.ClusterID,
 		APIKeySubject: apiKey,
 		AgentName:     r.Header.Get(middleware.AgentIDHeader),

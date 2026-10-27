@@ -14,6 +14,9 @@ import (
 const unmatchedRouteLabel = "unmatched"
 
 var (
+	// APIKeyLegacyFallbackTotal counts temporary legacy identity lookups without key labels.
+	APIKeyLegacyFallbackTotal = promauto.NewCounter(prometheus.CounterOpts{Namespace: "mnemo", Name: "api_key_legacy_fallback_total", Help: "Legacy API-key identity lookups during credential migration."})
+
 	// HTTPRequestsTotal counts requests by method, route pattern, and status code.
 	HTTPRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

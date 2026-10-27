@@ -177,7 +177,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			}
 			s.recordIngestMetering(auth, svc)
 			s.enqueueMemoryAddedIDWebhooks(syncCtx, auth, svc, writeChainSource, chainAuth, result)
-			go s.afterSuccessfulWrite(auth, svc, written)
+			goWithAuth(auth, func() { s.afterSuccessfulWrite(auth, svc, written) })
 			respond(w, http.StatusOK, statusResponseWithRuntimeNotice("ok", s.runtimeResponseNotice(r.Context(), auth)))
 		} else {
 			var lease *runtimeusage.OperationLease
@@ -189,45 +189,47 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			go func(lease *runtimeusage.OperationLease) {
-				result, err := s.ingestMessages(context.Background(), auth, svc, ingestReq, chainAuth)
-				if err != nil {
-					if s.runtimeUsageEnabled() {
-						s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, err)
-					}
-					slog.Error("async ingest failed", "session", ingestReq.SessionID, "err", err)
-					return
-				}
-				if result != nil && result.Status == "failed" {
-					if s.runtimeUsageEnabled() {
-						s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, errors.New("ingest reconciliation failed"))
-					}
-					slog.Error("async ingest reconcile failed", "session", ingestReq.SessionID)
-					return
-				}
-				var written int64
-				if result != nil {
-					written = int64(result.MemoriesChanged)
-				}
-				if s.runtimeUsageEnabled() {
-					var ids []string
-					if result != nil {
-						ids = result.InsightIDs
-					}
-					if err := withRuntimeUsagePostSuccessContext(r.Context(), func(ctx context.Context) error {
-						return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
-							MemoryIDs:       ids,
-							AgentName:       auth.AgentName,
-							ObjectsAffected: written,
-						})
-					}); err != nil {
-						s.logRuntimeUsageBackgroundFinalizeError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
+			goWithAuth(auth, func(lease *runtimeusage.OperationLease) func() {
+				return func() {
+					result, err := s.ingestMessages(context.Background(), auth, svc, ingestReq, chainAuth)
+					if err != nil {
+						if s.runtimeUsageEnabled() {
+							s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, err)
+						}
+						slog.Error("async ingest failed", "session", ingestReq.SessionID, "err", err)
 						return
 					}
+					if result != nil && result.Status == "failed" {
+						if s.runtimeUsageEnabled() {
+							s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, errors.New("ingest reconciliation failed"))
+						}
+						slog.Error("async ingest reconcile failed", "session", ingestReq.SessionID)
+						return
+					}
+					var written int64
+					if result != nil {
+						written = int64(result.MemoriesChanged)
+					}
+					if s.runtimeUsageEnabled() {
+						var ids []string
+						if result != nil {
+							ids = result.InsightIDs
+						}
+						if err := withRuntimeUsagePostSuccessContext(r.Context(), func(ctx context.Context) error {
+							return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+								MemoryIDs:       ids,
+								AgentName:       auth.AgentName,
+								ObjectsAffected: written,
+							})
+						}); err != nil {
+							s.logRuntimeUsageBackgroundFinalizeError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
+							return
+						}
+					}
+					s.enqueueMemoryAddedIDWebhooks(context.Background(), auth, svc, writeChainSource, chainAuth, result)
+					s.afterSuccessfulIngest(auth, svc, written)
 				}
-				s.enqueueMemoryAddedIDWebhooks(context.Background(), auth, svc, writeChainSource, chainAuth, result)
-				s.afterSuccessfulIngest(auth, svc, written)
-			}(lease)
+			}(lease))
 			respond(w, http.StatusAccepted, statusResponseWithRuntimeNotice("accepted", s.runtimeResponseNotice(r.Context(), auth)))
 		}
 		return
@@ -308,7 +310,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			finalized = true
 		}
 		s.enqueueMemoryAddedWebhook(r.Context(), auth, writeChainSource, chainAuth, mem)
-		go s.afterSuccessfulWrite(auth, svc, int64(written))
+		goWithAuth(auth, func() { s.afterSuccessfulWrite(auth, svc, int64(written)) })
 		respond(w, http.StatusCreated, memoryResponseWithRuntimeNotice(mem, s.runtimeResponseNotice(r.Context(), auth)))
 		return
 	}
@@ -371,7 +373,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 				finalized = true
 			}
 			s.enqueueMemoryAddedIDWebhooks(r.Context(), auth, svc, writeChainSource, chainAuth, result)
-			go s.afterSuccessfulWrite(auth, svc, written)
+			goWithAuth(auth, func() { s.afterSuccessfulWrite(auth, svc, written) })
 			respond(w, http.StatusOK, statusResponseWithRuntimeNotice("ok", s.runtimeResponseNotice(r.Context(), auth)))
 			return
 		}
@@ -405,7 +407,7 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			finalized = true
 		}
 		s.enqueueMemoryAddedWebhook(r.Context(), auth, writeChainSource, chainAuth, mem)
-		go s.afterSuccessfulWrite(auth, svc, int64(written))
+		goWithAuth(auth, func() { s.afterSuccessfulWrite(auth, svc, int64(written)) })
 		respond(w, http.StatusOK, statusResponseWithRuntimeNotice("ok", s.runtimeResponseNotice(r.Context(), auth)))
 	} else {
 		var lease *runtimeusage.OperationLease
@@ -418,78 +420,80 @@ func (s *Server) createMemory(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		routingTargets := chainRoutingTargets(chainAuth)
-		go func(auth, chainAuth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, appID, sessionID, content string, tags []string, metadata json.RawMessage, routingTargets []service.RoutingTarget) {
-			// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
-			if len(routingTargets) > 0 && svc.ingest.HasLLM() {
-				result, err := s.createSmartContentWithRouting(context.Background(), chainAuth, svc, routingTargets, agentName, actorAgentID, appID, sessionID, content, tags, metadata)
+		goWithAuth(auth, func(auth, chainAuth *domain.AuthInfo, lease *runtimeusage.OperationLease, agentName, actorAgentID, appID, sessionID, content string, tags []string, metadata json.RawMessage, routingTargets []service.RoutingTarget) func() {
+			return func() {
+				// s.persistContentSession(context.Background(), auth, svc, sessionID, actorAgentID, content, metadata)
+				if len(routingTargets) > 0 && svc.ingest.HasLLM() {
+					result, err := s.createSmartContentWithRouting(context.Background(), chainAuth, svc, routingTargets, agentName, actorAgentID, appID, sessionID, content, tags, metadata)
+					if err != nil {
+						if s.runtimeUsageEnabled() {
+							s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, err)
+						}
+						slog.Error("async routed memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
+						return
+					}
+					if result != nil && result.Status == "failed" {
+						if s.runtimeUsageEnabled() {
+							s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, errors.New("content reconciliation failed"))
+						}
+						slog.Error("async routed memory reconcile failed", "agent", actorAgentID, "actor", agentName)
+						return
+					}
+					var written int64
+					var ids []string
+					if result != nil {
+						written = int64(result.MemoriesChanged)
+						ids = result.InsightIDs
+					}
+					if s.runtimeUsageEnabled() {
+						if err := withRuntimeUsagePostSuccessContext(r.Context(), func(ctx context.Context) error {
+							return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
+								MemoryIDs:       ids,
+								AgentName:       auth.AgentName,
+								ObjectsAffected: written,
+							})
+						}); err != nil {
+							s.logRuntimeUsageBackgroundFinalizeError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
+							return
+						}
+					}
+					s.enqueueMemoryAddedIDWebhooks(context.Background(), auth, svc, writeChainSource, chainAuth, result)
+					s.afterSuccessfulWrite(auth, svc, written)
+					return
+				}
+				mem, written, err := svc.memory.Create(context.Background(), actorAgentID, appID, content, tags, metadata)
 				if err != nil {
 					if s.runtimeUsageEnabled() {
 						s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, err)
 					}
-					slog.Error("async routed memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
+					slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
 					return
 				}
-				if result != nil && result.Status == "failed" {
-					if s.runtimeUsageEnabled() {
-						s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, errors.New("content reconciliation failed"))
-					}
-					slog.Error("async routed memory reconcile failed", "agent", actorAgentID, "actor", agentName)
-					return
-				}
-				var written int64
-				var ids []string
-				if result != nil {
-					written = int64(result.MemoriesChanged)
-					ids = result.InsightIDs
+				if mem != nil {
+					slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", mem.ID)
+				} else {
+					slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
 				}
 				if s.runtimeUsageEnabled() {
+					var ids []string
+					if mem != nil && mem.ID != "" {
+						ids = []string{mem.ID}
+					}
 					if err := withRuntimeUsagePostSuccessContext(r.Context(), func(ctx context.Context) error {
 						return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
 							MemoryIDs:       ids,
 							AgentName:       auth.AgentName,
-							ObjectsAffected: written,
+							ObjectsAffected: int64(written),
 						})
 					}); err != nil {
 						s.logRuntimeUsageBackgroundFinalizeError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
 						return
 					}
 				}
-				s.enqueueMemoryAddedIDWebhooks(context.Background(), auth, svc, writeChainSource, chainAuth, result)
-				s.afterSuccessfulWrite(auth, svc, written)
-				return
+				s.enqueueMemoryAddedWebhook(context.Background(), auth, writeChainSource, chainAuth, mem)
+				s.afterSuccessfulWrite(auth, svc, int64(written))
 			}
-			mem, written, err := svc.memory.Create(context.Background(), actorAgentID, appID, content, tags, metadata)
-			if err != nil {
-				if s.runtimeUsageEnabled() {
-					s.afterRuntimeUsageMemoryCreateFailure(r.Context(), lease, err)
-				}
-				slog.Error("async memory create failed", "agent", actorAgentID, "actor", agentName, "err", err)
-				return
-			}
-			if mem != nil {
-				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", mem.ID)
-			} else {
-				slog.Info("async memory create complete", "agent", actorAgentID, "actor", agentName, "memory_id", "")
-			}
-			if s.runtimeUsageEnabled() {
-				var ids []string
-				if mem != nil && mem.ID != "" {
-					ids = []string{mem.ID}
-				}
-				if err := withRuntimeUsagePostSuccessContext(r.Context(), func(ctx context.Context) error {
-					return s.runtimeUsage.AfterMemoryCreateSuccess(ctx, lease, runtimeusage.MemoryCreateResult{
-						MemoryIDs:       ids,
-						AgentName:       auth.AgentName,
-						ObjectsAffected: int64(written),
-					})
-				}); err != nil {
-					s.logRuntimeUsageBackgroundFinalizeError(r.Context(), err, runtimeUsageFinalizeErrorDetails(lease))
-					return
-				}
-			}
-			s.enqueueMemoryAddedWebhook(context.Background(), auth, writeChainSource, chainAuth, mem)
-			s.afterSuccessfulWrite(auth, svc, int64(written))
-		}(auth, chainAuth, lease, auth.AgentName, agentID, appID, req.SessionID, content, tags, metadata, routingTargets)
+		}(auth, chainAuth, lease, auth.AgentName, agentID, appID, req.SessionID, content, tags, metadata, routingTargets))
 
 		respond(w, http.StatusAccepted, statusResponseWithRuntimeNotice("accepted", s.runtimeResponseNotice(r.Context(), auth)))
 	}
@@ -557,7 +561,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 
 	if !req.DisableSessionSave {
 		wg.Add(1)
-		go func() {
+		goWithAuth(auth, func() {
 			defer wg.Done()
 			patchTagsStart := time.Now()
 			defer func() {
@@ -574,11 +578,11 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 						"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Add(1)
-	go func() {
+	goWithAuth(auth, func() {
 		defer wg.Done()
 		reconcileStart := time.Now()
 		defer func() {
@@ -586,7 +590,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 		}()
 		reconcileResult, reconcileErr = svc.ingest.ReconcilePhase2(
 			ctx, auth.AgentName, req.AgentID, req.AppID, req.SessionID, phase1.Facts, req.ExternalProvenance)
-	}()
+	})
 
 	wg.Wait()
 
@@ -1396,7 +1400,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 			}
 			finalized = true
 		}
-		go s.afterSuccessfulWrite(target.nodeAuth, target.svc, 1)
+		goWithAuth(auth, func() { s.afterSuccessfulWrite(target.nodeAuth, target.svc, 1) })
 		w.Header().Set("ETag", strconv.Itoa(mem.Version))
 		respond(w, http.StatusOK, mem)
 		return
@@ -1442,7 +1446,7 @@ func (s *Server) updateMemory(w http.ResponseWriter, r *http.Request) {
 		finalized = true
 	}
 
-	go s.afterSuccessfulWrite(auth, svc, 1)
+	goWithAuth(auth, func() { s.afterSuccessfulWrite(auth, svc, 1) })
 	w.Header().Set("ETag", strconv.Itoa(mem.Version))
 	respond(w, http.StatusOK, mem)
 }
@@ -1500,7 +1504,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 		if deleted > 0 {
 			s.enqueueMemoryDeletedWebhook(r.Context(), target.nodeAuth, target.source, auth, id, auth.AgentName)
 		}
-		go s.afterSuccessfulWrite(target.nodeAuth, target.svc, 0)
+		goWithAuth(auth, func() { s.afterSuccessfulWrite(target.nodeAuth, target.svc, 0) })
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -1555,7 +1559,7 @@ func (s *Server) deleteMemory(w http.ResponseWriter, r *http.Request) {
 	if deleted > 0 {
 		s.enqueueMemoryDeletedWebhook(r.Context(), auth, nil, nil, id, auth.AgentName)
 	}
-	go s.afterSuccessfulWrite(auth, svc, 0)
+	goWithAuth(auth, func() { s.afterSuccessfulWrite(auth, svc, 0) })
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1633,7 +1637,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 				for _, id := range webhookDeleteIDs {
 					s.enqueueMemoryDeletedWebhook(r.Context(), group.target.nodeAuth, group.target.source, auth, id, auth.AgentName)
 				}
-				go s.afterSuccessfulWrite(group.target.nodeAuth, group.target.svc, 0)
+				goWithAuth(auth, func() { s.afterSuccessfulWrite(group.target.nodeAuth, group.target.svc, 0) })
 			}
 			deleted += groupDeleted
 		}
@@ -1704,7 +1708,7 @@ func (s *Server) batchDeleteMemories(w http.ResponseWriter, r *http.Request) {
 			s.enqueueMemoryDeletedWebhook(r.Context(), auth, nil, nil, id, auth.AgentName)
 		}
 	}
-	go s.afterSuccessfulWrite(auth, svc, 0)
+	goWithAuth(auth, func() { s.afterSuccessfulWrite(auth, svc, 0) })
 	respond(w, http.StatusOK, map[string]any{
 		"deleted": deleted,
 	})
@@ -1804,7 +1808,7 @@ func (s *Server) bulkCreateMemories(w http.ResponseWriter, r *http.Request) {
 		finalized = true
 	}
 
-	go s.afterSuccessfulIngest(auth, svc, int64(len(memories)))
+	goWithAuth(auth, func() { s.afterSuccessfulIngest(auth, svc, int64(len(memories))) })
 	respond(w, http.StatusCreated, map[string]any{
 		"ok":       true,
 		"memories": memories,

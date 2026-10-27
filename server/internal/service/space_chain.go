@@ -11,12 +11,14 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/repository"
 )
 
 type SpaceChainService struct {
-	chains repository.SpaceChainRepo
+	chains      repository.SpaceChainRepo
+	credentials *credentials.Store
 }
 
 func NewSpaceChainService(chains repository.SpaceChainRepo) *SpaceChainService {
@@ -281,6 +283,11 @@ func (s *SpaceChainService) DisableBinding(ctx context.Context, chainID, binding
 	return s.chains.DisableBinding(ctx, chainID, bindingID, strings.TrimSpace(disabledByUserID))
 }
 
+func (s *SpaceChainService) WithCredentials(store *credentials.Store) *SpaceChainService {
+	s.credentials = store
+	return s
+}
+
 func (s *SpaceChainService) ReplaceNodes(ctx context.Context, chainID string, req ReplaceSpaceChainNodesRequest) ([]domain.SpaceChainNode, error) {
 	chainID = strings.TrimSpace(chainID)
 	if chainID == "" {
@@ -289,6 +296,16 @@ func (s *SpaceChainService) ReplaceNodes(ctx context.Context, chainID string, re
 	existingNodes, err := s.chains.ListNodes(ctx, chainID)
 	if err != nil {
 		return nil, err
+	}
+	if s.credentials != nil {
+		for i := range existingNodes {
+			id, release, err := s.credentials.HoldTenant(ctx, existingNodes[i].TenantID)
+			if err != nil {
+				return nil, err
+			}
+			defer release()
+			existingNodes[i].TenantID = id
+		}
 	}
 	existingPolicies := routingPoliciesByStableNodeKey(existingNodes)
 	nodes := make([]domain.SpaceChainNode, 0, len(req.Nodes))
@@ -301,6 +318,18 @@ func (s *SpaceChainService) ReplaceNodes(ctx context.Context, chainID string, re
 		}
 		if strings.HasPrefix(tenantID, domain.ChainKeyPrefix) {
 			return nil, &domain.ValidationError{Field: "nodes", Message: "chain nodes must be spaces, not Space Chains"}
+		}
+		if s.credentials != nil {
+			rec, err := s.credentials.LookupTenant(ctx, tenantID)
+			if err != nil {
+				return nil, err
+			}
+			rec, lease, err := s.credentials.HoldRecord(ctx, rec.ID)
+			if err != nil {
+				return nil, err
+			}
+			defer lease.Close()
+			tenantID = rec.TenantID
 		}
 		if _, ok := seenTenant[tenantID]; ok {
 			return nil, &domain.ValidationError{Field: "nodes", Message: "duplicate tenant_id"}

@@ -1,17 +1,20 @@
 package runtimeusage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"time"
 
+	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 )
 
 type Worker struct {
+	credentials  *credentials.Store
 	store        workerStore
 	client       QuotaClient
 	metering     metering.Writer
@@ -30,7 +33,11 @@ type workerStore interface {
 }
 
 func NewWorker(store *SQLStore, client QuotaClient, writer metering.Writer, logger *slog.Logger) *Worker {
-	return newWorker(store, client, writer, logger)
+	w := newWorker(store, client, writer, logger)
+	if store != nil {
+		w.credentials = store.credentials
+	}
+	return w
 }
 
 func newWorker(store workerStore, client QuotaClient, writer metering.Writer, logger *slog.Logger) *Worker {
@@ -81,13 +88,71 @@ func (w *Worker) runOnce(ctx context.Context) error {
 }
 
 func (w *Worker) processRow(ctx context.Context, row outboxRow) {
-	if row.SubjectVersion != subjectVersionTenantIDV1 {
+	if row.SubjectVersion != subjectVersionTenantIDV1 && row.SubjectVersion != subjectVersionCredentialV1 {
 		w.markUnknown(ctx, row, "unsupported subject version")
 		return
 	}
 	var payload outboxPayload
-	if err := json.Unmarshal(row.PayloadJSON, &payload); err != nil {
+	var decodeErr error
+	if row.SubjectVersion == subjectVersionCredentialV1 {
+		decoder := json.NewDecoder(bytes.NewReader(row.PayloadJSON))
+		decoder.UseNumber()
+		decodeErr = decoder.Decode(&payload)
+	} else {
+		decodeErr = json.Unmarshal(row.PayloadJSON, &payload)
+	}
+	if decodeErr != nil {
 		w.markUnknown(ctx, row, "invalid outbox payload")
+		return
+	}
+
+	if w.credentials != nil {
+		if row.TenantID != "" {
+			id, release, err := w.credentials.HoldTenant(ctx, row.TenantID)
+			if err != nil {
+				w.markRetryable(ctx, row, err)
+				return
+			}
+			defer release()
+			row.TenantID = id
+		} else {
+			var rec *credentials.Record
+			var err error
+			if payload.APIKeyID != "" {
+				rec, err = w.credentials.ByID(ctx, payload.APIKeyID)
+			} else {
+				rec, err = w.credentials.ByKey(ctx, apiKeySubjectFromOutbox(row, payload))
+			}
+			if err != nil || rec.Kind != "chain" {
+				w.markRetryable(ctx, row, errors.New("invalid aggregate Chain subject"))
+				return
+			}
+			_, lease, err := w.credentials.HoldRecord(ctx, rec.ID)
+			if err != nil {
+				w.markRetryable(ctx, row, err)
+				return
+			}
+			defer lease.Close()
+		}
+	}
+	if row.SubjectVersion == subjectVersionCredentialV1 {
+		if w.credentials == nil || payload.APIKeyID == "" {
+			w.markRetryable(ctx, row, errors.New("credential resolver unavailable"))
+			return
+		}
+		key, err := w.credentials.Recover(ctx, payload.APIKeyID)
+		if err != nil {
+			w.logger.ErrorContext(ctx, "outbox credential recovery failed", "operation_id", row.OperationID)
+			w.markRetryable(ctx, row, err)
+			return
+		}
+		payload.APIKeySubject = key
+		if payload.Event != nil {
+			payload.Event.APIKeySubject = key
+		}
+
+	} else if w.credentials != nil && !w.credentials.Config.LegacyOutbox {
+		w.markRetryable(ctx, row, errors.New("legacy outbox disabled; migrate retained rows"))
 		return
 	}
 

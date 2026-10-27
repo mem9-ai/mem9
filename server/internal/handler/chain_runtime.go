@@ -228,6 +228,8 @@ func chainNodeAuth(auth *domain.AuthInfo, node domain.ChainAuthNode) *domain.Aut
 	}
 	return &domain.AuthInfo{
 		AgentName:     auth.AgentName,
+		Hold:          auth.Hold,
+		CredentialID:  auth.CredentialID,
 		TenantID:      node.TenantID,
 		TenantDB:      node.TenantDB,
 		ClusterID:     node.ClusterID,

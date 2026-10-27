@@ -81,7 +81,12 @@ type Config struct {
 	Outbox                    OutboxStore
 }
 
+type BackgroundScope struct {
+	Retain func() func()
+}
+
 type Subject struct {
+	Hold          *BackgroundScope `json:"-"`
 	TenantID      string
 	ClusterID     string
 	APIKeySubject string

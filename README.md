@@ -105,6 +105,14 @@ Under the hood, the hosted mem9 API runs the same mem9 server model surfaced in 
 
 Set `X-Mnemo-Agent-Id` on authenticated memory, import, and session-message requests when you want the server to distinguish which runtime or agent instance is writing and recalling memories inside the same mem9 space. This works on both the tenant-path `v1alpha1` routes and the `v1alpha2` API-key routes.
 
+### Credential storage and online tenant migration
+
+The optional credential store separates API keys from internal tenant IDs and
+stores HMAC digests plus AES-256-GCM ciphertext. It is disabled by default.
+Operators must follow the [three-phase online migration runbook](server/migrations/api-keys/README.md)
+before enabling credential lookup, reference-only outbox writes or independent
+provisioning. Existing client keys and provisioning response fields stay valid.
+
 ### Provisioning
 
 Use this endpoint when you want mem9 to auto-provision a new TiDB-backed space.

@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/credentials"
 )
 
 type DispatcherConfig struct {
@@ -19,11 +21,12 @@ type DispatcherConfig struct {
 }
 
 type Dispatcher struct {
-	store  Store
-	svc    *Service
-	client *http.Client
-	cfg    DispatcherConfig
-	logger *slog.Logger
+	credentials *credentials.Store
+	store       Store
+	svc         *Service
+	client      *http.Client
+	cfg         DispatcherConfig
+	logger      *slog.Logger
 }
 
 func NewDispatcher(store Store, svc *Service, cfg DispatcherConfig, logger *slog.Logger) *Dispatcher {
@@ -69,6 +72,11 @@ func NewDispatcher(store Store, svc *Service, cfg DispatcherConfig, logger *slog
 	}
 }
 
+func (d *Dispatcher) WithCredentials(store *credentials.Store) *Dispatcher {
+	d.credentials = store
+	return d
+}
+
 func (d *Dispatcher) Run(ctx context.Context) error {
 	ticker := time.NewTicker(d.cfg.PollInterval)
 	defer ticker.Stop()
@@ -98,6 +106,24 @@ func (d *Dispatcher) drain(ctx context.Context) error {
 }
 
 func (d *Dispatcher) deliver(ctx context.Context, job DeliveryJob) error {
+	if d.credentials != nil {
+		ids := credentials.EventTenantIDs(job.Payload)
+		if job.ScopeType == ScopeTenant {
+			ids = append(ids, job.ScopeID)
+		}
+		for _, id := range ids {
+			_, release, err := d.credentials.HoldTenant(ctx, id)
+			if err != nil {
+				return err
+			}
+			defer release()
+		}
+		// A claimed job can predate a tenant cutover; reload its immutable event
+		// after entering the reader barrier so it never delivers old identities.
+		if err := d.credentials.DB.QueryRowContext(ctx, d.credentials.SQL("SELECT payload_json FROM webhook_events WHERE id=?"), job.EventID).Scan(&job.Payload); err != nil {
+			return fmt.Errorf("reload webhook event after tenant barrier")
+		}
+	}
 	secret, err := d.svc.DecryptSecret(ctx, job.SecretCiphertext)
 	if err != nil {
 		return d.recordFailure(ctx, job, nil, fmt.Errorf("decrypt webhook secret: %w", err))

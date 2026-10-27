@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/config"
+	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/handler"
@@ -45,6 +46,37 @@ func main() {
 	}
 	defer db.Close()
 	logger.Info("database connected", "backend", cfg.DBBackend)
+
+	credentialConfig, err := credentials.LoadConfig()
+	if err != nil {
+		logger.Error("invalid credential configuration", "err", err)
+		os.Exit(1)
+	}
+	var credentialStore *credentials.Store
+	if credentialConfig.Enabled {
+		credentialStore, err = credentials.New(db, cfg.DBBackend, credentialConfig, cfg.UploadDir)
+		if err == nil {
+			err = credentialStore.CheckSchema(context.Background())
+		}
+		if err == nil {
+			err = credentialStore.CheckStage(context.Background())
+		}
+		if err == nil {
+			err = credentialStore.SyncFiles(context.Background())
+		}
+		if err != nil {
+			logger.Error("credential preflight failed", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("credential migration participant registered", "instance_id", credentialStore.InstanceID)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := credentialStore.Leave(ctx); err != nil {
+				logger.Error("credential participant retained for recovery", "instance_id", credentialStore.InstanceID)
+			}
+		}()
+	}
 
 	// Warn if encryption type is non-default — changing this later breaks existing tenants.
 	if cfg.EncryptType != "" && cfg.EncryptType != "plain" {
@@ -107,7 +139,7 @@ func main() {
 	webhookWorkerCtx, webhookWorkerCancel := context.WithCancel(context.Background())
 	defer webhookWorkerCancel()
 	go func() {
-		err := webhook.NewDispatcher(webhookStore, webhookSvc, webhook.DispatcherConfig{}, logger).Run(webhookWorkerCtx)
+		err := webhook.NewDispatcher(webhookStore, webhookSvc, webhook.DispatcherConfig{}, logger).WithCredentials(credentialStore).Run(webhookWorkerCtx)
 		if err != nil && err != context.Canceled {
 			logger.Error("webhook dispatcher stopped", "err", err)
 		}
@@ -123,6 +155,9 @@ func main() {
 
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
+	if credentialStore != nil {
+		tenantRepo = &credentials.TenantRepository{TenantRepo: tenantRepo, Store: credentialStore}
+	}
 	spaceChainRepo := repository.NewSpaceChainRepo(cfg.DBBackend, db)
 	var utmRepo repository.UTMRepo
 	if cfg.UTMEnabled {
@@ -144,6 +179,12 @@ func main() {
 		EmbedAutoModel: cfg.EmbedAutoModel,
 	})
 	defer tenantPool.Close()
+	if credentialStore != nil {
+		credentialStore.Invalidate = tenantPool.Remove
+		fileCtx, fileCancel := context.WithCancel(context.Background())
+		defer fileCancel()
+		go func() { _ = credentialStore.RunFileAgent(fileCtx) }()
+	}
 
 	meteringWriter, err := metering.New(context.Background(), metering.Config{
 		Enabled:       cfg.MeteringEnabled,
@@ -170,7 +211,7 @@ func main() {
 	var runtimeUsageStore *runtimeusage.SQLStore
 	if cfg.RuntimeUsageEnabled {
 		if cfg.RuntimeUsageOutboxEnabled {
-			runtimeUsageStore = runtimeusage.NewSQLStore(db, cfg.DBBackend)
+			runtimeUsageStore = runtimeusage.NewSQLStore(db, cfg.DBBackend).WithCredentials(credentialStore)
 			if err := runtimeUsageStore.EnsureSchema(context.Background()); err != nil {
 				logger.Error("failed to initialize runtime usage outbox", "err", err)
 				os.Exit(1)
@@ -263,22 +304,25 @@ func main() {
 		}
 	}
 
-	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor)
+	if spendLimitAdjuster != nil && credentialStore != nil {
+		spendLimitAdjuster = credentialSpendLimitAdjuster{spendLimitAdjuster, credentialStore}
+	}
+	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor).WithCredentials(credentialStore)
 	if utmRepo != nil {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}
-	spaceChainSvc := service.NewSpaceChainService(spaceChainRepo)
+	spaceChainSvc := service.NewSpaceChainService(spaceChainRepo).WithCredentials(credentialStore)
 	logger.Info("space chain create gate", "required", cfg.SpaceChainCreateSecretRequired, "secret_configured", cfg.SpaceChainCreateSecret != "")
 
 	// Middleware.
 	var tenantMW func(http.Handler) http.Handler
 	var apiKeyMW func(http.Handler) http.Handler
 	if spendLimitAdjuster != nil {
-		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
-		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg), middleware.WithSpaceChainRepo(spaceChainRepo))
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg), middleware.WithSpaceChainRepo(spaceChainRepo))
 	} else {
-		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
-		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpaceChainRepo(spaceChainRepo))
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpaceChainRepo(spaceChainRepo))
 	}
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst, cfg.RuntimeUsageInternalSecret)
 	defer rl.Stop()
@@ -331,7 +375,7 @@ func main() {
 		encryptor,
 		activityTracker,
 		service.WithAssistantFactExtraction(cfg.FactExtractionIncludeAssistant),
-	)
+	).WithCredentials(credentialStore)
 	go func() {
 		if err := uploadWorker.Run(workerCtx); err != nil {
 			logger.Error("upload worker error", "err", err)
