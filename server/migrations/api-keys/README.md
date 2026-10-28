@@ -73,6 +73,11 @@ they are not one atomic transaction. Cutover requires acknowledgements from all
 registered participants. Measure per-tenant time in rehearsal; there is no
 fixed seconds-level guarantee.
 
+Graceful shutdown waits up to 30 seconds for HTTP requests, worker goroutines,
+and retained background readers before unregistering the participant. Allow
+additional termination grace for the final database cleanup. If draining fails
+or times out, keep the registration and use the recovery procedure below.
+
 Reader tokens and participant registrations deliberately do not expire on a
 timer: an unreachable process could still be writing or retain an old local
 volume. A crash pauses migration safely. Inspect `-action progress` and the

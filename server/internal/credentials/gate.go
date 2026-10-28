@@ -196,6 +196,27 @@ func (s *Store) RunFileAgent(ctx context.Context) error {
 	}
 }
 
+// Drain waits for request scopes and their retained background work. Call only
+// after HTTP shutdown and worker joins have stopped new readers from entering.
+func (s *Store) Drain(ctx context.Context) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var count int
+		if err := s.DB.QueryRowContext(ctx, s.SQL("SELECT COUNT(*) FROM api_key_readers WHERE instance_id = ?"), s.InstanceID).Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 func (s *Store) Leave(ctx context.Context) error {
 	// A clean shutdown only unregisters after every retained background scope
 	// has finished. Otherwise keep the participant for explicit crash recovery.

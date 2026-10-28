@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -53,6 +54,7 @@ func main() {
 		os.Exit(1)
 	}
 	var credentialStore *credentials.Store
+	credentialDrained := false
 	if credentialConfig.Enabled {
 		credentialStore, err = credentials.New(db, cfg.DBBackend, credentialConfig, cfg.UploadDir)
 		if err == nil {
@@ -72,6 +74,10 @@ func main() {
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
+			if !credentialDrained {
+				logger.Error("credential participant retained for recovery", "instance_id", credentialStore.InstanceID)
+				return
+			}
 			if err := credentialStore.Leave(ctx); err != nil {
 				logger.Error("credential participant retained for recovery", "instance_id", credentialStore.InstanceID)
 			}
@@ -136,9 +142,12 @@ func main() {
 	}
 	allowLocalWebhookHTTP := cfg.Env != "prod" && cfg.Env != "production"
 	webhookSvc := webhook.NewService(webhookStore, encryptor, allowLocalWebhookHTTP)
+	var workers sync.WaitGroup
 	webhookWorkerCtx, webhookWorkerCancel := context.WithCancel(context.Background())
 	defer webhookWorkerCancel()
+	workers.Add(1)
 	go func() {
+		defer workers.Done()
 		err := webhook.NewDispatcher(webhookStore, webhookSvc, webhook.DispatcherConfig{}, logger).WithCredentials(credentialStore).Run(webhookWorkerCtx)
 		if err != nil && err != context.Canceled {
 			logger.Error("webhook dispatcher stopped", "err", err)
@@ -243,7 +252,9 @@ func main() {
 		var runtimeUsageWorkerCtx context.Context
 		runtimeUsageWorkerCtx, runtimeUsageWorkerCancel = context.WithCancel(context.Background())
 		defer runtimeUsageWorkerCancel()
+		workers.Add(1)
 		go func() {
+			defer workers.Done()
 			err := runtimeusage.NewWorker(runtimeUsageStore, runtimeUsageClient, runtimeUsageMetering, logger).Run(runtimeUsageWorkerCtx)
 			if err != nil && err != context.Canceled {
 				logger.Error("runtime usage outbox worker stopped", "err", err)
@@ -376,16 +387,21 @@ func main() {
 		activityTracker,
 		service.WithAssistantFactExtraction(cfg.FactExtractionIncludeAssistant),
 	).WithCredentials(credentialStore)
+	workers.Add(1)
 	go func() {
+		defer workers.Done()
 		if err := uploadWorker.Run(workerCtx); err != nil {
 			logger.Error("upload worker error", "err", err)
 		}
 	}()
 
-	// Graceful shutdown.
+	// Graceful shutdown. Join this goroutine before deferred resource cleanup.
+	shutdownDone := make(chan struct{})
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		defer close(shutdownDone)
 		sig := <-sigCh
 		logger.Info("received signal, shutting down", "signal", sig)
 
@@ -395,11 +411,27 @@ func main() {
 		webhookWorkerCancel()
 		workerCancel() // Stop upload worker first.
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := httpSrv.Shutdown(ctx); err != nil {
 			logger.Error("shutdown error", "err", err)
+			return
 		}
+		workersDone := make(chan struct{})
+		go func() { workers.Wait(); close(workersDone) }()
+		select {
+		case <-ctx.Done():
+			logger.Error("worker drain timed out")
+			return
+		case <-workersDone:
+		}
+		if credentialStore != nil {
+			if err := credentialStore.Drain(ctx); err != nil {
+				logger.Error("credential reader drain failed", "instance_id", credentialStore.InstanceID)
+				return
+			}
+		}
+		credentialDrained = true
 	}()
 
 	logger.Info("starting mnemo server", "port", cfg.Port)
@@ -407,6 +439,7 @@ func main() {
 		logger.Error("server error", "err", err)
 		os.Exit(1)
 	}
+	<-shutdownDone
 	logger.Info("server stopped")
 }
 

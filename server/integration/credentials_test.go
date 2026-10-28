@@ -7,14 +7,18 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -40,7 +44,7 @@ func TestCredentialOnlineMigration(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set MNEMO_CREDENTIAL_TEST_DSN to a disposable TiDB Zero DSN")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	cfg, err := mysql.ParseDSN(dsn)
 	must(t, err)
@@ -145,6 +149,36 @@ func TestCredentialOnlineMigration(t *testing.T) {
 	must(t, err)
 	if recovered != old {
 		t.Fatal("credential recovery changed key")
+	}
+	// A rolling restart must wait for retained work, and preserve rows on timeout.
+	restarting, err := credentials.New(db, "tidb", flags, t.TempDir())
+	must(t, err)
+	must(t, restarting.SyncFiles(ctx))
+	_, reader, err := restarting.HoldRecord(ctx, rec.ID)
+	must(t, err)
+	releaseBackground := reader.Retain()
+	reader.Close()
+	drainCtx, drainCancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	if restarting.Drain(drainCtx) == nil {
+		t.Fatal("shutdown drained before retained background work finished")
+	}
+	drainCancel()
+	if restarting.Leave(ctx) == nil {
+		t.Fatal("shutdown removed an active participant")
+	}
+	var participants int
+	must(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM api_key_instances WHERE id=?", restarting.InstanceID).Scan(&participants))
+	if participants != 1 {
+		t.Fatal("failed drain lost recovery registration")
+	}
+	drained := make(chan error, 1)
+	go func() { drained <- restarting.Drain(ctx) }()
+	releaseBackground()
+	must(t, <-drained)
+	must(t, restarting.Leave(ctx))
+	must(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM api_key_instances WHERE id=?", restarting.InstanceID).Scan(&participants))
+	if participants != 0 {
+		t.Fatal("clean restart left a stale participant")
 	}
 	_, err = a.ConvertOutbox(ctx, 100, false)
 	must(t, err)
@@ -368,7 +402,79 @@ func TestCredentialOnlineMigration(t *testing.T) {
 			t.Fatalf("audit %s=%d", name, counts[name])
 		}
 	}
+	verifyCredentialShutdown(t, ctx, db, cfg.FormatDSN(), secret, a, b, rec.ID)
 	t.Log("verified online key continuity, cross-instance file moves, in-flight barriers, Chain authorization, lossless JSON migration, exact outbox subject and late-finalizer fencing")
+}
+
+// Exercise the real executable: SIGTERM must join shutdown instead of exiting
+// as soon as ListenAndServe returns, including retained background readers.
+func verifyCredentialShutdown(t *testing.T, ctx context.Context, db *sql.DB, dsn, secret string, a, b *credentials.Store, credentialID string) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	must(t, err)
+	port := listener.Addr().(*net.TCPAddr).Port
+	must(t, listener.Close())
+	binary, err := filepath.Abs("../bin/mnemo-server")
+	must(t, err)
+	logFile, err := os.CreateTemp(t.TempDir(), "shutdown-*.log")
+	must(t, err)
+	defer logFile.Close()
+	cmd := osexec.Command(binary)
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, "MNEMO_") {
+			cmd.Env = append(cmd.Env, env)
+		}
+	}
+	cmd.Env = append(cmd.Env, "MNEMO_DSN="+dsn, fmt.Sprintf("MNEMO_PORT=%d", port), "MNEMO_DB_BACKEND=tidb", "MNEMO_API_KEYS_ENABLED=true", "MNEMO_API_KEYS_READ=true", "MNEMO_API_KEYS_SECRET_FILE="+secret, "MNEMO_UPLOAD_DIR="+t.TempDir())
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	must(t, cmd.Start())
+	defer cmd.Process.Kill()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	client := &http.Client{Timeout: time.Second}
+	startupCtx, startupCancel := context.WithTimeout(ctx, time.Minute)
+	defer startupCancel()
+	await(t, startupCtx, func() bool {
+		select {
+		case <-done:
+			t.Fatal("server exited before becoming ready")
+		default:
+		}
+		response, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+		if err != nil {
+			return false
+		}
+		response.Body.Close()
+		return response.StatusCode == http.StatusOK
+	})
+	var instanceID string
+	must(t, db.QueryRowContext(ctx, "SELECT id FROM api_key_instances WHERE id NOT IN (?,?)", a.InstanceID, b.InstanceID).Scan(&instanceID))
+	participant := *a
+	participant.InstanceID = instanceID
+	_, lease, err := participant.HoldRecord(ctx, credentialID)
+	must(t, err)
+	release := lease.Retain()
+	defer release()
+	lease.Close()
+	must(t, cmd.Process.Signal(syscall.SIGTERM))
+	select {
+	case <-done:
+		t.Fatal("server exited while retained background work was active")
+	case <-time.After(300 * time.Millisecond):
+	}
+	release()
+	select {
+	case err := <-done:
+		must(t, err)
+	case <-ctx.Done():
+		t.Fatal("server did not finish graceful shutdown")
+	}
+	var count int
+	must(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM api_key_instances WHERE id=?", instanceID).Scan(&count))
+	if count != 0 {
+		t.Fatal("SIGTERM left a stale credential participant")
+	}
+	t.Log("verified real server SIGTERM waits for retained work and removes its participant")
 }
 
 type realPool struct{ db *sql.DB }
