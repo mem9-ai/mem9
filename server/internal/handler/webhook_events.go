@@ -53,17 +53,25 @@ func (s *Server) enqueueMemoryDeletedWebhook(ctx context.Context, auth *domain.A
 	if s == nil || s.webhooks == nil || auth == nil || memoryID == "" {
 		return
 	}
-	data := map[string]any{
+	deletedAt := time.Now().UTC()
+	// The Space subscriber owns its Space key and keeps seeing it. The chain
+	// subscriber gets a separate payload that never carries a Space key.
+	s.enqueueWebhook(ctx, webhookScopeForAuth(auth, source), webhook.EventMemoryDeleted, map[string]any{
 		"memory": map[string]any{
 			"id":               memoryID,
 			"tenant_id":        auth.TenantID,
 			"deleted_by_agent": agentName,
-			"deleted_at":       time.Now().UTC(),
+			"deleted_at":       deletedAt,
 		},
-	}
-	s.enqueueWebhook(ctx, webhookScopeForAuth(auth, source), webhook.EventMemoryDeleted, data)
+	})
 	if chainAuth != nil && chainAuth.Chain != nil {
-		s.enqueueWebhook(ctx, webhook.EventScope{Type: webhook.ScopeChain, ChainID: chainAuth.Chain.ChainID}, webhook.EventMemoryDeleted, data)
+		s.enqueueWebhook(ctx, webhook.EventScope{Type: webhook.ScopeChain, ChainID: chainAuth.Chain.ChainID}, webhook.EventMemoryDeleted, map[string]any{
+			"memory": map[string]any{
+				"id":               memoryID,
+				"deleted_by_agent": agentName,
+				"deleted_at":       deletedAt,
+			},
+		})
 	}
 }
 
@@ -76,11 +84,14 @@ func (s *Server) enqueueRoutedFactWebhook(ctx context.Context, chainAuth *domain
 		appID = mem.AppID
 		sessionID = mem.SessionID
 	}
+	// Chain-scoped payloads identify nodes by node id and external Space id.
+	// They must never carry a Space key.
+	sourceNode := firstChainNode(chainAuth)
 	data := map[string]any{
 		"route_id":                 uuid.NewString(),
 		"chain_id":                 chainAuth.Chain.ChainID,
-		"source_tenant_id":         firstChainTenantID(chainAuth),
-		"target_tenant_id":         targetAuth.TenantID,
+		"source_node_id":           sourceNode.ID,
+		"source_external_space_id": sourceNode.ExternalSpaceID,
 		"target_external_space_id": node.ExternalSpaceID,
 		"routing_policy_node_id":   node.ID,
 		"webhook_only":             node.RoutingPolicyWebhookOnly,
@@ -103,9 +114,9 @@ func (s *Server) enqueueWebhook(ctx context.Context, scope webhook.EventScope, e
 	}
 }
 
-func firstChainTenantID(auth *domain.AuthInfo) string {
+func firstChainNode(auth *domain.AuthInfo) domain.SpaceChainNode {
 	if auth == nil || auth.Chain == nil || len(auth.Chain.Nodes) == 0 {
-		return ""
+		return domain.SpaceChainNode{}
 	}
-	return auth.Chain.Nodes[0].TenantID
+	return auth.Chain.Nodes[0].SpaceChainNode
 }

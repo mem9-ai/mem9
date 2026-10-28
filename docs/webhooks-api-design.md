@@ -38,6 +38,8 @@ Each event is stored once in `webhook_events` and faned out to enabled matching 
 }
 ```
 
+`scope.tenant_id` is the Space key. It appears only on Space-scoped events. Chain-scoped events (`"type": "chain"`) carry `chain_id` and never a Space key, anywhere in the envelope or in `data`.
+
 ### memory.added
 
 Emitted after a memory create path succeeds:
@@ -48,6 +50,8 @@ Emitted after a memory create path succeeds:
 - routed Space Chain target ADD action
 
 Smart ingest UPDATE actions do not emit `memory.added`.
+
+A memory written through a Space Chain also carries `memory.chain_source` (`chain_id`, `node_position`, `external_space_id`) in both the Space-scoped and the chain-scoped event. `chain_source` never contains a Space key.
 
 Payload:
 
@@ -72,7 +76,9 @@ Payload:
 
 Emitted after a single or batch delete succeeds.
 
-Payload:
+A delete through a Space Chain produces two events with the same `deleted_at`: one for the Space scope and one for the chain scope. Only the Space-scoped payload carries `tenant_id` (the Space key, which its own subscribers already own).
+
+Space-scoped payload:
 
 ```json
 {
@@ -85,9 +91,21 @@ Payload:
 }
 ```
 
+Chain-scoped payload:
+
+```json
+{
+  "memory": {
+    "id": "...",
+    "deleted_by_agent": "...",
+    "deleted_at": "..."
+  }
+}
+```
+
 ### space_chain.fact_routed
 
-Emitted to the Space Chain scope when extracted facts match a target Space routing policy and the target Space write succeeds. Quota-denied or failed target writes do not emit this event.
+Emitted to the Space Chain scope when extracted facts match a target Space routing policy and the target Space write succeeds. Quota-denied or failed target writes do not emit this event. Source and target nodes are identified by node id and external Space id; the payload never carries a Space key.
 
 Payload:
 
@@ -95,8 +113,8 @@ Payload:
 {
   "route_id": "...",
   "chain_id": "...",
-  "source_tenant_id": "...",
-  "target_tenant_id": "...",
+  "source_node_id": "...",
+  "source_external_space_id": "...",
   "target_external_space_id": "...",
   "routing_policy_node_id": "...",
   "source_facts": [],

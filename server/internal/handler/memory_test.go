@@ -1101,7 +1101,7 @@ func TestReconcileRoutedChainFactsWebhookOnlySkipsTargetWrite(t *testing.T) {
 			APIKey:  "chain-key-a",
 			Nodes: []domain.ChainAuthNode{
 				{
-					SpaceChainNode: domain.SpaceChainNode{TenantID: "tenant-source", ExternalSpaceID: "space-source", Position: 0},
+					SpaceChainNode: domain.SpaceChainNode{ID: "node-source", TenantID: "tenant-source", ExternalSpaceID: "space-source", Position: 0},
 					ClusterID:      "cluster-source",
 				},
 				{
@@ -1151,9 +1151,16 @@ func TestReconcileRoutedChainFactsWebhookOnlySkipsTargetWrite(t *testing.T) {
 	if err := json.Unmarshal(events[0].Payload, &envelope); err != nil {
 		t.Fatalf("decode webhook envelope: %v", err)
 	}
+	if strings.Contains(string(events[0].Payload), "tenant-source") || strings.Contains(string(events[0].Payload), "tenant-target-a") {
+		t.Fatalf("chain webhook payload leaks a Space key: %s", events[0].Payload)
+	}
+	if strings.Contains(string(events[0].Payload), "tenant_id") {
+		t.Fatalf("chain webhook payload still has a tenant_id field: %s", events[0].Payload)
+	}
 	var data struct {
 		WebhookOnly           bool                    `json:"webhook_only"`
-		TargetTenantID        string                  `json:"target_tenant_id"`
+		SourceNodeID          string                  `json:"source_node_id"`
+		SourceExternalSpaceID string                  `json:"source_external_space_id"`
 		TargetExternalSpaceID string                  `json:"target_external_space_id"`
 		RoutingPolicyNodeID   string                  `json:"routing_policy_node_id"`
 		SourceFacts           []service.ExtractedFact `json:"source_facts"`
@@ -1168,7 +1175,10 @@ func TestReconcileRoutedChainFactsWebhookOnlySkipsTargetWrite(t *testing.T) {
 	if !data.WebhookOnly || data.TargetMemory != nil {
 		t.Fatalf("webhook data target memory/webhook_only = %v/%#v, want true/nil", data.WebhookOnly, data.TargetMemory)
 	}
-	if data.TargetTenantID != "tenant-target-a" || data.TargetExternalSpaceID != "space-target-a" || data.RoutingPolicyNodeID != "node-target-a" {
+	if data.SourceNodeID != "node-source" || data.SourceExternalSpaceID != "space-source" {
+		t.Fatalf("webhook source data = %+v, want source node identifiers", data)
+	}
+	if data.TargetExternalSpaceID != "space-target-a" || data.RoutingPolicyNodeID != "node-target-a" {
 		t.Fatalf("webhook target data = %+v, want target node identifiers", data)
 	}
 	if len(data.SourceFacts) != 1 || data.SourceFacts[0].Text != "mem9 uses webhooks for review" {
