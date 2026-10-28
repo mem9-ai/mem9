@@ -306,8 +306,6 @@ func consoleMetadata(metadata map[string]any) map[string]any {
 			out[key] = v
 		case float32:
 			out[key] = float64(v)
-		case json.Number:
-			out[key] = v
 		case float64:
 			out[key] = v
 		case bool:

@@ -105,13 +105,17 @@ Under the hood, the hosted mem9 API runs the same mem9 server model surfaced in 
 
 Set `X-Mnemo-Agent-Id` on authenticated memory, import, and session-message requests when you want the server to distinguish which runtime or agent instance is writing and recalling memories inside the same mem9 space. This works on both the tenant-path `v1alpha1` routes and the `v1alpha2` API-key routes.
 
-### Credential storage and online tenant migration
+### Credential mappings
 
-The optional credential store separates API keys from internal tenant IDs and
-stores HMAC digests plus AES-256-GCM ciphertext. It is disabled by default.
-Operators must follow the [three-phase online migration runbook](server/migrations/api-keys/README.md)
-before enabling credential lookup, reference-only outbox writes or independent
-provisioning. Existing client keys and provisioning response fields stay valid.
+The server keeps tenant IDs as API keys and adds an `api_keys` mapping table
+with HMAC lookup and AES-256-GCM encrypted credentials. New provisioning writes
+both records atomically. Authentication reads the mapping first and falls back
+to the existing tenant ID when no mapping exists; old keys require no backfill.
+
+Before deploying this version, apply the additive schema and mount the keyring
+at `MNEMO_API_KEYS_SECRET_FILE` as described in the
+[credential mapping setup](server/migrations/api-keys/README.md).
+There are no authentication or migration mode switches.
 
 ### Provisioning
 

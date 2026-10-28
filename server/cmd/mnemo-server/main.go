@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -48,40 +47,15 @@ func main() {
 	defer db.Close()
 	logger.Info("database connected", "backend", cfg.DBBackend)
 
-	credentialConfig, err := credentials.LoadConfig()
-	if err != nil {
-		logger.Error("invalid credential configuration", "err", err)
-		os.Exit(1)
+	credentialStore, err := credentials.New(db, cfg.DBBackend, os.Getenv("MNEMO_API_KEYS_SECRET_FILE"))
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err = credentialStore.CheckSchema(ctx)
+		cancel()
 	}
-	var credentialStore *credentials.Store
-	credentialDrained := false
-	if credentialConfig.Enabled {
-		credentialStore, err = credentials.New(db, cfg.DBBackend, credentialConfig, cfg.UploadDir)
-		if err == nil {
-			err = credentialStore.CheckSchema(context.Background())
-		}
-		if err == nil {
-			err = credentialStore.CheckStage(context.Background())
-		}
-		if err == nil {
-			err = credentialStore.SyncFiles(context.Background())
-		}
-		if err != nil {
-			logger.Error("credential preflight failed", "err", err)
-			os.Exit(1)
-		}
-		logger.Info("credential migration participant registered", "instance_id", credentialStore.InstanceID)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if !credentialDrained {
-				logger.Error("credential participant retained for recovery", "instance_id", credentialStore.InstanceID)
-				return
-			}
-			if err := credentialStore.Leave(ctx); err != nil {
-				logger.Error("credential participant retained for recovery", "instance_id", credentialStore.InstanceID)
-			}
-		}()
+	if err != nil {
+		logger.Error("credential storage preflight failed", "err", err)
+		os.Exit(1)
 	}
 
 	// Warn if encryption type is non-default — changing this later breaks existing tenants.
@@ -142,13 +116,10 @@ func main() {
 	}
 	allowLocalWebhookHTTP := cfg.Env != "prod" && cfg.Env != "production"
 	webhookSvc := webhook.NewService(webhookStore, encryptor, allowLocalWebhookHTTP)
-	var workers sync.WaitGroup
 	webhookWorkerCtx, webhookWorkerCancel := context.WithCancel(context.Background())
 	defer webhookWorkerCancel()
-	workers.Add(1)
 	go func() {
-		defer workers.Done()
-		err := webhook.NewDispatcher(webhookStore, webhookSvc, webhook.DispatcherConfig{}, logger).WithCredentials(credentialStore).Run(webhookWorkerCtx)
+		err := webhook.NewDispatcher(webhookStore, webhookSvc, webhook.DispatcherConfig{}, logger).Run(webhookWorkerCtx)
 		if err != nil && err != context.Canceled {
 			logger.Error("webhook dispatcher stopped", "err", err)
 		}
@@ -164,9 +135,6 @@ func main() {
 
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
-	if credentialStore != nil {
-		tenantRepo = &credentials.TenantRepository{TenantRepo: tenantRepo, Store: credentialStore}
-	}
 	spaceChainRepo := repository.NewSpaceChainRepo(cfg.DBBackend, db)
 	var utmRepo repository.UTMRepo
 	if cfg.UTMEnabled {
@@ -188,12 +156,6 @@ func main() {
 		EmbedAutoModel: cfg.EmbedAutoModel,
 	})
 	defer tenantPool.Close()
-	if credentialStore != nil {
-		credentialStore.Invalidate = tenantPool.Remove
-		fileCtx, fileCancel := context.WithCancel(context.Background())
-		defer fileCancel()
-		go func() { _ = credentialStore.RunFileAgent(fileCtx) }()
-	}
 
 	meteringWriter, err := metering.New(context.Background(), metering.Config{
 		Enabled:       cfg.MeteringEnabled,
@@ -220,7 +182,7 @@ func main() {
 	var runtimeUsageStore *runtimeusage.SQLStore
 	if cfg.RuntimeUsageEnabled {
 		if cfg.RuntimeUsageOutboxEnabled {
-			runtimeUsageStore = runtimeusage.NewSQLStore(db, cfg.DBBackend).WithCredentials(credentialStore)
+			runtimeUsageStore = runtimeusage.NewSQLStore(db, cfg.DBBackend)
 			if err := runtimeUsageStore.EnsureSchema(context.Background()); err != nil {
 				logger.Error("failed to initialize runtime usage outbox", "err", err)
 				os.Exit(1)
@@ -252,9 +214,7 @@ func main() {
 		var runtimeUsageWorkerCtx context.Context
 		runtimeUsageWorkerCtx, runtimeUsageWorkerCancel = context.WithCancel(context.Background())
 		defer runtimeUsageWorkerCancel()
-		workers.Add(1)
 		go func() {
-			defer workers.Done()
 			err := runtimeusage.NewWorker(runtimeUsageStore, runtimeUsageClient, runtimeUsageMetering, logger).Run(runtimeUsageWorkerCtx)
 			if err != nil && err != context.Canceled {
 				logger.Error("runtime usage outbox worker stopped", "err", err)
@@ -315,14 +275,11 @@ func main() {
 		}
 	}
 
-	if spendLimitAdjuster != nil && credentialStore != nil {
-		spendLimitAdjuster = credentialSpendLimitAdjuster{spendLimitAdjuster, credentialStore}
-	}
 	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor).WithCredentials(credentialStore)
 	if utmRepo != nil {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}
-	spaceChainSvc := service.NewSpaceChainService(spaceChainRepo).WithCredentials(credentialStore)
+	spaceChainSvc := service.NewSpaceChainService(spaceChainRepo)
 	logger.Info("space chain create gate", "required", cfg.SpaceChainCreateSecretRequired, "secret_configured", cfg.SpaceChainCreateSecret != "")
 
 	// Middleware.
@@ -386,22 +343,17 @@ func main() {
 		encryptor,
 		activityTracker,
 		service.WithAssistantFactExtraction(cfg.FactExtractionIncludeAssistant),
-	).WithCredentials(credentialStore)
-	workers.Add(1)
+	)
 	go func() {
-		defer workers.Done()
 		if err := uploadWorker.Run(workerCtx); err != nil {
 			logger.Error("upload worker error", "err", err)
 		}
 	}()
 
-	// Graceful shutdown. Join this goroutine before deferred resource cleanup.
-	shutdownDone := make(chan struct{})
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(sigCh)
+	// Graceful shutdown.
 	go func() {
-		defer close(shutdownDone)
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		sig := <-sigCh
 		logger.Info("received signal, shutting down", "signal", sig)
 
@@ -411,27 +363,11 @@ func main() {
 		webhookWorkerCancel()
 		workerCancel() // Stop upload worker first.
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := httpSrv.Shutdown(ctx); err != nil {
 			logger.Error("shutdown error", "err", err)
-			return
 		}
-		workersDone := make(chan struct{})
-		go func() { workers.Wait(); close(workersDone) }()
-		select {
-		case <-ctx.Done():
-			logger.Error("worker drain timed out")
-			return
-		case <-workersDone:
-		}
-		if credentialStore != nil {
-			if err := credentialStore.Drain(ctx); err != nil {
-				logger.Error("credential reader drain failed", "instance_id", credentialStore.InstanceID)
-				return
-			}
-		}
-		credentialDrained = true
 	}()
 
 	logger.Info("starting mnemo server", "port", cfg.Port)
@@ -439,7 +375,6 @@ func main() {
 		logger.Error("server error", "err", err)
 		os.Exit(1)
 	}
-	<-shutdownDone
 	logger.Info("server stopped")
 }
 

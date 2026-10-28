@@ -57,11 +57,11 @@ func (s *Server) finalizeRuntimeUsageRecallSuccess(
 ) error {
 	ctx, cancel, budgetLimited := runtimeUsageRecallFinalizeContext(parent)
 	done := make(chan error, 1)
-	goWithRuntimeUsage(lease, func() {
+	go func() {
 		done <- s.runtimeUsage.AfterRecallSuccess(ctx, lease, result)
-	})
+	}()
 	finishInBackground := func() {
-		goWithRuntimeUsage(lease, func() {
+		go func() {
 			err := <-done
 			cancel()
 			if err != nil {
@@ -71,7 +71,7 @@ func (s *Server) finalizeRuntimeUsageRecallSuccess(
 					runtimeUsageFinalizeErrorDetails(lease),
 				)
 			}
-		})
+		}()
 	}
 	select {
 	case err := <-done:
@@ -122,10 +122,10 @@ func withRuntimeUsagePostFailureContext(parent context.Context, run func(context
 
 func (s *Server) afterRuntimeUsageRecallFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
 	ctx, cancel, _ := runtimeUsageRecallFinalizeContext(parent)
-	goWithRuntimeUsage(lease, func() {
+	go func() {
 		defer cancel()
 		s.runtimeUsage.AfterRecallFailure(ctx, lease, cause)
-	})
+	}()
 }
 
 func (s *Server) afterRuntimeUsageMemoryCreateFailure(parent context.Context, lease *runtimeusage.OperationLease, cause error) {
@@ -158,18 +158,11 @@ func subjectFromAuth(auth *domain.AuthInfo) runtimeusage.Subject {
 	if subject == "" && auth.Chain != nil {
 		subject = auth.Chain.APIKey
 	}
-	// Unmarked auth contexts belong to the legacy deployment. Credential-backed
-	// contexts must always carry the actual request key, never an internal ID.
-	if subject == "" && auth.CredentialID == "" {
+	if subject == "" {
 		subject = auth.TenantID
-	}
-	var scope *runtimeusage.BackgroundScope
-	if auth.Hold != nil {
-		scope = &runtimeusage.BackgroundScope{Retain: auth.Hold}
 	}
 	return runtimeusage.Subject{
 		TenantID:      auth.TenantID,
-		Hold:          scope,
 		ClusterID:     auth.ClusterID,
 		APIKeySubject: subject,
 		AgentName:     auth.AgentName,

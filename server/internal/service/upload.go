@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
@@ -100,7 +99,6 @@ func (e *MemoryFileEntry) UnmarshalJSON(data []byte) error {
 
 // UploadWorker processes queued upload tasks.
 type UploadWorker struct {
-	credentials  *credentials.Store
 	tasks        repository.UploadTaskRepo
 	tenants      repository.TenantRepo
 	pool         *tenant.TenantPool
@@ -212,29 +210,12 @@ func (w *UploadWorker) Run(ctx context.Context) error {
 	}
 }
 
-func (w *UploadWorker) WithCredentials(store *credentials.Store) *UploadWorker {
-	w.credentials = store
-	return w
-}
-
 func (w *UploadWorker) processTask(ctx context.Context, task domain.UploadTask) error {
 	logger := w.logger
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	if w.credentials != nil {
-		_, release, err := w.credentials.HoldTenant(ctx, task.TenantID)
-		if err != nil {
-			return w.requeueTask(ctx, task, err, logger)
-		}
-		defer release()
-		fresh, err := w.tasks.GetByID(ctx, task.TaskID)
-		if err != nil {
-			return err
-		}
-		task = *fresh
-	}
 	// Per-task timeout to prevent indefinite blocking.
 	// Use parent ctx for terminal status updates so they succeed even after timeout.
 	taskCtx, cancel := context.WithTimeout(ctx, defaultTaskTimeout)

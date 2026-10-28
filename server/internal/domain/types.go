@@ -73,9 +73,6 @@ type ChainSource struct {
 }
 
 type AuthInfo struct {
-	CredentialID string `json:"-"`
-	// Hold retains the distributed request barrier for detached work.
-	Hold      func() func() `json:"-"`
 	AgentName string
 
 	// Dedicated-cluster model (non-empty when using tenant token)

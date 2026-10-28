@@ -69,48 +69,20 @@ func WithCredentials(store *credentials.Store) authOption {
 	return func(c *authConfig) { c.credentials = store }
 }
 
-func lookupCredentialTenant(ctx context.Context, repo repository.TenantRepo, key string, store *credentials.Store) (*domain.Tenant, *credentials.Lease, error) {
-	if store == nil {
-		t, err := repo.GetByID(ctx, key)
-		return t, nil, err
+func lookupCredentialTenant(ctx context.Context, repo repository.TenantRepo, key string, store *credentials.Store) (*domain.Tenant, error) {
+	tenantID := key
+	if store != nil {
+		var err error
+		tenantID, err = store.LookupTenantID(ctx, key)
+		if err != nil {
+			return nil, err
+		}
 	}
-	rec, err := store.LookupTenant(ctx, key)
-	if err != nil {
-		return nil, nil, err
-	}
-	rec, lease, err := store.HoldRecord(ctx, rec.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-	t, err := repo.GetByID(ctx, rec.TenantID)
-	if err != nil {
-		lease.Close()
-		return nil, nil, err
-	}
-	return t, lease, nil
+	return repo.GetByID(ctx, tenantID)
 }
 
 func isSpendLimitError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "usage quota being exhausted")
-}
-
-func credentialBlacklist(ctx context.Context, store *credentials.Store, blacklist map[string]struct{}, clusterID string) map[string]struct{} {
-	if store == nil || !strings.HasPrefix(clusterID, credentials.ReferencePrefix) {
-		return blacklist
-	}
-	raw, err := store.ResolveReference(ctx, clusterID)
-	if err != nil {
-		return blacklist
-	}
-	if _, ok := blacklist[raw]; !ok {
-		return blacklist
-	}
-	mapped := make(map[string]struct{}, len(blacklist)+1)
-	for k, v := range blacklist {
-		mapped[k] = v
-	}
-	mapped[clusterID] = struct{}{}
-	return mapped
 }
 
 func classifyConnError(blacklist map[string]struct{}, clusterID string, err error) string {
@@ -151,7 +123,6 @@ func resolveSpaceChainAuthNodes(
 	pool tenantDBGetter,
 	enc encrypt.Encryptor,
 	clusterBlacklist map[string]struct{},
-	stores ...*credentials.Store,
 ) ([]domain.ChainAuthNode, time.Duration, error) {
 	resolved := make([]domain.ChainAuthNode, len(nodes))
 	var totalPoolNanos atomic.Int64
@@ -189,17 +160,13 @@ func resolveSpaceChainAuthNodes(
 			poolDuration := time.Since(poolStart)
 			totalPoolNanos.Add(int64(poolDuration))
 			if err != nil {
-				blacklist := clusterBlacklist
-				if len(stores) > 0 {
-					blacklist = credentialBlacklist(groupCtx, stores[0], blacklist, t.ClusterID)
-				}
 				slog.ErrorContext(groupCtx, "cannot connect to space chain node database",
 					"chain_id", chainID,
 					"node_position", node.Position,
 					"tenant_id", t.ID,
 					"cluster_id", t.ClusterID,
 					"duration_ms", poolDuration.Milliseconds(),
-					"classified_reason", classifyConnError(blacklist, t.ClusterID, err),
+					"classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err),
 					"err", err)
 				switch {
 				case errors.Is(err, domain.ErrSchemaIncompatible):
@@ -208,7 +175,7 @@ func resolveSpaceChainAuthNodes(
 						message: err.Error(),
 						err:     err,
 					}
-				case isBlacklistedSpendLimitError(blacklist, t.ClusterID, err):
+				case isBlacklistedSpendLimitError(clusterBlacklist, t.ClusterID, err):
 					return &authResolutionError{
 						status:  http.StatusTooManyRequests,
 						message: "cluster quota exhausted",
@@ -271,10 +238,7 @@ func ResolveTenant(
 			}
 
 			lookupStart := time.Now()
-			t, lease, err := lookupCredentialTenant(r.Context(), tenantRepo, tenantID, state.credentials)
-			if lease != nil {
-				defer lease.Close()
-			}
+			t, err := lookupCredentialTenant(r.Context(), tenantRepo, tenantID, state.credentials)
 			lookupDuration := time.Since(lookupStart)
 			if err != nil {
 				if state.credentials != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -305,7 +269,6 @@ func ResolveTenant(
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			poolDuration := time.Since(poolStart)
 			if err != nil {
-				blacklist := credentialBlacklist(r.Context(), state.credentials, clusterBlacklist, t.ClusterID)
 				isStarterOrZero := t.Provider == tenant.StarterProvisionerType || t.Provider == tenant.ZeroProvisionerType
 				if state.spendLimitAdjuster != nil && state.autoSpendLimitCfg.Enabled && isSpendLimitError(err) {
 					if isStarterOrZero && state.spendLimitCooldown.TryStartRaise(t.ClusterID) {
@@ -346,12 +309,12 @@ func ResolveTenant(
 						}()
 					}
 				}
-				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(blacklist, t.ClusterID, err), "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
 				if errors.Is(err, domain.ErrSchemaIncompatible) {
 					writeError(w, http.StatusConflict, err.Error())
 					return
 				}
-				if _, blocked := blacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
+				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
 					return
 				}
@@ -372,10 +335,6 @@ func ResolveTenant(
 				TenantDB:      db,
 				ClusterID:     t.ClusterID,
 				APIKeySubject: tenantID,
-			}
-			if lease != nil {
-				info.CredentialID = lease.CredentialID
-				info.Hold = lease.Retain
 			}
 			if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
 				info.AgentName = agentID
@@ -442,38 +401,6 @@ func ResolveApiKey(
 					info.AgentName = agentID
 				}
 
-				var leases []*credentials.Lease
-				if state.credentials != nil {
-					for i := range chain.Nodes {
-						rec, err := state.credentials.ForTenant(r.Context(), chain.Nodes[i].TenantID)
-						if errors.Is(err, domain.ErrNotFound) {
-							rec, err = state.credentials.LookupTenant(r.Context(), chain.Nodes[i].TenantID)
-						}
-						if err != nil {
-							writeError(w, http.StatusServiceUnavailable, "chain tenant unavailable")
-							return
-						}
-						rec, l, err := state.credentials.HoldRecord(r.Context(), rec.ID)
-						if err != nil {
-							writeError(w, http.StatusServiceUnavailable, "chain tenant migrating; retry request")
-							return
-						}
-						defer l.Close()
-						leases = append(leases, l)
-						chain.Nodes[i].TenantID = rec.TenantID
-					}
-					info.Hold = func() func() {
-						var releases []func()
-						for _, l := range leases {
-							releases = append(releases, l.Retain())
-						}
-						return func() {
-							for _, release := range releases {
-								release()
-							}
-						}
-					}
-				}
 				nodes, totalPoolDuration, err := resolveSpaceChainAuthNodes(
 					r.Context(),
 					chain.ID,
@@ -482,7 +409,6 @@ func ResolveApiKey(
 					pool,
 					enc,
 					clusterBlacklist,
-					state.credentials,
 				)
 				if err != nil {
 					var authErr *authResolutionError
@@ -493,17 +419,8 @@ func ResolveApiKey(
 					}
 					return
 				}
-
-				if state.credentials != nil {
-					rec, err := state.credentials.EnsureSubject(r.Context(), apiKey, "")
-					if err != nil {
-						writeError(w, http.StatusServiceUnavailable, "chain credential unavailable")
-						return
-					}
-					info.CredentialID = rec.ID
-				}
-				info.APIKeySubject = apiKey
 				info.Chain.Nodes = nodes
+				info.APIKeySubject = apiKey
 
 				slog.InfoContext(r.Context(), "tenant auth resolved",
 					"auth_mode", "space_chain_key",
@@ -519,10 +436,7 @@ func ResolveApiKey(
 			}
 
 			lookupStart := time.Now()
-			t, lease, err := lookupCredentialTenant(r.Context(), tenantRepo, apiKey, state.credentials)
-			if lease != nil {
-				defer lease.Close()
-			}
+			t, err := lookupCredentialTenant(r.Context(), tenantRepo, apiKey, state.credentials)
 			lookupDuration := time.Since(lookupStart)
 			if err != nil {
 				if state.credentials != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -551,7 +465,6 @@ func ResolveApiKey(
 			db, err := pool.Get(r.Context(), t.ID, t.DSNForBackend(pool.Backend()))
 			poolDuration := time.Since(poolStart)
 			if err != nil {
-				blacklist := credentialBlacklist(r.Context(), state.credentials, clusterBlacklist, t.ClusterID)
 				isStarterOrZero := t.Provider == tenant.StarterProvisionerType || t.Provider == tenant.ZeroProvisionerType
 				if state.spendLimitAdjuster != nil && state.autoSpendLimitCfg.Enabled && isSpendLimitError(err) {
 					if isStarterOrZero && state.spendLimitCooldown.TryStartRaise(t.ClusterID) {
@@ -592,12 +505,12 @@ func ResolveApiKey(
 						}()
 					}
 				}
-				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(blacklist, t.ClusterID, err), "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
 				if errors.Is(err, domain.ErrSchemaIncompatible) {
 					writeError(w, http.StatusConflict, err.Error())
 					return
 				}
-				if _, blocked := blacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
+				if _, blocked := clusterBlacklist[t.ClusterID]; blocked && isSpendLimitError(err) {
 					writeError(w, http.StatusTooManyRequests, "cluster quota exhausted")
 					return
 				}
@@ -618,10 +531,6 @@ func ResolveApiKey(
 				TenantDB:      db,
 				ClusterID:     t.ClusterID,
 				APIKeySubject: apiKey,
-			}
-			if lease != nil {
-				info.CredentialID = lease.CredentialID
-				info.Hold = lease.Retain
 			}
 			if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
 				info.AgentName = agentID

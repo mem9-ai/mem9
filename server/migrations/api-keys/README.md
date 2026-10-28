@@ -1,35 +1,58 @@
-# Online API-key / tenant-ID migration
+# Additive API-key mappings
 
-One application PR supports three separately operated rollout phases. All
-credential switches default off, except the two legacy-reader switches, which
-default on. No backfill or tenant-ID migration runs on application startup.
+Tenant IDs remain API keys for both existing and newly provisioned Spaces.
+This change adds one `api_keys` table; it does not change tenant identities,
+Chain authentication, upload directories, webhook payloads or outbox formats.
 
-The shared `api_keys` table holds a stable UUID credential record ID, binary
-HMAC-SHA256 digest/version, AES-256-GCM envelope, and Space tenant or Chain binding
-association. HMAC input is the trimmed UTF-8 key. GCM uses a random nonce and AAD
-`mem9-api-key:v1:<credential-ID>`; envelopes contain `v`, `kid`, `nonce`, and
-`ciphertext`. Hash keys and encryption keys must be distinct, 32-byte base64
-values. Old named versions remain readable while referenced.
+New provisioning inserts the tenant and its credential mapping in one
+transaction. Authentication and key-status reads first resolve the HMAC digest
+in `api_keys`. A missing mapping falls back to the existing tenant ID lookup.
+Database errors do not fall back, and reads never register or backfill keys.
+Tenant status and deletion checks still apply after either lookup path.
+The original request key remains `APIKeySubject` for Console and quota calls.
 
-## Before rollout
+## Setup and deployment
 
-Run commands from the repository root.
+There are no behavior or rollout switches. The schema and keyring are required
+before starting this version; missing dependencies fail startup explicitly.
 
-- Review control-plane backups and rehearse with synthetic data in TiDB Zero.
-  `MNEMO_CREDENTIAL_TEST_DSN` must point at a disposable instance; the integration
-  scenario creates and removes its own randomly named database.
-- Build with `make build build-credentials`. Run existing checks with `make vet`
-  and `make test`, and the real-database scenario with
-  `make test-credentials-integration`.
-- Store the keyring in Secrets Manager and mount its JSON as a read-only secret
-  file. Set `MNEMO_API_KEYS_SECRET_FILE` to that path. Do not reuse password
-  encryption, runtime quota secrets or log-fingerprint secrets. Cloud secret
-  provisioning, ARNs and workload IAM are separate infrastructure changes.
-- Use the target control-plane `MNEMO_DSN`, `MNEMO_DB_BACKEND` and the same
-  `MNEMO_UPLOAD_DIR` configuration as the server. Never put real keys or DSNs in
-  commands, logs, committed configuration, or PR evidence.
+1. Build with `make build build-credentials`.
+2. Preview `./server/bin/mnemo-credentials -action schema`, then run it with
+   `-apply` using the control-plane `MNEMO_DSN` and `MNEMO_DB_BACKEND`.
+   The DDL only creates `api_keys` and can be repeated. No existing table is
+   altered and no existing records are updated.
+3. Mount the keyring JSON as a read-only secret file and set
+   `MNEMO_API_KEYS_SECRET_FILE` to its path on every API instance. Use the same
+   keyring across instances. Secret provisioning and workload permissions are
+   separate infrastructure changes.
+4. Deploy the application. New and old instances can coexist: new instances
+   still write the provider-issued ID as the tenant ID/API key, and old instances
+   can authenticate it. Tenants created by an old instance work through the
+   fallback without a mapping.
 
-Keyring shape (values below are placeholders, not usable keys):
+No identity migration, request barriers or per-tenant maintenance windows are
+part of this change. Credential lookup adds a database read, and provisioning
+now depends on the mapping insert committing with the tenant insert. A failed
+mapping insert rolls back the tenant insert; it does not silently create an
+unmapped tenant. Upstream cluster provisioning still precedes these writes.
+
+To roll application code back, deploy the previous binary and leave `api_keys`
+in place. All tenant IDs and historical payloads remain compatible. Remove the
+unused table only in a separate reviewed cleanup after all readers have been
+rolled back; deleting mappings is not part of this command.
+
+## Keyring and storage contract
+
+The mapping stores a credential UUID, binary HMAC-SHA256 digest/version,
+AES-256-GCM envelope and tenant ID. The tenant ID still contains the original
+key under the existing product contract; this is redundancy, not removal of
+plaintext identities from historical or current data.
+
+HMAC input is the trimmed UTF-8 key. AES-GCM uses a random nonce and AAD
+`mem9-api-key:v1:<credential-ID>`. Envelopes contain `v`, `kid`, `nonce` and
+`ciphertext`. HMAC keys and encryption keys must be distinct, 32-byte base64
+values. Keep existing named keys when changing the active version so previous
+records remain readable. Do not reuse the password encryptor or log secrets.
 
 ```json
 {
@@ -40,74 +63,26 @@ Keyring shape (values below are placeholders, not usable keys):
 }
 ```
 
-## Linear rollout
+Do not put real keys or DSNs in commands, logs or committed files.
 
-Environment variable names in the table omit the common `MNEMO_API_KEYS_`
-prefix. `ENABLED=true` and the secret file are required throughout the rollout.
-Every migration command previews by default; only `-apply` writes data.
+## Optional existing-key backfill
 
-| Phase | Settings and operation | Gate before continuing |
-| --- | --- | --- |
-| 1. Add schema | Preview `./server/bin/mnemo-credentials -action schema`, review the TiDB or Postgres/DB9 DDL, then run it with `-apply`. The schema operation is restartable after partial DDL. | The `legacy_key_auth` column and credential/barrier/file-participant tables exist. Existing binaries still work; no tenant identities have changed. |
-| 1. Deploy registration | Roll all API instances and workers with `READ=false`, `OUTBOX_REFERENCES=false`, `INDEPENDENT_TENANTS=false`, `LEGACY_AUTH=true`, `LEGACY_OUTBOX=true`. New provisioning transactionally registers its credential but still returns/uses the legacy key identity. | All writers, including administrative writers, use this binary. Instances log only their safe migration participant UUID. |
-| 1. Backfill | Repeat `-action backfill -limit 100 -apply` until it reports zero records. Backfill includes deleted/suspended tenants without changing lifecycle, and registers Chain binding credentials without changing Chain authentication. | `-action audit` reports no missing Space credentials. Recoverable ciphertext and HMAC match. Late old-version provisioning was scanned again. |
-| 2. Switch reads/writes | Roll `READ=true`, `OUTBOX_REFERENCES=true`; keep both legacy readers enabled and independent provisioning off. Existing readers support both outbox versions before any writer emits references. | Header/path/status/runtime-state and Chain requests work. Only explicitly marked legacy tenants can use fallback. Lookup errors never fall back; a public internal tenant UUID cannot authenticate or be added to a Chain as a key. |
-| 2. Convert outbox | Repeat `-action outbox -limit 100 -all-writers-upgraded -apply` until zero rows change and audit reports `legacy_outbox=0`. The tool CASes the original version/payload, removes root and nested key copies, retains metering business hashes, and preserves unrelated JSON integers/content. | All retained rows, including completed/failed history, are converted. No old writer remains. Missing/undecryptable records leave retries pending and emit an error; no internal-ID billing fallback. |
-| 2. Enable new tenants | Roll `LEGACY_OUTBOX=false`, `INDEPENDENT_TENANTS=true`; keep `READ=true`, `OUTBOX_REFERENCES=true`. Startup rejects unconverted historical outbox rows. | Every instance supports independent IDs. New Space credentials are random base64url keys; responses retain the existing field shape. All old client keys still work. |
-| 3. Move old identities | Preview `-action migrate -limit 1`, then run with `-all-writers-upgraded -apply`. Expand batch size after verification. The tool prints only stable credential UUIDs, so the same ID can be resumed with `-credential-id`. | Request/background reader barriers drain; every registered instance acknowledges its local upload directory move and pool invalidation. The transaction inserts the independent tenant, moves FK references/tasks/Chain/webhook identities, updates the credential association and removes the old tenant. Credential UUID and business data stay unchanged. |
-| 3. Verify and close fallback | Repeat migration until no legacy tenant remains. Run `-action audit`, verify metrics/errors/queue progress, then roll `LEGACY_AUTH=false`. | `legacy_tenants`, `legacy_outbox`, `missing_space_credentials`, `migrating_tenants`, identity/payload residuals and missing file acknowledgements are all zero. `mnemo_api_key_legacy_fallback_total` stops increasing. Old keys, new provisioning, files, Chain and quota/metering pass. |
+Old keys work before, during and after backfill. Backfill only adds missing
+mapping records, including inactive/deleted tenants without changing their
+lifecycle. It does not copy or migrate Chain keys.
 
-## Concurrency, files and recovery
+Preview `./server/bin/mnemo-credentials -action backfill -limit 100`, then use
+`-apply` to write the batch. `records` counts processed candidates, including concurrent duplicate inserts.
+Repeat until it is zero. A failed batch can
+be retried; previously registered mappings are skipped. Run another pass after
+a rolling deployment to include tenants created by old instances.
 
-The credential row serializes reader registration against migration. Durable
-reader tokens cover HTTP operations, detached ingest/finalization, upload work,
-and webhook delivery. Metadata-only late outbox writes use the same row lock and
-current tenant association in their SQL transaction, so they cannot recreate an
-old tenant reference after cutover. Reader registration is short; no database
-transaction is held across the HTTP request.
+## Validation
 
-Migration blocks only that tenant's new work (retryable HTTP 503), waits for its
-existing readers, and asks each application instance to rename its own upload
-directory. Database and filesystem operations are separate recorded phases;
-they are not one atomic transaction. Cutover requires acknowledgements from all
-registered participants. Measure per-tenant time in rehearsal; there is no
-fixed seconds-level guarantee.
-
-Graceful shutdown waits up to 30 seconds for HTTP requests, worker goroutines,
-and retained background readers before unregistering the participant. Allow
-additional termination grace for the final database cleanup. If draining fails
-or times out, keep the registration and use the recovery procedure below.
-
-Reader tokens and participant registrations deliberately do not expire on a
-timer: an unreachable process could still be writing or retain an old local
-volume. A crash pauses migration safely. Inspect `-action progress` and the
-`api_key_readers` / `api_key_instances` metadata (no raw key output). Fence the
-old process and migrate or retire its upload volume, then explicitly remove its
-registration with:
-
-```sh
-./server/bin/mnemo-credentials -action forget-instance \
-  -instance-id <verified-stopped-instance-UUID> -participant-fenced -apply
-./server/bin/mnemo-credentials -action migrate \
-  -credential-id <same-credential-UUID> -all-writers-upgraded -apply
-```
-
-Do not delete a partially moved directory or create a second migration target.
-Resume the same credential UUID. A failed tenant stays gated while other tenants
-continue. Only roll application code back to a version that understands the new
-model. Never overwrite an active database with an old snapshot and lose newer
-writes or replay external billing side effects.
-
-The audit scans only application identity fields and generated path components;
-it does not rewrite user memory/content. `cluster_id` values equal to a legacy
-Space key become credential references. Zero claim URLs also embed the legacy key: migration replaces that occurrence
-with the same credential reference, and `ExpandClaimURL` can restore the original
-link at an explicit reveal boundary. The rest of the claim token remains in scope
-for the separate sensitive-column encryption work. Internal logs/metrics/S3 grouping retain
-that reference; only the spend-limit provider adapter decrypts the real upstream
-identifier, without propagating provider URLs into errors. Console and quota
-calls still receive the original request key as `APIKeySubject`.
-
-Historical logs/backups, rotation and multi-key management, URL-auth retirement,
-and full Chain management-key storage/permission changes remain separate work.
-Do not erase a credential ciphertext while retained tasks still reference it.
+Run `make build build-credentials`, `make vet` and `make test`.
+For real database verification, set `MNEMO_CREDENTIAL_TEST_DSN` to a disposable
+TiDB instance and run `make test-credentials-integration`. The scenario creates
+and removes only its own randomly named database. It checks additive schema,
+transactional provisioning, mapping-first/legacy reads, original-key subjects,
+unchanged Chain access, lifecycle rules, read-only authentication, backfill and
+rollback on mapping-insert failure.

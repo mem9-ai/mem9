@@ -6,17 +6,14 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/metering"
 )
 
 const (
-	subjectVersionTenantIDV1   = "tenant_id_v1"
-	subjectVersionCredentialV1 = "credential_id_v1"
+	subjectVersionTenantIDV1 = "tenant_id_v1"
 
 	outboxStepCommitReservation  = "commit_reservation"
 	outboxStepReleaseReservation = "release_reservation"
@@ -35,7 +32,6 @@ const (
 )
 
 type outboxPayload struct {
-	APIKeyID      string                 `json:"api_key_id,omitempty"`
 	APIKeySubject string                 `json:"apiKeySubject,omitempty"`
 	Meter         string                 `json:"meter,omitempty"`
 	Units         int64                  `json:"units,omitempty"`
@@ -68,18 +64,10 @@ type outboxRow struct {
 	AttemptCount   int
 }
 
-var errMeteringPayloadConflict = errors.New("runtime usage outbox payload hash conflict")
-
-type sqlExecutor interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
 type SQLStore struct {
-	credentials *credentials.Store
-	db          *sql.DB
-	backend     string
-	now         func() time.Time
+	db      *sql.DB
+	backend string
+	now     func() time.Time
 }
 
 func NewSQLStore(db *sql.DB, backend string) *SQLStore {
@@ -88,28 +76,6 @@ func NewSQLStore(db *sql.DB, backend string) *SQLStore {
 		backend: backend,
 		now:     time.Now,
 	}
-}
-
-func (s *SQLStore) WithCredentials(store *credentials.Store) *SQLStore {
-	s.credentials = store
-	return s
-}
-
-func (s *SQLStore) referencePayload(ctx context.Context, payload *outboxPayload, key, tenantID, clusterID string) (string, string, error) {
-	if s.credentials == nil || !s.credentials.Config.ReferenceOutbox {
-		return subjectVersionTenantIDV1, clusterID, nil
-	}
-	rec, err := s.credentials.EnsureSubject(ctx, key, tenantID)
-	if err != nil {
-		return "", "", err
-	}
-	payload.APIKeyID = rec.ID
-	payload.APIKeySubject = ""
-	if payload.Event != nil {
-		payload.Event.APIKeySubject = ""
-	}
-	clusterID, err = s.credentials.ClusterReference(ctx, clusterID)
-	return subjectVersionCredentialV1, clusterID, err
 }
 
 func (s *SQLStore) EnsureSchema(ctx context.Context) error {
@@ -267,34 +233,16 @@ func (s *SQLStore) UpsertMeteringPending(ctx context.Context, evt metering.Event
 	if s == nil || s.db == nil {
 		return nil
 	}
-	payload := meteringOutboxPayload(evt)
-	version, clusterID, err := s.referencePayload(ctx, &payload, evt.APIKeySubject, evt.TenantID, evt.ClusterID)
+	storedPayload, err := marshalMeteringPendingPayload(evt)
 	if err != nil {
 		return err
-	}
-	storedPayload, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	executor := sqlExecutor(s.db)
-	var tx *sql.Tx
-	if s.credentials != nil {
-		var tenantID string
-		var err error
-		tx, tenantID, err = s.credentials.BeginSubjectWrite(ctx, evt.TenantID, evt.APIKeySubject)
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
-		executor = tx
-		evt.TenantID = tenantID
 	}
 	reason := "different payload hash for existing metering operation"
-	_, err = executor.ExecContext(ctx, s.placeholder(s.meteringPendingUpsertSQL()),
+	_, err = s.db.ExecContext(ctx, s.placeholder(s.meteringPendingUpsertSQL()),
 		evt.OperationID,
 		evt.TenantID,
-		nullableString(clusterID),
-		version,
+		nullableString(evt.ClusterID),
+		subjectVersionTenantIDV1,
 		outboxStepSubmitMetering,
 		outboxPhaseMeteringPending,
 		string(storedPayload),
@@ -305,16 +253,8 @@ func (s *SQLStore) UpsertMeteringPending(ctx context.Context, evt metering.Event
 	if err != nil {
 		return fmt.Errorf("upsert runtime usage metering outbox: %w", err)
 	}
-	if err := s.rejectMeteringPayloadConflict(ctx, evt.OperationID, reason, executor); err != nil {
-		if tx != nil && errors.Is(err, errMeteringPayloadConflict) {
-			if commitErr := tx.Commit(); commitErr != nil {
-				return commitErr
-			}
-		}
+	if err := s.rejectMeteringPayloadConflict(ctx, evt.OperationID, reason); err != nil {
 		return err
-	}
-	if tx != nil {
-		return tx.Commit()
 	}
 	return nil
 }
@@ -338,34 +278,15 @@ func (s *SQLStore) storeOperation(ctx context.Context, lease *OperationLease, st
 	if nextAttemptAt.IsZero() {
 		nextAttemptAt = s.now()
 	}
-	version, clusterID, err := s.referencePayload(ctx, &payload, lease.Subject.APIKeySubject, lease.Subject.TenantID, lease.Subject.ClusterID)
-	if err != nil {
-		return err
-	}
 	payloadJSON, payloadHash, err := marshalOutboxPayload(payload)
 	if err != nil {
 		return err
 	}
-	executor := sqlExecutor(s.db)
-	var tx *sql.Tx
-	if s.credentials != nil {
-		var tenantID string
-		var err error
-		tx, tenantID, err = s.credentials.BeginSubjectWrite(ctx, lease.Subject.TenantID, lease.Subject.APIKeySubject)
-		if err != nil {
-			return err
-		}
-		defer tx.Rollback()
-		executor = tx
-		copied := *lease
-		copied.Subject.TenantID = tenantID
-		lease = &copied
-	}
-	_, err = executor.ExecContext(ctx, s.placeholder(s.operationUpsertSQL()),
+	_, err = s.db.ExecContext(ctx, s.placeholder(s.operationUpsertSQL()),
 		lease.OperationID,
 		lease.Subject.TenantID,
-		nullableString(clusterID),
-		version,
+		nullableString(lease.Subject.ClusterID),
+		subjectVersionTenantIDV1,
 		step,
 		phase,
 		string(payloadJSON),
@@ -376,9 +297,6 @@ func (s *SQLStore) storeOperation(ctx context.Context, lease *OperationLease, st
 	)
 	if err != nil {
 		return fmt.Errorf("upsert runtime usage outbox operation: %w", err)
-	}
-	if tx != nil {
-		return tx.Commit()
 	}
 	return nil
 }
@@ -485,15 +403,15 @@ ON DUPLICATE KEY UPDATE
   updated_at = CURRENT_TIMESTAMP`
 }
 
-func (s *SQLStore) rejectMeteringPayloadConflict(ctx context.Context, operationID, reason string, executor sqlExecutor) error {
+func (s *SQLStore) rejectMeteringPayloadConflict(ctx context.Context, operationID, reason string) error {
 	var status, phase string
 	var lastError sql.NullString
-	err := executor.QueryRowContext(ctx, s.placeholder("SELECT status, phase, last_error FROM runtime_usage_outbox WHERE operation_id = ?"), operationID).Scan(&status, &phase, &lastError)
+	err := s.db.QueryRowContext(ctx, s.placeholder("SELECT status, phase, last_error FROM runtime_usage_outbox WHERE operation_id = ?"), operationID).Scan(&status, &phase, &lastError)
 	if err != nil {
 		return fmt.Errorf("query runtime usage metering upsert result: %w", err)
 	}
 	if status == outboxStatusTerminalFailed && phase == outboxPhaseTerminalFailed && lastError.Valid && lastError.String == reason {
-		return fmt.Errorf("%w for operation %s", errMeteringPayloadConflict, operationID)
+		return fmt.Errorf("runtime usage outbox payload hash conflict for operation %s", operationID)
 	}
 	return nil
 }
@@ -587,8 +505,8 @@ func outboxEventFromMetering(event MeteringEvent, apiKeySubject string) *outboxM
 	}
 }
 
-func meteringOutboxPayload(evt metering.Event) outboxPayload {
-	return outboxPayload{
+func marshalMeteringPendingPayload(evt metering.Event) ([]byte, error) {
+	payload := outboxPayload{
 		Event: &outboxMeteringPayload{
 			APIKeySubject: evt.APIKeySubject,
 			EventType:     evt.EventType,
@@ -600,14 +518,11 @@ func meteringOutboxPayload(evt metering.Event) outboxPayload {
 			Metadata:      cloneAnyMap(evt.Metadata),
 		},
 	}
-}
-
-func marshalMeteringPendingPayload(evt metering.Event) ([]byte, error) {
-	data, err := json.Marshal(meteringOutboxPayload(evt))
+	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("marshal runtime usage metering outbox payload: %w", err)
 	}
-	return data, nil
+	return payloadJSON, nil
 }
 
 func cloneAnyMap(in map[string]any) map[string]any {

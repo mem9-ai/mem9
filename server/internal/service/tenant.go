@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
@@ -44,10 +42,9 @@ type TenantService struct {
 }
 
 type APIKeyStatusResult struct {
-	CredentialID string
-	Status       domain.KeyStatus
-	TenantID     string
-	ClusterID    string
+	Status    domain.KeyStatus
+	TenantID  string
+	ClusterID string
 }
 
 func NewTenantService(
@@ -103,19 +100,12 @@ func (s *TenantService) ResolveAPIKeyStatus(ctx context.Context, apiKey string) 
 	}
 
 	tenantID := apiKey
-	credentialID := ""
 	if s.credentials != nil {
-		rec, err := s.credentials.LookupTenant(ctx, apiKey)
+		var err error
+		tenantID, err = s.credentials.LookupTenantID(ctx, apiKey)
 		if err != nil {
 			return APIKeyStatusResult{}, err
 		}
-		rec, lease, err := s.credentials.HoldRecord(ctx, rec.ID)
-		if err != nil {
-			return APIKeyStatusResult{}, err
-		}
-		defer lease.Close()
-		tenantID = rec.TenantID
-		credentialID = rec.ID
 	}
 	t, err := s.tenants.GetByID(ctx, tenantID)
 	if err != nil {
@@ -135,9 +125,8 @@ func (s *TenantService) ResolveAPIKeyStatus(ctx context.Context, apiKey string) 
 	}
 
 	result := APIKeyStatusResult{
-		CredentialID: credentialID,
-		TenantID:     t.ID,
-		ClusterID:    t.ClusterID,
+		TenantID:  t.ID,
+		ClusterID: t.ClusterID,
 	}
 	switch t.Status {
 	case domain.TenantActive:
@@ -241,14 +230,6 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("provision cluster: %w", err)
 	}
-	apiKey := info.ID
-	if s.credentials != nil && s.credentials.Config.IndependentTenants {
-		apiKey, err = credentials.RandomKey()
-		if err != nil {
-			return nil, err
-		}
-		info.ID = uuid.NewString()
-	}
 	tenantID = info.ID
 
 	// Encrypt password before storing
@@ -278,13 +259,11 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 	}
 
 	t0 = time.Now()
-	createTenant := func() error {
-		if s.credentials != nil {
-			return s.credentials.CreateTenant(ctx, t, apiKey, s.credentials.Config.IndependentTenants)
-		}
-		return s.tenants.Create(ctx, t)
+	createTenant := s.tenants.Create
+	if s.credentials != nil {
+		createTenant = s.credentials.CreateTenant
 	}
-	if err := createTenant(); err != nil {
+	if err := createTenant(ctx, t); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		s.logger.Error("orphaned cluster: tenants.Create failed",
 			"tenant_id", info.ID,
@@ -356,7 +335,7 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 	}
 
 	return &ProvisionResult{
-		ID: apiKey,
+		ID: info.ID,
 	}, nil
 }
 

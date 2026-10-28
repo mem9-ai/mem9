@@ -42,5 +42,5 @@ build-credentials:
 	cd server && go build -o ./bin/mnemo-credentials ./cmd/mnemo-credentials
 
 .PHONY: test-credentials-integration
-test-credentials-integration: build
+test-credentials-integration:
 	cd server && go test -tags=integration -race -count=1 -v ./integration
