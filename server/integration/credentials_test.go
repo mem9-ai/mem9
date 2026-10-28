@@ -108,6 +108,30 @@ func TestCredentialOnlineMigration(t *testing.T) {
 	exec(t, db, "INSERT INTO webhook_events(id,scope_type,scope_id,event_type,payload_json) VALUES(?,'tenant',?,'memory.added',?)", event, old, `{"scope":{"tenant_id":"`+old+`"},"data":{"memory":{"tenant_id":"`+old+`","content":"`+old+`","metadata":{"n":9007199254740993}}}}`)
 	operation := uuid.NewString()
 	exec(t, db, "INSERT INTO runtime_usage_outbox(operation_id,tenant_id,cluster_id,step,phase,payload_json,payload_hash) VALUES(?,?,?,'submit_metering_event','metering_pending',?,'business-hash')", operation, old, old, `{"apiKeySubject":"`+old+`","event":{"apiKeySubject":"`+chainKey+`","metadata":{"n":9007199254740993}}}`)
+	// Registration precedes backfill: a valid legacy Chain must stay available.
+	a.Config.ReadCredentials = false
+	legacyChainAPI := middleware.ResolveApiKey(repository.NewTenantRepo("tidb", db), realPool{db}, encrypt.NewPlainEncryptor(), nil, middleware.WithCredentials(a), middleware.WithSpaceChainRepo(repository.NewSpaceChainRepo("tidb", db)))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	chainRequest := func() int {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("X-API-Key", chainKey)
+		w := httptest.NewRecorder()
+		legacyChainAPI.ServeHTTP(w, r)
+		return w.Code
+	}
+	a.Config.LegacyAuth = false
+	if chainRequest() != http.StatusServiceUnavailable {
+		t.Fatal("unregistered legacy Chain bypassed disabled fallback")
+	}
+	a.Config.LegacyAuth = true
+	if chainRequest() != http.StatusNoContent {
+		t.Fatal("legacy Chain unavailable before credential backfill")
+	}
+	if _, err := a.ByKey(ctx, old); err != nil {
+		t.Fatal("legacy Chain did not register its Space credential")
+	}
+	a.Config.ReadCredentials = true
 	_, err = a.Backfill(ctx, 100, false)
 	must(t, err)
 	_, err = a.Backfill(ctx, 100, false)

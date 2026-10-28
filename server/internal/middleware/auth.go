@@ -446,6 +446,9 @@ func ResolveApiKey(
 				if state.credentials != nil {
 					for i := range chain.Nodes {
 						rec, err := state.credentials.ForTenant(r.Context(), chain.Nodes[i].TenantID)
+						if errors.Is(err, domain.ErrNotFound) {
+							rec, err = state.credentials.LookupTenant(r.Context(), chain.Nodes[i].TenantID)
+						}
 						if err != nil {
 							writeError(w, http.StatusServiceUnavailable, "chain tenant unavailable")
 							return
