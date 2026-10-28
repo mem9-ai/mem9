@@ -3800,7 +3800,6 @@
         "required": [
           "id",
           "chain_id",
-          "tenant_id",
           "position",
           "routing_policy_enabled",
           "routing_policy_webhook_only",
@@ -3812,9 +3811,6 @@
             "type": "string"
           },
           "chain_id": {
-            "type": "string"
-          },
-          "tenant_id": {
             "type": "string"
           },
           "external_space_id": {

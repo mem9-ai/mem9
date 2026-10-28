@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/reqid"
@@ -187,6 +188,34 @@ func TestOpenAPISpaceChainKnowledgeExtractionPolicy(t *testing.T) {
 	externalSpaceIDDescription, _ := externalSpaceID["description"].(string)
 	if !strings.Contains(externalSpaceIDDescription, "Required") || !strings.Contains(externalSpaceIDDescription, "skipped") {
 		t.Fatalf("SpaceChainNode.external_space_id must document routing eligibility: %q", externalSpaceIDDescription)
+	}
+
+	// Read responses never expose a Space key, so the schema must not declare
+	// one. The schema must also match what the handler really returns.
+	if containsString(nodeRequired, "tenant_id") {
+		t.Fatal("SpaceChainNode must not require tenant_id")
+	}
+	if _, ok := nodeProperties["tenant_id"]; ok {
+		t.Fatal("SpaceChainNode must not declare tenant_id")
+	}
+	body, err := json.Marshal(newSpaceChainNodeView(domain.SpaceChainNode{
+		ID: "node-1", ChainID: "chain-1", TenantID: "tenant-secret", ExternalSpaceID: "space-1",
+		DisplayName: "Team", Position: 1, RoutingPolicyEnabled: true, RoutingPolicyPrompt: "p",
+		RoutingPolicyWebhookOnly: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}))
+	if err != nil {
+		t.Fatalf("marshal node view: %v", err)
+	}
+	actual := decodeJSONObject(t, body)
+	for key := range actual {
+		if _, ok := nodeProperties[key]; !ok {
+			t.Fatalf("handler returns node field %q that SpaceChainNode does not declare", key)
+		}
+	}
+	for _, field := range nodeRequired {
+		if _, ok := actual[field]; !ok {
+			t.Fatalf("SpaceChainNode requires %q but the handler does not return it", field)
+		}
 	}
 }
 

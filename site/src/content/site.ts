@@ -1253,6 +1253,7 @@ const spaceChainObjectResponseFields: SiteApiFieldCopy[] = [
   { name: 'name', description: 'Space Chain name.', required: true },
   { name: 'description', description: 'Space Chain description.' },
   { name: 'bindings', description: 'Key bindings when included.' },
+  { name: 'bindings[].masked_chain_api_key', description: 'Masked Space Chain API key. The plaintext key is returned only when it is created.' },
   { name: 'nodes', description: 'Ordered node list when included.' },
   { name: 'created_at', description: 'Creation timestamp.', required: true },
   { name: 'updated_at', description: 'Last update timestamp.', required: true },
@@ -1295,7 +1296,6 @@ const spaceChainRoutingPolicyBodyFields: SiteApiFieldCopy[] = [
 const spaceChainNodeResponseFields: SiteApiFieldCopy[] = [
   { name: 'id', description: 'Space Chain node id.', required: true },
   { name: 'chain_id', description: 'Space Chain id.', required: true },
-  { name: 'tenant_id', description: 'Target Space API key / tenant id.', required: true },
   { name: 'external_space_id', description: 'Console Space id used as the routing target identifier when present.' },
   { name: 'display_name', description: 'Display name for the target Space when present.' },
   { name: 'position', description: 'Zero-based node position.', required: true },
@@ -1317,6 +1317,7 @@ const spaceChainNodesResponseFields: SiteApiFieldCopy[] = [
 
 const spaceChainBindingsResponseFields: SiteApiFieldCopy[] = [
   { name: 'bindings', description: 'Array of Space Chain API key bindings.', required: true },
+  { name: 'bindings[].masked_chain_api_key', description: 'Masked Space Chain API key. The plaintext key is returned only when it is created.', required: true },
 ];
 
 const spaceChainBindingBodyFields: SiteApiFieldCopy[] = [
@@ -5569,7 +5570,7 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space.':
       '为 true 时，匹配事实会通过 Space Chain webhook 发出，但不会直接保存到目标 Space。',
     'Space Chain node id.': 'Space Chain 节点 id。',
-    'Target Space API key / tenant id.': '目标 Space API key / tenant id。',
+    'Masked Space Chain API key. The plaintext key is returned only when it is created.': '脱敏后的 Space Chain API key。明文 key 仅在创建时返回。',
     'Console Space id used as the routing target identifier when present.': '存在时作为路由目标标识符使用的 Console Space id。',
     'Display name for the target Space when present.': '存在时表示目标 Space 的显示名称。',
     'Zero-based node position.': '从 0 开始的节点位置。',
@@ -5606,7 +5607,7 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space.':
       '為 true 時，符合的事實會透過 Space Chain webhook 發送，但不會直接儲存到目標 Space。',
     'Space Chain node id.': 'Space Chain 節點 id。',
-    'Target Space API key / tenant id.': '目標 Space API key / tenant id。',
+    'Masked Space Chain API key. The plaintext key is returned only when it is created.': '遮罩後的 Space Chain API key。明文 key 僅在建立時回傳。',
     'Console Space id used as the routing target identifier when present.': '存在時作為路由目標識別碼使用的 Console Space id。',
     'Display name for the target Space when present.': '存在時表示目標 Space 的顯示名稱。',
     'Zero-based node position.': '從 0 開始的節點位置。',
@@ -5628,7 +5629,7 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space.':
       'true の場合、一致した fact は Space Chain webhook で送信されますが、target Space には直接保存されません。',
     'Space Chain node id.': 'Space Chain node id。',
-    'Target Space API key / tenant id.': 'target Space API key / tenant id。',
+    'Masked Space Chain API key. The plaintext key is returned only when it is created.': 'マスクされた Space Chain API key。平文の key は作成時にのみ返されます。',
     'Console Space id used as the routing target identifier when present.': '設定されている場合に routing target identifier として使う Console Space id。',
     'Display name for the target Space when present.': '設定されている場合の target Space の表示名。',
     'Zero-based node position.': '0 始まりの node position。',
@@ -5650,7 +5651,7 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space.':
       'true이면 일치하는 fact를 Space Chain webhook으로 보내지만 target Space에 직접 저장하지 않습니다.',
     'Space Chain node id.': 'Space Chain node id.',
-    'Target Space API key / tenant id.': 'target Space API key / tenant id.',
+    'Masked Space Chain API key. The plaintext key is returned only when it is created.': '마스킹된 Space Chain API key. 평문 key는 생성 시에만 반환됩니다.',
     'Console Space id used as the routing target identifier when present.': '있는 경우 routing target identifier로 사용하는 Console Space id.',
     'Display name for the target Space when present.': '있는 경우 target Space의 표시 이름.',
     'Zero-based node position.': '0부터 시작하는 node position.',
@@ -5672,7 +5673,7 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space.':
       'Jika true, fact yang cocok dikirim melalui webhook Space Chain tetapi tidak disimpan langsung ke target Space.',
     'Space Chain node id.': 'id node Space Chain.',
-    'Target Space API key / tenant id.': 'API key / tenant id target Space.',
+    'Masked Space Chain API key. The plaintext key is returned only when it is created.': 'API key Space Chain yang dimasking. Key plaintext hanya dikembalikan saat dibuat.',
     'Console Space id used as the routing target identifier when present.': 'id Console Space yang digunakan sebagai identifier routing target jika tersedia.',
     'Display name for the target Space when present.': 'Nama tampilan target Space jika tersedia.',
     'Zero-based node position.': 'Posisi node berbasis nol.',
@@ -5694,7 +5695,7 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'When true, matching facts are emitted through Space Chain webhooks but are not saved directly into the target Space.':
       'เมื่อเป็น true fact ที่ตรงกันจะถูกส่งผ่าน Space Chain webhook แต่จะไม่ถูกบันทึกลง target Space โดยตรง',
     'Space Chain node id.': 'id ของ Space Chain node',
-    'Target Space API key / tenant id.': 'API key / tenant id ของ target Space',
+    'Masked Space Chain API key. The plaintext key is returned only when it is created.': 'Space Chain API key ที่ถูก mask แล้ว key แบบ plaintext จะถูกส่งกลับเฉพาะตอนสร้างเท่านั้น',
     'Console Space id used as the routing target identifier when present.': 'id ของ Console Space ที่ใช้เป็น identifier ของ routing target เมื่อมีค่า',
     'Display name for the target Space when present.': 'ชื่อที่แสดงของ target Space เมื่อมีค่า',
     'Zero-based node position.': 'ตำแหน่ง node ที่เริ่มนับจาก 0',

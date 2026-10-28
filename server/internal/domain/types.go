@@ -63,9 +63,12 @@ const ChainKeyPrefix = "chain_"
 
 // ChainSource identifies which Space Chain node produced a response item.
 type ChainSource struct {
-	ChainID         string `json:"chain_id"`
-	NodePosition    int    `json:"node_position"`
-	TenantID        string `json:"tenant_id"`
+	ChainID      string `json:"chain_id"`
+	NodePosition int    `json:"node_position"`
+	// TenantID is the node's Space key. It is computed per request, never stored,
+	// and must not leave the server: runtime code uses it to de-duplicate and to
+	// pick the Space-scoped webhook, but it is hidden from every JSON encoding.
+	TenantID        string `json:"-"`
 	ExternalSpaceID string `json:"external_space_id,omitempty"`
 }
 

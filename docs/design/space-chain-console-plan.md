@@ -1,5 +1,7 @@
 # Space Chain Web Console Management Plan
 
+> **Note:** Space Chain read responses (get, update, list bindings, list nodes, node routing policy) no longer expose plaintext `chain_` keys or Space keys. Bindings return `masked_chain_api_key`, and nodes and `chain_source` no longer include `tenant_id`. Only the create-chain and create-binding responses return the plaintext `chain_api_key`. Statements below that describe the old read shapes are historical.
+
 ## Summary
 
 Add Space Chain management to `mem9-console-server` and `mem9-console-fe` with

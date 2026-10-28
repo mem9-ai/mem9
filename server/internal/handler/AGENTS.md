@@ -23,6 +23,7 @@ cd server && go test -race -count=1 -run TestFunctionName ./internal/handler/
 | Space Chain runtime routing and recall | `chain_runtime.go` |
 | Webhook CRUD (Space + Chain scoped) | `webhook.go` |
 | Webhook event enqueueing | `webhook_events.go` |
+| Space Chain read response views (masked chain keys, no Space keys) | `space_chain_view.go` |
 | Tenant endpoints | `tenant.go` |
 | Import task endpoints | `task.go` |
 | Metering admin endpoints | `metering.go` |

@@ -4,6 +4,8 @@ title: "Issue 311 Space Chain E2E Proposal"
 
 # Issue 311 Space Chain E2E Proposal
 
+> **Note:** Space Chain read responses (get, update, list bindings, list nodes, node routing policy) no longer expose plaintext `chain_` keys or Space keys. Bindings return `masked_chain_api_key`, and nodes and `chain_source` no longer include `tenant_id`. Only the create-chain and create-binding responses return the plaintext `chain_api_key`. Statements below that describe the old read shapes are historical.
+
 ## Context
 
 Issue #311, opened on 2026-05-15, asks for missing end-to-end coverage for the Space Chain feature. The issue acceptance criteria are:

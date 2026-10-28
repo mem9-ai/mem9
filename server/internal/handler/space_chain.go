@@ -55,7 +55,7 @@ func (s *Server) getSpaceChain(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	respond(w, http.StatusOK, chain)
+	respond(w, http.StatusOK, newSpaceChainView(chain))
 }
 
 func (s *Server) getSpaceChainByKey(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +73,7 @@ func (s *Server) getSpaceChainByKey(w http.ResponseWriter, r *http.Request) {
 		s.handleError(r.Context(), w, err)
 		return
 	}
-	respond(w, http.StatusOK, chain)
+	respond(w, http.StatusOK, newSpaceChainView(chain))
 }
 
 func (s *Server) updateSpaceChain(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +90,7 @@ func (s *Server) updateSpaceChain(w http.ResponseWriter, r *http.Request) {
 		s.handleError(r.Context(), w, err)
 		return
 	}
-	respond(w, http.StatusOK, chain)
+	respond(w, http.StatusOK, newSpaceChainView(chain))
 }
 
 func (s *Server) deleteSpaceChain(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +117,7 @@ func (s *Server) listSpaceChainNodes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	respond(w, http.StatusOK, map[string]any{"nodes": chain.Nodes})
+	respond(w, http.StatusOK, map[string]any{"nodes": newSpaceChainNodeViews(chain.Nodes)})
 }
 
 func (s *Server) replaceSpaceChainNodes(w http.ResponseWriter, r *http.Request) {
@@ -134,7 +134,7 @@ func (s *Server) replaceSpaceChainNodes(w http.ResponseWriter, r *http.Request) 
 		s.handleError(r.Context(), w, err)
 		return
 	}
-	respond(w, http.StatusOK, map[string]any{"nodes": nodes})
+	respond(w, http.StatusOK, map[string]any{"nodes": newSpaceChainNodeViews(nodes)})
 }
 
 func (s *Server) updateSpaceChainNodeRoutingPolicy(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +151,7 @@ func (s *Server) updateSpaceChainNodeRoutingPolicy(w http.ResponseWriter, r *htt
 		s.handleError(r.Context(), w, err)
 		return
 	}
-	respond(w, http.StatusOK, node)
+	respond(w, http.StatusOK, newSpaceChainNodeView(*node))
 }
 
 func (s *Server) listSpaceChainBindings(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +159,7 @@ func (s *Server) listSpaceChainBindings(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	respond(w, http.StatusOK, map[string]any{"bindings": chain.Bindings})
+	respond(w, http.StatusOK, map[string]any{"bindings": newSpaceChainBindingViews(chain.Bindings)})
 }
 
 func (s *Server) createSpaceChainBinding(w http.ResponseWriter, r *http.Request) {

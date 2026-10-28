@@ -114,13 +114,13 @@ confirms the deleted chain key is no longer active.
 | 4   | Chain key status         | `GET /v1alpha2/status` returns `active` for the chain key                                         |
 | 5   | Empty-chain write        | Runtime write through a chain with no nodes returns 400 with a clear error                        |
 | 6   | By-key lookup            | `GET /v1alpha2/space-chains/by-key` resolves the created chain                                    |
-| 7   | Binding list             | `GET /v1alpha2/space-chains/{id}/bindings` includes the initial binding and key                   |
+| 7   | Binding list             | `GET /v1alpha2/space-chains/{id}/bindings` returns the initial binding with `masked_chain_api_key` only |
 | 8   | Duplicate nodes rejected | Duplicate `tenant_id` node replacement returns 400                                                |
-| 9   | Replace nodes            | `PUT /v1alpha2/space-chains/{id}/nodes` stores two nodes with positions 0 and 1                   |
-| 10  | List nodes               | `GET /v1alpha2/space-chains/{id}/nodes` returns the stored order                                  |
+| 9   | Replace nodes            | `PUT /v1alpha2/space-chains/{id}/nodes` stores two nodes with positions 0 and 1; the response has no Space key |
+| 10  | List nodes               | `GET /v1alpha2/space-chains/{id}/nodes` returns the stored order without Space keys               |
 | 11  | Chain write              | `POST /v1alpha2/mem9s/memories` with the chain key returns 202 `accepted`                         |
-| 12  | Chain list provenance    | Polled list result includes `chain_source` for node position 0 and the first Space tenant         |
-| 13  | Chain get by id          | `GET /v1alpha2/mem9s/memories/{id}` returns the memory and same `chain_source`                    |
+| 12  | Chain list provenance    | Polled list result includes `chain_source` for node position 0 and the first node's external Space id, with no Space key |
+| 13  | Chain get by id          | `GET /v1alpha2/mem9s/memories/{id}` returns the memory and same `chain_source` (no Space key)     |
 | 14  | Chain update by id       | `PUT /v1alpha2/mem9s/memories/{id}` advances version and preserves first-node provenance          |
 | 15  | Chain delete by id       | `DELETE /v1alpha2/mem9s/memories/{id}` returns 204                                                |
 | 16  | Deleted memory 404       | Subsequent chain `GET /memories/{id}` returns 404                                                 |

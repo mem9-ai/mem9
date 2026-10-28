@@ -9,12 +9,12 @@
 #   4. Validate chain key status
 #   5. Verify empty-chain runtime writes fail clearly
 #   6. Resolve chain by key
-#   7. List initial chain bindings
+#   7. List initial chain bindings (masked key only, no plaintext)
 #   8. Reject duplicate nodes
-#   9. Replace nodes with two Spaces
+#   9. Replace nodes with two Spaces (no Space key echoed back)
 #  10. List nodes and verify order
 #  11. Write a deterministic memory through the chain key
-#  12. Poll until the memory materialises with chain_source
+#  12. Poll until the memory materialises with chain_source (no Space key)
 #  13. Get, update, and delete the memory by id through the chain key
 #  14. Soft-delete the chain and verify the key is inactive
 #
@@ -79,19 +79,6 @@ check() {
   return 1
 }
 
-check_secret_equal() {
-  local desc="$1" got="$2" want="$3"
-  TOTAL=$((TOTAL+1))
-  if [ "$got" = "$want" ]; then
-    ok "$desc"
-    PASS=$((PASS+1))
-    return 0
-  fi
-  fail "$desc - expected value did not match actual value (redacted)"
-  FAIL=$((FAIL+1))
-  return 1
-}
-
 check_contains() {
   local desc="$1" haystack="$2" needle="$3"
   TOTAL=$((TOTAL+1))
@@ -101,6 +88,20 @@ check_contains() {
     return 0
   fi
   fail "$desc - '$needle' not found in: $haystack"
+  FAIL=$((FAIL+1))
+  return 1
+}
+
+# Fails when the secret appears in the response. Neither value is printed.
+check_not_contains_secret() {
+  local desc="$1" haystack="$2" secret="$3"
+  TOTAL=$((TOTAL+1))
+  if ! printf '%s' "$haystack" | grep -qF -- "$secret"; then
+    ok "$desc"
+    PASS=$((PASS+1))
+    return 0
+  fi
+  fail "$desc - response contains a secret value (redacted)"
   FAIL=$((FAIL+1))
   return 1
 }
@@ -328,6 +329,7 @@ bdy=$(body "$resp")
 check "GET /space-chains/by-key returns 200" "$code" "200"
 BY_KEY_ID=$(printf '%s' "$bdy" | json_field "id")
 check "by-key chain ID matches" "$BY_KEY_ID" "$CHAIN_ID"
+check_not_contains_secret "by-key response omits the chain key" "$bdy" "$CHAIN_API_KEY"
 
 # ============================================================================
 # TEST 7 - List initial bindings
@@ -338,9 +340,14 @@ code=$(http_code "$resp")
 bdy=$(body "$resp")
 check "GET /space-chains/{id}/bindings returns 200" "$code" "200"
 GOT_BINDING_ID=$(printf '%s' "$bdy" | json_field "bindings.0.id")
-GOT_BINDING_KEY=$(printf '%s' "$bdy" | json_field "bindings.0.chain_api_key")
+GOT_BINDING_MASK=$(printf '%s' "$bdy" | json_field "bindings.0.masked_chain_api_key")
+GOT_BINDING_PLAIN=$(printf '%s' "$bdy" | json_field "bindings.0.chain_api_key")
+# Mask rule: first 6 bytes + "..." + last 4 bytes of the chain key.
+EXPECTED_BINDING_MASK="${CHAIN_API_KEY:0:6}...${CHAIN_API_KEY: -4}"
 check "initial binding ID matches" "$GOT_BINDING_ID" "$BINDING_ID"
-check_secret_equal "initial binding key matches" "$GOT_BINDING_KEY" "$CHAIN_API_KEY"
+check "initial binding key is masked" "$GOT_BINDING_MASK" "$EXPECTED_BINDING_MASK"
+check "binding list has no plaintext chain_api_key field" "$GOT_BINDING_PLAIN" ""
+check_not_contains_secret "binding list omits the chain key" "$bdy" "$CHAIN_API_KEY"
 
 # ============================================================================
 # TEST 8 - Duplicate node replacement is rejected
@@ -395,12 +402,14 @@ resp=$(curl_chain_json "$BASE/v1alpha2/space-chains/$CHAIN_ID/nodes" -X PUT \
 code=$(http_code "$resp")
 bdy=$(body "$resp")
 check "PUT /space-chains/{id}/nodes returns 200" "$code" "200"
-NODE0_TENANT=$(printf '%s' "$bdy" | json_field "nodes.0.tenant_id")
-NODE1_TENANT=$(printf '%s' "$bdy" | json_field "nodes.1.tenant_id")
+NODE0_EXT=$(printf '%s' "$bdy" | json_field "nodes.0.external_space_id")
+NODE1_EXT=$(printf '%s' "$bdy" | json_field "nodes.1.external_space_id")
 NODE0_POS=$(printf '%s' "$bdy" | json_field "nodes.0.position")
 NODE1_POS=$(printf '%s' "$bdy" | json_field "nodes.1.position")
-check "node 0 tenant matches first Space" "$NODE0_TENANT" "$SPACE1_ID"
-check "node 1 tenant matches second Space" "$NODE1_TENANT" "$SPACE2_ID"
+check "node 0 external Space ID matches" "$NODE0_EXT" "e2e-space-chain-space-1-$RUN_ID"
+check "node 1 external Space ID matches" "$NODE1_EXT" "e2e-space-chain-space-2-$RUN_ID"
+check_not_contains_secret "replace response omits the first Space key" "$bdy" "$SPACE1_ID"
+check_not_contains_secret "replace response omits the second Space key" "$bdy" "$SPACE2_ID"
 check "node 0 position is 0" "$NODE0_POS" "0"
 check "node 1 position is 1" "$NODE1_POS" "1"
 
@@ -412,12 +421,14 @@ resp=$(curl_chain_json "$BASE/v1alpha2/space-chains/$CHAIN_ID/nodes")
 code=$(http_code "$resp")
 bdy=$(body "$resp")
 check "GET /space-chains/{id}/nodes returns 200" "$code" "200"
-LIST_NODE0_TENANT=$(printf '%s' "$bdy" | json_field "nodes.0.tenant_id")
-LIST_NODE1_TENANT=$(printf '%s' "$bdy" | json_field "nodes.1.tenant_id")
+LIST_NODE0_EXT=$(printf '%s' "$bdy" | json_field "nodes.0.external_space_id")
+LIST_NODE1_EXT=$(printf '%s' "$bdy" | json_field "nodes.1.external_space_id")
 LIST_NODE0_POS=$(printf '%s' "$bdy" | json_field "nodes.0.position")
 LIST_NODE1_POS=$(printf '%s' "$bdy" | json_field "nodes.1.position")
-check "listed node 0 tenant matches first Space" "$LIST_NODE0_TENANT" "$SPACE1_ID"
-check "listed node 1 tenant matches second Space" "$LIST_NODE1_TENANT" "$SPACE2_ID"
+check "listed node 0 external Space ID matches" "$LIST_NODE0_EXT" "e2e-space-chain-space-1-$RUN_ID"
+check "listed node 1 external Space ID matches" "$LIST_NODE1_EXT" "e2e-space-chain-space-2-$RUN_ID"
+check_not_contains_secret "node list omits the first Space key" "$bdy" "$SPACE1_ID"
+check_not_contains_secret "node list omits the second Space key" "$bdy" "$SPACE2_ID"
 check "listed node 0 position is 0" "$LIST_NODE0_POS" "0"
 check "listed node 1 position is 1" "$LIST_NODE1_POS" "1"
 
@@ -480,10 +491,11 @@ fi
 
 LIST_CHAIN_ID=$(printf '%s' "$list_bdy" | memory_field_by_tag "$RUN_TAG" "chain_source.chain_id")
 LIST_NODE_POS=$(printf '%s' "$list_bdy" | memory_field_by_tag "$RUN_TAG" "chain_source.node_position")
-LIST_SOURCE_TENANT=$(printf '%s' "$list_bdy" | memory_field_by_tag "$RUN_TAG" "chain_source.tenant_id")
+LIST_SOURCE_EXT=$(printf '%s' "$list_bdy" | memory_field_by_tag "$RUN_TAG" "chain_source.external_space_id")
 check "list chain_source.chain_id matches" "$LIST_CHAIN_ID" "$CHAIN_ID"
 check "list chain_source.node_position is 0" "$LIST_NODE_POS" "0"
-check "list chain_source.tenant_id is first Space" "$LIST_SOURCE_TENANT" "$SPACE1_ID"
+check "list chain_source.external_space_id is first node" "$LIST_SOURCE_EXT" "e2e-space-chain-space-1-$RUN_ID"
+check_not_contains_secret "memory list omits the first Space key" "$list_bdy" "$SPACE1_ID"
 
 # ============================================================================
 # TEST 13 - Get memory by id through chain key
@@ -497,12 +509,13 @@ GOT_ID=$(printf '%s' "$bdy" | json_field "id")
 ORIG_VERSION=$(printf '%s' "$bdy" | json_field "version")
 GET_CHAIN_ID=$(printf '%s' "$bdy" | json_field "chain_source.chain_id")
 GET_NODE_POS=$(printf '%s' "$bdy" | json_field "chain_source.node_position")
-GET_SOURCE_TENANT=$(printf '%s' "$bdy" | json_field "chain_source.tenant_id")
+GET_SOURCE_EXT=$(printf '%s' "$bdy" | json_field "chain_source.external_space_id")
 check "returned ID matches" "$GOT_ID" "$FIRST_MEM_ID"
 check_nonempty "original version extracted" "$ORIG_VERSION"
 check "get chain_source.chain_id matches" "$GET_CHAIN_ID" "$CHAIN_ID"
 check "get chain_source.node_position is 0" "$GET_NODE_POS" "0"
-check "get chain_source.tenant_id is first Space" "$GET_SOURCE_TENANT" "$SPACE1_ID"
+check "get chain_source.external_space_id is first node" "$GET_SOURCE_EXT" "e2e-space-chain-space-1-$RUN_ID"
+check_not_contains_secret "get memory omits the first Space key" "$bdy" "$SPACE1_ID"
 
 # ============================================================================
 # TEST 14 - Update memory by id through chain key
@@ -527,12 +540,13 @@ check "PUT /memories/{id} returns 200" "$code" "200"
 UPD_VERSION=$(printf '%s' "$bdy" | json_field "version")
 UPD_CHAIN_ID=$(printf '%s' "$bdy" | json_field "chain_source.chain_id")
 UPD_NODE_POS=$(printf '%s' "$bdy" | json_field "chain_source.node_position")
-UPD_SOURCE_TENANT=$(printf '%s' "$bdy" | json_field "chain_source.tenant_id")
+UPD_SOURCE_EXT=$(printf '%s' "$bdy" | json_field "chain_source.external_space_id")
 check_gt "version advanced" "$UPD_VERSION" "$ORIG_VERSION"
 check_contains "updated tag present" "$bdy" '"updated"'
 check "update chain_source.chain_id matches" "$UPD_CHAIN_ID" "$CHAIN_ID"
 check "update chain_source.node_position is 0" "$UPD_NODE_POS" "0"
-check "update chain_source.tenant_id is first Space" "$UPD_SOURCE_TENANT" "$SPACE1_ID"
+check "update chain_source.external_space_id is first node" "$UPD_SOURCE_EXT" "e2e-space-chain-space-1-$RUN_ID"
+check_not_contains_secret "update memory omits the first Space key" "$bdy" "$SPACE1_ID"
 
 # ============================================================================
 # TEST 15 - Delete memory by id through chain key
