@@ -72,16 +72,16 @@ func TestCredentialMappings(t *testing.T) {
 	schema, err := os.ReadFile("../schema.sql")
 	must(t, err)
 	for _, statement := range statements(string(schema)) {
-		for _, table := range []string{"tenants", "space_chains", "space_chain_bindings", "space_chain_nodes"} {
+		for _, table := range []string{"tenants", "api_keys", "space_chains", "space_chain_bindings", "space_chain_nodes"} {
 			if strings.HasPrefix(strings.TrimSpace(statement), "CREATE TABLE IF NOT EXISTS "+table+" (") {
 				exec(t, ctx, db, statement)
+				if table == "api_keys" {
+					// Schema preparation must be safe to repeat.
+					exec(t, ctx, db, statement)
+				}
 			}
 		}
 	}
-	mappingSchema, err := os.ReadFile("../migrations/api-keys/001_credentials_tidb.sql")
-	must(t, err)
-	exec(t, ctx, db, string(mappingSchema))
-	exec(t, ctx, db, string(mappingSchema))
 
 	secret := filepath.Join(t.TempDir(), "keys.json")
 	data, err := json.Marshal(map[string]any{
