@@ -16,11 +16,11 @@ The original request key remains `APIKeySubject` for Console and quota calls.
 There are no behavior or rollout switches. The schema and keyring are required
 before starting this version; missing dependencies fail startup explicitly.
 
-1. Build with `make build build-credentials`.
-2. Preview `./server/bin/mnemo-credentials -action schema`, then run it with
-   `-apply` using the control-plane `MNEMO_DSN` and `MNEMO_DB_BACKEND`.
-   The DDL only creates `api_keys` and can be repeated. No existing table is
-   altered and no existing records are updated.
+1. Build with `make build`.
+2. Apply `001_credentials_tidb.sql` to the control-plane database through the
+   SQL migration process. For PostgreSQL/DB9, use `001_credentials_postgres.sql`
+   instead. The DDL only creates `api_keys` and can be repeated. No existing
+   table is altered and no existing records are updated.
 3. Mount the keyring JSON as a read-only secret file and set
    `MNEMO_API_KEYS_SECRET_FILE` to its path on every API instance. Use the same
    keyring across instances. Secret provisioning and workload permissions are
@@ -39,7 +39,7 @@ unmapped tenant. Upstream cluster provisioning still precedes these writes.
 To roll application code back, deploy the previous binary and leave `api_keys`
 in place. All tenant IDs and historical payloads remain compatible. Remove the
 unused table only in a separate reviewed cleanup after all readers have been
-rolled back; deleting mappings is not part of this command.
+rolled back.
 
 ## Keyring and storage contract
 
@@ -65,24 +65,18 @@ records remain readable. Do not reuse the password encryptor or log secrets.
 
 Do not put real keys or DSNs in commands, logs or committed files.
 
-## Optional existing-key backfill
+## Existing tenants
 
-Old keys work before, during and after backfill. Backfill only adds missing
-mapping records, including inactive/deleted tenants without changing their
-lifecycle. It does not copy or migrate Chain keys.
-
-Preview `./server/bin/mnemo-credentials -action backfill -limit 100`, then use
-`-apply` to write the batch. `records` counts processed candidates, including concurrent duplicate inserts.
-Repeat until it is zero. A failed batch can
-be retried; previously registered mappings are skipped. Run another pass after
-a rolling deployment to include tenants created by old instances.
+Existing tenants continue to authenticate through the legacy lookup without
+backfill. No backfill tool or script is included; prepare one separately if
+backfill becomes necessary.
 
 ## Validation
 
-Run `make build build-credentials`, `make vet` and `make test`.
+Run `make build`, `make vet` and `make test`.
 For real database verification, set `MNEMO_CREDENTIAL_TEST_DSN` to a disposable
 TiDB instance and run `make test-credentials-integration`. The scenario creates
 and removes only its own randomly named database. It checks additive schema,
 transactional provisioning, mapping-first/legacy reads, original-key subjects,
-unchanged Chain access, lifecycle rules, read-only authentication, backfill and
+unchanged Chain access, lifecycle rules, read-only authentication and
 rollback on mapping-insert failure.

@@ -33,7 +33,6 @@ import (
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
 	"github.com/qiffang/mnemos/server/internal/tenant"
-	keymigrations "github.com/qiffang/mnemos/server/migrations/api-keys"
 )
 
 // Exercise real SQL transactions and HTTP auth with synthetic provider/Console
@@ -73,14 +72,16 @@ func TestCredentialMappings(t *testing.T) {
 	schema, err := os.ReadFile("../schema.sql")
 	must(t, err)
 	for _, statement := range statements(string(schema)) {
-		for _, table := range []string{"tenants", "space_chains", "space_chain_bindings", "space_chain_nodes", "runtime_usage_outbox"} {
+		for _, table := range []string{"tenants", "space_chains", "space_chain_bindings", "space_chain_nodes"} {
 			if strings.HasPrefix(strings.TrimSpace(statement), "CREATE TABLE IF NOT EXISTS "+table+" (") {
 				exec(t, ctx, db, statement)
 			}
 		}
 	}
-	must(t, keymigrations.Apply(ctx, db, "tidb"))
-	must(t, keymigrations.Apply(ctx, db, "tidb"))
+	mappingSchema, err := os.ReadFile("../migrations/api-keys/001_credentials_tidb.sql")
+	must(t, err)
+	exec(t, ctx, db, string(mappingSchema))
+	exec(t, ctx, db, string(mappingSchema))
 
 	secret := filepath.Join(t.TempDir(), "keys.json")
 	data, err := json.Marshal(map[string]any{
@@ -213,35 +214,6 @@ func TestCredentialMappings(t *testing.T) {
 		exec(t, ctx, db, "UPDATE tenants SET status='active',deleted_at=NULL WHERE id=?", id)
 	}
 
-	operation := uuid.NewString()
-	payload := `{"apiKeySubject":"` + old + `"}`
-	exec(t, ctx, db, "INSERT INTO runtime_usage_outbox(operation_id,tenant_id,cluster_id,step,phase,payload_json,payload_hash) VALUES(?,?,?,'commit_reservation','commit_pending',?,'unchanged')", operation, old, old, payload)
-	n, err := store.Backfill(ctx, 100, true)
-	must(t, err)
-	if n != 1 {
-		t.Fatal("backfill preview did not find the old tenant")
-	}
-	must(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM api_keys").Scan(&count))
-	if count != 1 {
-		t.Fatal("backfill preview performed a write")
-	}
-	n, err = store.Backfill(ctx, 100, false)
-	must(t, err)
-	if n != 1 {
-		t.Fatal("backfill did not copy the old tenant")
-	}
-	n, err = store.Backfill(ctx, 100, false)
-	must(t, err)
-	if n != 0 {
-		t.Fatal("backfill was not repeatable")
-	}
-	assertAuth(old, old)
-	var format, subject, tenantID string
-	must(t, db.QueryRowContext(ctx, "SELECT subject_version,JSON_UNQUOTE(JSON_EXTRACT(payload_json,'$.apiKeySubject')),tenant_id FROM runtime_usage_outbox WHERE operation_id=?", operation).Scan(&format, &subject, &tenantID))
-	if format != "tenant_id_v1" || subject != old || tenantID != old {
-		t.Fatal("backfill changed historical outbox data")
-	}
-
 	// Removing the mapping table must fail reads explicitly, not fall through.
 	// A failed mapping insert must also roll back its preceding tenant insert.
 	exec(t, ctx, db, "RENAME TABLE api_keys TO api_keys_unavailable")
@@ -256,7 +228,7 @@ func TestCredentialMappings(t *testing.T) {
 	}
 	exec(t, ctx, db, "RENAME TABLE api_keys_unavailable TO api_keys")
 	assertAuth(fresh, fresh)
-	t.Log("verified unchanged keys, transactional mappings, legacy fallback, read-only auth, raw Console subjects, Chain compatibility and bounded backfill")
+	t.Log("verified unchanged keys, transactional mappings, legacy fallback, read-only auth, raw Console subjects, Chain compatibility and transaction rollback")
 }
 
 type realPool struct{ db *sql.DB }

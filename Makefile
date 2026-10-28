@@ -37,10 +37,6 @@ dev:
 docker: build-linux
 	docker build --platform=linux/amd64 -q -f ./server/Dockerfile -t $(IMG) .
 
-.PHONY: build-credentials
-build-credentials:
-	cd server && go build -o ./bin/mnemo-credentials ./cmd/mnemo-credentials
-
 .PHONY: test-credentials-integration
 test-credentials-integration:
 	cd server && go test -tags=integration -race -count=1 -v ./integration

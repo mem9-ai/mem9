@@ -99,51 +99,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIM
 	return nil
 }
 
-// Backfill copies existing keys in bounded batches without changing tenants.
-// Authentication never calls this method or writes credential records.
-func (s *Store) Backfill(ctx context.Context, limit int, dryRun bool) (int, error) {
-	rows, err := s.db.QueryContext(ctx, s.query("SELECT t.id FROM tenants t LEFT JOIN api_keys k ON k.tenant_id = t.id WHERE k.id IS NULL ORDER BY t.id LIMIT ?"), limit)
-	if err != nil {
-		return 0, errors.New("list tenants without credential mappings failed")
-	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return 0, errors.New("read backfill tenant failed")
-		}
-		ids = append(ids, id)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return 0, errors.New("read backfill tenants failed")
-	}
-	if dryRun {
-		return len(ids), nil
-	}
-	count := 0
-	for _, tenantID := range ids {
-		id := uuid.NewString()
-		sealed, err := s.keys.seal(id, tenantID)
-		if err != nil {
-			return count, err
-		}
-		q := "INSERT INTO api_keys (id, hash_version, key_hash, encrypted_key, tenant_id) VALUES (?, ?, ?, ?, ?)"
-		if s.backend == "postgres" || s.backend == "db9" {
-			q += " ON CONFLICT (tenant_id) DO NOTHING"
-		} else {
-			q += " ON DUPLICATE KEY UPDATE id = id"
-		}
-		if _, err := s.db.ExecContext(ctx, s.query(q), id, s.keys.HashVersion, s.keys.digest(s.keys.HashVersion, tenantID), sealed, tenantID); err != nil {
-			return count, errors.New("credential backfill failed")
-		}
-		count++
-	}
-	return count, nil
-}
-
 func optionalString(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: value != ""}
 }
