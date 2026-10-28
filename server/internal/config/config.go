@@ -141,6 +141,13 @@ type Config struct {
 	UTMEnabled bool
 
 	CORSAllowedOrigins []string
+
+	// SpaceChainCreateSecretRequired turns on the create gate: POST
+	// /v1alpha2/space-chains then needs "Authorization: Bearer <secret>".
+	// Off by default; when off, the Authorization header is not looked at.
+	SpaceChainCreateSecretRequired bool
+	// SpaceChainCreateSecret is the shared secret for the create gate.
+	SpaceChainCreateSecret string `json:"-"` // Never serialize to JSON
 }
 
 func Load() (*Config, error) {
@@ -195,6 +202,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	recallResponseReserve, err := envDurationStrict("MNEMO_RECALL_RESPONSE_RESERVE", 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	spaceChainCreateSecretRequired, err := envBoolStrict("MNEMO_SPACE_CHAIN_CREATE_SECRET_REQUIRED", false)
 	if err != nil {
 		return nil, err
 	}
@@ -266,6 +277,8 @@ func Load() (*Config, error) {
 		AutoSpendLimitCooldown:           envDuration("MNEMO_AUTO_SPEND_LIMIT_COOLDOWN", 1*time.Hour),
 		UTMEnabled:                       envBool("MNEMO_UTM_ENABLED", false),
 		CORSAllowedOrigins:               parseCSV(envOr("MNEMO_CORS_ALLOWED_ORIGINS", defaultCORSAllowedOrigins(env))),
+		SpaceChainCreateSecretRequired:   spaceChainCreateSecretRequired,
+		SpaceChainCreateSecret:           strings.TrimSpace(os.Getenv("MNEMO_SPACE_CHAIN_CREATE_SECRET")),
 	}
 	// Validate ingest mode.
 	switch cfg.IngestMode {
@@ -337,6 +350,9 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_MAX_DELAY must be greater than MNEMO_RUNTIME_USAGE_RESERVATION_RETRY_BASE_DELAY")
 		}
 	}
+	if cfg.SpaceChainCreateSecretRequired && cfg.SpaceChainCreateSecret == "" {
+		return nil, fmt.Errorf("MNEMO_SPACE_CHAIN_CREATE_SECRET is required when MNEMO_SPACE_CHAIN_CREATE_SECRET_REQUIRED=true")
+	}
 
 	return cfg, nil
 }
@@ -403,6 +419,22 @@ func envBoolWithSet(key string, fallback bool) (bool, bool) {
 		}
 	}
 	return fallback, false
+}
+
+// envBoolStrict reads a boolean after trimming whitespace; an empty value means
+// fallback. Unlike envBool, a value that is set but is not a boolean is an
+// error, so a typo cannot silently leave a switch off. The error names the
+// variable and never repeats the value.
+func envBoolStrict(key string, fallback bool) (bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean such as true or false", key)
+	}
+	return value, nil
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {
@@ -511,6 +543,8 @@ func (c *Config) LogValue() slog.Value {
 		slog.Bool("EncryptKeyConfigured", c.EncryptKey != ""),
 		slog.Bool("RuntimeUsageEnabled", c.RuntimeUsageEnabled),
 		slog.Bool("RuntimeUsageInternalSecretConfigured", c.RuntimeUsageInternalSecret != ""),
+		slog.Bool("SpaceChainCreateSecretRequired", c.SpaceChainCreateSecretRequired),
+		slog.Bool("SpaceChainCreateSecretConfigured", c.SpaceChainCreateSecret != ""),
 		// Add other non-sensitive fields as needed
 	)
 }

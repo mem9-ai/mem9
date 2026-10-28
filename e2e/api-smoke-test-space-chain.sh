@@ -21,9 +21,17 @@
 # Usage:
 #   bash e2e/api-smoke-test-space-chain.sh
 #   MNEMO_BASE=http://<dev-alb> POLL_TIMEOUT_S=60 bash e2e/api-smoke-test-space-chain.sh
+#
+# When the server has its create gate switched on
+# (MNEMO_SPACE_CHAIN_CREATE_SECRET_REQUIRED=true), creating a chain needs the
+# create secret. Set MNEMO_SPACE_CHAIN_CREATE_SECRET to the same value and the
+# script sends it as "Authorization: Bearer <secret>" on that one request:
+#   MNEMO_SPACE_CHAIN_CREATE_SECRET=<secret> bash e2e/api-smoke-test-space-chain.sh
+# Without the variable the request is sent exactly as before.
 set -euo pipefail
 
 BASE="${MNEMO_BASE:-https://api.mem9.ai}"
+CREATE_SECRET="${MNEMO_SPACE_CHAIN_CREATE_SECRET:-}"
 AGENT_A="smoke-chain-agent"
 RUN_ID="$(date +%s)-$$"
 SESSION_ID="smoke-chain-$RUN_ID"
@@ -230,6 +238,9 @@ echo "  mnemos API smoke test - Space Chain"
 echo "  Base URL      : $BASE"
 echo "  Session       : $SESSION_ID"
 echo "  Poll timeout  : ${POLL_TIMEOUT_S}s"
+if [ -n "$CREATE_SECRET" ]; then
+  echo "  Create secret : set (sent on the create request only)"
+fi
 echo "  Started       : $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "========================================================"
 
@@ -269,11 +280,24 @@ print(json.dumps({
     "created_by_user_id": "e2e-space-chain",
 }))
 ')
-resp=$(curl_json -X POST "$BASE/v1alpha2/space-chains" \
-  -H "Content-Type: application/json" \
-  -d "$CREATE_PAYLOAD")
+if [ -n "$CREATE_SECRET" ]; then
+  # printf is a shell builtin and curl reads the header from stdin (-H @-), so
+  # the secret is never on any command line and never printed.
+  resp=$(printf 'Authorization: Bearer %s\n' "$CREATE_SECRET" | curl_json -X POST "$BASE/v1alpha2/space-chains" \
+    -H @- \
+    -H "Content-Type: application/json" \
+    -d "$CREATE_PAYLOAD")
+else
+  resp=$(curl_json -X POST "$BASE/v1alpha2/space-chains" \
+    -H "Content-Type: application/json" \
+    -d "$CREATE_PAYLOAD")
+fi
 code=$(http_code "$resp")
 bdy=$(body "$resp")
+# A failed check stops the script (set -e), so print the hint before it.
+if [ "$code" = "401" ] && [ -z "$CREATE_SECRET" ]; then
+  info "401 here usually means the server's create gate is on; set MNEMO_SPACE_CHAIN_CREATE_SECRET and run again"
+fi
 check "POST /v1alpha2/space-chains returns 201" "$code" "201"
 CHAIN_ID=$(printf '%s' "$bdy" | json_field "chain.id")
 CHAIN_API_KEY=$(printf '%s' "$bdy" | json_field "chain_api_key")

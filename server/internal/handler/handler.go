@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,6 +55,10 @@ type Server struct {
 	includeAssistantFacts bool
 	recallRequestTimeout  time.Duration
 	recallResponseReserve time.Duration
+	// chainCreateGateRequired is the create gate switch for POST /v1alpha2/space-chains.
+	// Only a digest of the create secret is kept.
+	chainCreateGateRequired bool
+	chainCreateSecretDigest [sha256.Size]byte
 }
 
 // NewServer creates a new HTTP handler server.
@@ -91,6 +97,18 @@ func (s *Server) WithSpaceChainService(chains *service.SpaceChainService, stopSc
 	if stopScore >= 0 {
 		s.chainRecallStopScore = stopScore
 	}
+	return s
+}
+
+// WithSpaceChainCreateGate sets the create gate for POST /v1alpha2/space-chains.
+// While required is false the Authorization header is not looked at. While it
+// is true, creation needs "Authorization: Bearer <secret>". Whitespace around
+// the secret is ignored, as it is when configuration is loaded. An empty secret
+// then refuses every creation, because the token read from a request is never
+// empty. The secret itself is not kept, only its digest.
+func (s *Server) WithSpaceChainCreateGate(required bool, secret string) *Server {
+	s.chainCreateGateRequired = required
+	s.chainCreateSecretDigest = sha256.Sum256([]byte(strings.TrimSpace(secret)))
 	return s
 }
 

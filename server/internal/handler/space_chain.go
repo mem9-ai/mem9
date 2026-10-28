@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -32,7 +34,48 @@ type disableSpaceChainBindingRequest struct {
 	DisabledByUserID string `json:"disabled_by_user_id,omitempty"`
 }
 
+// authorizeSpaceChainCreate applies the create gate. It reports whether the
+// request may go on; when it returns false the 401 has already been written.
+// A missing, malformed or wrong credential all get the same answer.
+func (s *Server) authorizeSpaceChainCreate(w http.ResponseWriter, r *http.Request) bool {
+	if !s.chainCreateGateRequired {
+		return true
+	}
+	if token, ok := bearerToken(r.Header.Get("Authorization")); ok {
+		// Compare fixed-length digests so the comparison time does not depend
+		// on how much of the secret was guessed, nor on its length.
+		presented := sha256.Sum256([]byte(token))
+		if subtle.ConstantTimeCompare(presented[:], s.chainCreateSecretDigest[:]) == 1 {
+			return true
+		}
+	}
+	respondError(w, http.StatusUnauthorized, "missing or invalid Authorization bearer token")
+	return false
+}
+
+// bearerToken returns the token of an "Authorization: Bearer <token>" header
+// value. Leading whitespace is ignored, the scheme is matched without regard to
+// case, it must be followed by spaces or tabs, and the token is what remains
+// after trimming whitespace. The token it returns is never empty: the create
+// gate relies on that to stay shut when no secret is configured.
+func bearerToken(header string) (string, bool) {
+	const scheme = "bearer"
+	header = strings.TrimLeft(header, " \t")
+	if len(header) <= len(scheme) || !strings.EqualFold(header[:len(scheme)], scheme) {
+		return "", false
+	}
+	rest := header[len(scheme):]
+	if rest[0] != ' ' && rest[0] != '\t' {
+		return "", false
+	}
+	token := strings.TrimSpace(rest)
+	return token, token != ""
+}
+
 func (s *Server) createSpaceChain(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeSpaceChainCreate(w, r) {
+		return
+	}
 	if s.chains == nil {
 		respondError(w, http.StatusServiceUnavailable, "space chain service unavailable")
 		return

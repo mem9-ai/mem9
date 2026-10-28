@@ -110,7 +110,7 @@ confirms the deleted chain key is no longer active.
 | --- | ------------------------ | ------------------------------------------------------------------------------------------------ |
 | 1   | Healthcheck              | `GET /healthz` returns 200 with `status=ok`                                                       |
 | 2   | Provision Spaces         | Two `POST /v1alpha1/mem9s` calls return fresh tenant IDs                                          |
-| 3   | Create Space Chain       | `POST /v1alpha2/space-chains` returns a chain id, binding id, and `chain_` key                    |
+| 3   | Create Space Chain       | `POST /v1alpha2/space-chains` returns a chain id, binding id, and `chain_` key; sends `Authorization: Bearer` when `MNEMO_SPACE_CHAIN_CREATE_SECRET` is set |
 | 4   | Chain key status         | `GET /v1alpha2/status` returns `active` for the chain key                                         |
 | 5   | Empty-chain write        | Runtime write through a chain with no nodes returns 400 with a clear error                        |
 | 6   | By-key lookup            | `GET /v1alpha2/space-chains/by-key` resolves the created chain                                    |
@@ -273,6 +273,7 @@ python3 e2e/concurrent-real-doc-test.py
 | `POLL_TIMEOUT_S`           | `20` (round2), `30` (sessions, Space Chain) | `api-smoke-test-round2*.sh`, `api-smoke-test-space-chain.sh`, `api-smoke-test-sessions.sh`, `api-smoke-test-existing-tenant.sh` |
 | `MNEMO_EXISTING_TENANT_ID` | —                              | `api-smoke-test-existing-tenant.sh`, `api-smoke-test-sessions.sh` (tests 15–17)                |
 | `MNEMO_METADB_DSN`         | —                              | `api-smoke-test-utm.sh` (tests 6–10); format: `user:pass@tcp(host:port)/dbname`                |
+| `MNEMO_SPACE_CHAIN_CREATE_SECRET` | —                       | `api-smoke-test-space-chain.sh` (test 3); only needed when the server's create gate is on. Sent as `Authorization: Bearer` on the create request only, never printed |
 | `MNEMO_TEST_BASE`          | `http://127.0.0.1:18081`       | CRDT scripts                                                                                   |
 | `MNEMO_TEST_USER_TOKEN`    | —                              | CRDT scripts                                                                                   |
 

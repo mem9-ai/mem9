@@ -140,7 +140,7 @@ Space Chains let you compose ordered multi-space recall and routing pipelines. U
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha2/space-chains` | Create a Space Chain. No `X-API-Key` required — the management key (`chain_` prefix) is returned in the response body. All subsequent management endpoints require this key |
+| `POST` | `/v1alpha2/space-chains` | Create a Space Chain. No `X-API-Key` required — the management key (`chain_` prefix) is returned in the response body. All subsequent management endpoints require this key. If the server has its [create gate](#space-chain-create-gate) switched on, the request must also carry `Authorization: Bearer <create secret>`, otherwise it gets `401` |
 | `GET` | `/v1alpha2/space-chains/by-key` | Look up a Space Chain by its management key. Requires the `chain_` key in `X-API-Key` |
 | `GET` | `/v1alpha2/space-chains/{chainID}` | Get Space Chain details. Requires `chain_` management key |
 | `PATCH` | `/v1alpha2/space-chains/{chainID}` | Update Space Chain name/description. Requires `chain_` management key |
@@ -285,6 +285,17 @@ The `MEM9_SOURCE_TURN_*` variables control how many source turn conversations ar
 | `MNEMO_CHAIN_RECALL_STOP_SCORE` | No | `0.8` | Stop querying later Space Chain nodes only when an eligible query has a top normalized confidence at or above this threshold. Raw search `score` values do not trigger chain stop. Must be between `0` and `1` |
 | `MNEMO_RECALL_REQUEST_TIMEOUT` | No | `1m` | Total server-owned Recall request budget, including response assembly and write time |
 | `MNEMO_RECALL_RESPONSE_RESERVE` | No | `5s` | Time reserved inside the Recall request budget for response assembly and write; must be shorter than `MNEMO_RECALL_REQUEST_TIMEOUT` |
+
+#### Space Chain Create Gate
+
+By default, anyone who can reach the server can create a Space Chain. The create gate lets an operator require a shared secret, the create secret, for that one request: `POST /v1alpha2/space-chains`. The gate is off by default. While it is off, the `Authorization` header is not looked at and nothing changes.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MNEMO_SPACE_CHAIN_CREATE_SECRET_REQUIRED` | No | `false` | Turn the create gate on. Accepts the usual boolean spellings such as `true`, `false`, `1` and `0`; surrounding whitespace is ignored and an empty value means off. Any other value stops the server from starting, so a typo cannot leave the gate silently off |
+| `MNEMO_SPACE_CHAIN_CREATE_SECRET` | When the gate is on | — | The create secret. Surrounding whitespace is ignored. The server refuses to start if the gate is on and this is empty. Keep it in a secret store; it is never written to logs, errors or responses |
+
+With the gate on, `POST /v1alpha2/space-chains` must carry `Authorization: Bearer <create secret>`. A request with no credential or a wrong one gets `401` and nothing is created; the answer is the same in both cases. The check runs before the request body is read. Only this one route is affected: every other endpoint, including the ones that use the returned `chain_` key, works as before, and a successful create returns the same response as before.
 
 #### Provisioning And Pooling
 

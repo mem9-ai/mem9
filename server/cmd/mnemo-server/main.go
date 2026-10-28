@@ -261,6 +261,7 @@ func main() {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}
 	spaceChainSvc := service.NewSpaceChainService(spaceChainRepo)
+	logger.Info("space chain create gate", "required", cfg.SpaceChainCreateSecretRequired, "secret_configured", cfg.SpaceChainCreateSecret != "")
 
 	// Middleware.
 	var tenantMW func(http.Handler) http.Handler
@@ -285,6 +286,7 @@ func main() {
 	// Handler.
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger).
 		WithSpaceChainService(spaceChainSvc, cfg.ChainRecallStopScore).
+		WithSpaceChainCreateGate(cfg.SpaceChainCreateSecretRequired, cfg.SpaceChainCreateSecret).
 		WithMetering(meteringWriter).
 		WithRuntimeUsage(runtimeUsageManager).
 		WithWebhookService(webhookSvc).

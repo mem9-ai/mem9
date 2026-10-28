@@ -24,6 +24,7 @@ cd server && go test -race -count=1 -run TestFunctionName ./internal/handler/
 | Webhook CRUD (Space + Chain scoped) | `webhook.go` |
 | Webhook event enqueueing | `webhook_events.go` |
 | Space Chain read response views (masked chain keys, no Space keys) | `space_chain_view.go` |
+| Space Chain create gate: the credential check on `POST /v1alpha2/space-chains` (option `WithSpaceChainCreateGate` is in `handler.go`) | `space_chain.go` |
 | Tenant endpoints | `tenant.go` |
 | Import task endpoints | `task.go` |
 | Metering admin endpoints | `metering.go` |
