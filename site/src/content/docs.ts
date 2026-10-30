@@ -71,13 +71,13 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
     intro: 'Space Chain lets one recall key search several mem9 spaces in a deliberate order.',
     paragraphs: [
       'Use Space Chain when one agent should search layered knowledge sources without merging all data into one space. A common pattern is personal memory first, then team knowledge, then company knowledge.',
-      'Each node in the chain points to a normal mem9 space. The chain key is a separate key: clients call the same memory recall API with the chain key, and mem9 decides which spaces to visit.',
+      'Each node in the chain points to a normal mem9 space. A chain has two keys of its own. Clients call the same memory recall API with the memory key, which can only read and write memory, and mem9 decides which spaces to visit. The management key can change the chain (nodes, keys, webhooks) and also read and write memory, so keep it away from agents.',
     ],
     bullets: [
       'Keep different ownership boundaries while still offering one recall endpoint.',
       'Put the most specific or most trusted space first.',
       'Reuse existing spaces without copying their memories into a new store.',
-      'Rotate or disable Space Chain keys without changing the underlying space keys.',
+      'Rotate or disable memory keys without changing the underlying space keys.',
     ],
     subsections: [
       {
@@ -90,8 +90,10 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
       {
         title: 'Creating and importing chains',
         bullets: [
-          'Create Space Chain starts a new ordered chain and gives you a chain key.',
-          'Import key adds an existing chain key to the console so you can manage or test a chain you already created.',
+          'Create Space Chain starts a new ordered chain and shows its memory key once. Copy it then; the management key stays in Console.',
+          'Import key adds an existing chain to the console so you can manage or test it. It accepts only a management key; a memory key is rejected.',
+          'Create key on a chain issues another memory key. There is no way to attach an existing key.',
+          'The last management key cannot be disabled. Memory keys can all be disabled.',
           'Add nodes from existing spaces, then save the node order before relying on recall behavior.',
           'Use the Recall test area to compare normal ordered recall with Force scanAll.',
         ],
@@ -113,13 +115,13 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
     intro: 'Space Chain 让一个 recall key 按顺序搜索多个 mem9 space。',
     paragraphs: [
       '当一个 Agent 需要按层级检索多份知识，但你又不想把所有数据混进同一个 space 时，就适合使用 Space Chain。常见顺序是：个人记忆、团队知识、公司知识。',
-      '链上的每个节点都指向一个普通 mem9 space。chain key 是单独的 key：客户端继续调用同一套 memory recall API，只是把 `X-API-Key` 换成 chain key，由 mem9 决定要访问哪些 space。',
+      '链上的每个节点都指向一个普通 mem9 space。每条 chain 有两个自己的 key。客户端用只能读写 memory 的 memory key 调用同一套 memory recall API，只是把 `X-API-Key` 换成 memory key，由 mem9 决定要访问哪些 space。管理 key 可以修改 chain（节点、key、webhook），也可以读写 memory，所以不要交给 Agent。',
     ],
     bullets: [
       '保留不同 space 的数据边界，同时提供一个统一 recall 入口。',
       '把最具体、最可信的 space 放在前面。',
       '复用已有 space，不需要把记忆复制到新的存储里。',
-      '可以单独轮换或禁用 Space Chain key，不影响底层 space key。',
+      '可以单独轮换或禁用 memory key，不影响底层 space key。',
     ],
     subsections: [
       {
@@ -132,8 +134,10 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
       {
         title: '创建和导入 chain',
         bullets: [
-          'Create Space Chain 会创建一条新的有序 chain，并返回一个 chain key。',
-          'Import key 可以把已有 chain key 加到 Console 中，用来管理或测试已经存在的 chain。',
+          'Create Space Chain 会创建一条新的有序 chain，并只显示一次它的 memory key。请当时就复制；管理 key 留在 Console 中。',
+          'Import key 可以把已有 chain 加到 Console 中，用来管理或测试它。只接受管理 key，memory key 会被拒绝。',
+          '在 chain 上点 Create key 会签发另一个 memory key，不能绑定已有的 key。',
+          '最后一个管理 key 不能被禁用；memory key 可以全部禁用。',
           '从已有 space 添加节点后，需要保存节点顺序，再依赖这个顺序做 recall。',
           '使用 Recall test 区域对比普通顺序 recall 和 Force scanAll 的差异。',
         ],
@@ -155,13 +159,13 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
     intro: 'Space Chain は、1 つの recall key で複数の mem9 space を順番に検索する仕組みです。',
     paragraphs: [
       'すべてのデータを 1 つの space に混ぜずに、個人、チーム、会社のような層ごとの知識を検索したい場合に使います。',
-      '各 node は通常の mem9 space を指します。client は同じ memory recall API を chain key で呼び出し、mem9 が訪問する space を決めます。',
+      '各 node は通常の mem9 space を指します。chain は専用の key を 2 つ持ちます。client は memory の読み書きだけができる memory key で同じ memory recall API を呼び出し、mem9 が訪問する space を決めます。management key は chain（node、key、webhook）を変更でき、memory の読み書きもできるため、agent には渡さないでください。',
     ],
     bullets: [
       'データ境界を保ったまま、1 つの recall endpoint を提供できます。',
       'より具体的、または信頼度の高い space を先頭に置きます。',
       '既存 space をコピーせずに再利用できます。',
-      '基盤の space key を変えずに chain key を rotate / disable できます。',
+      '基盤の space key を変えずに memory key を rotate / disable できます。',
     ],
     subsections: [
       {
@@ -174,8 +178,10 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
       {
         title: '作成と import',
         bullets: [
-          'Create Space Chain は新しい chain と chain key を作成します。',
-          'Import key は既存の chain key を Console に追加し、管理やテストに使います。',
+          'Create Space Chain は新しい chain を作成し、その memory key を 1 回だけ表示します。その場でコピーしてください。management key は Console に残ります。',
+          'Import key は既存の chain を Console に追加し、管理やテストに使います。受け付けるのは management key だけで、memory key は拒否されます。',
+          'chain の Create key は別の memory key を発行します。既存の key を紐付ける方法はありません。',
+          '最後の management key は無効にできません。memory key はすべて無効にできます。',
           '既存 space から node を追加したら、recall 前に node order を保存してください。',
           'Recall test で通常の順次 recall と Force scanAll を比較できます。',
         ],
@@ -189,13 +195,13 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
     intro: 'Space Chain 은 하나의 recall key 로 여러 mem9 space 를 정해진 순서대로 검색합니다.',
     paragraphs: [
       '모든 데이터를 한 space 로 합치지 않고 개인, 팀, 회사 지식처럼 계층화된 지식을 검색하고 싶을 때 사용합니다.',
-      '각 node 는 일반 mem9 space 를 가리킵니다. client 는 같은 memory recall API 를 chain key 로 호출하고, mem9 가 어떤 space 를 방문할지 결정합니다.',
+      '각 node 는 일반 mem9 space 를 가리킵니다. chain 에는 전용 key 가 두 개 있습니다. client 는 memory 만 읽고 쓸 수 있는 memory key 로 같은 memory recall API 를 호출하고, mem9 가 어떤 space 를 방문할지 결정합니다. management key 는 chain(node, key, webhook)을 변경할 수 있고 memory 도 읽고 쓸 수 있으므로 agent 에 주지 마세요.',
     ],
     bullets: [
       '데이터 경계를 유지하면서 하나의 recall endpoint 를 제공할 수 있습니다.',
       '가장 구체적이거나 신뢰할 수 있는 space 를 앞에 둡니다.',
       '기존 space 의 memory 를 복사하지 않고 재사용합니다.',
-      '하위 space key 를 바꾸지 않고 Space Chain key 를 교체하거나 비활성화할 수 있습니다.',
+      '하위 space key 를 바꾸지 않고 memory key 를 교체하거나 비활성화할 수 있습니다.',
     ],
     subsections: [
       {
@@ -208,8 +214,10 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
       {
         title: '생성과 import',
         bullets: [
-          'Create Space Chain 은 새 chain 과 chain key 를 만듭니다.',
-          'Import key 는 기존 chain key 를 Console 에 추가해 관리하거나 테스트할 수 있게 합니다.',
+          'Create Space Chain 은 새 chain 을 만들고 그 memory key 를 한 번만 보여 줍니다. 그때 바로 복사하세요. management key 는 Console 에 남습니다.',
+          'Import key 는 기존 chain 을 Console 에 추가해 관리하거나 테스트할 수 있게 합니다. management key 만 받으며 memory key 는 거부됩니다.',
+          'chain 의 Create key 는 memory key 를 하나 더 발급합니다. 기존 key 를 연결하는 방법은 없습니다.',
+          '마지막 management key 는 비활성화할 수 없습니다. memory key 는 모두 비활성화할 수 있습니다.',
           '기존 space 에서 node 를 추가한 뒤 recall 에 의존하기 전에 node order 를 저장하세요.',
           'Recall test 에서 일반 순차 recall 과 Force scanAll 을 비교할 수 있습니다.',
         ],
@@ -223,13 +231,13 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
     intro: 'Space Chain membuat satu recall key dapat mencari beberapa mem9 space dalam urutan yang disengaja.',
     paragraphs: [
       'Gunakan saat agent perlu mencari knowledge berlapis tanpa mencampur semua data ke satu space, misalnya personal memory, team knowledge, lalu company knowledge.',
-      'Setiap node menunjuk ke mem9 space biasa. Client tetap memanggil memory recall API yang sama dengan chain key, lalu mem9 menentukan space yang dikunjungi.',
+      'Setiap node menunjuk ke mem9 space biasa. Chain punya dua key sendiri. Client memanggil memory recall API yang sama dengan memory key yang hanya dapat membaca dan menulis memory, lalu mem9 menentukan space yang dikunjungi. Management key dapat mengubah chain (node, key, webhook) dan juga membaca serta menulis memory, jadi jangan berikan ke agent.',
     ],
     bullets: [
       'Menjaga batas data antar space sambil menyediakan satu endpoint recall.',
       'Letakkan space paling spesifik atau paling tepercaya di awal.',
       'Gunakan ulang space yang sudah ada tanpa menyalin memory.',
-      'Rotasi atau nonaktifkan Space Chain key tanpa mengubah space key di bawahnya.',
+      'Rotasi atau nonaktifkan memory key tanpa mengubah space key di bawahnya.',
     ],
     subsections: [
       {
@@ -242,8 +250,10 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
       {
         title: 'Membuat dan import chain',
         bullets: [
-          'Create Space Chain membuat chain baru dan chain key.',
-          'Import key menambahkan chain key yang sudah ada ke Console untuk dikelola atau diuji.',
+          'Create Space Chain membuat chain baru dan menampilkan memory key-nya satu kali. Salin saat itu juga; management key tetap di Console.',
+          'Import key menambahkan chain yang sudah ada ke Console untuk dikelola atau diuji. Hanya menerima management key; memory key ditolak.',
+          'Create key pada chain menerbitkan memory key lain. Tidak ada cara untuk menautkan key yang sudah ada.',
+          'Management key terakhir tidak dapat dinonaktifkan. Semua memory key boleh dinonaktifkan.',
           'Tambahkan node dari space yang sudah ada, lalu simpan urutan node sebelum mengandalkan recall.',
           'Gunakan Recall test untuk membandingkan recall berurutan dengan Force scanAll.',
         ],
@@ -257,13 +267,13 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
     intro: 'Space Chain ทำให้ recall key เดียวค้นหา mem9 space หลายชุดตามลำดับที่กำหนดได้',
     paragraphs: [
       'เหมาะเมื่อ agent ต้องค้นหา knowledge หลายชั้นโดยไม่รวมข้อมูลทั้งหมดไว้ใน space เดียว เช่น personal memory, team knowledge และ company knowledge',
-      'แต่ละ node ชี้ไปยัง mem9 space ปกติ client ยังเรียก memory recall API เดิมด้วย chain key แล้ว mem9 จะตัดสินใจว่าจะค้นหา space ใดบ้าง',
+      'แต่ละ node ชี้ไปยัง mem9 space ปกติ chain มี key ของตัวเองสองตัว client เรียก memory recall API เดิมด้วย memory key ซึ่งอ่านเขียน memory ได้เท่านั้น แล้ว mem9 จะตัดสินใจว่าจะค้นหา space ใดบ้าง ส่วน management key แก้ไข chain (node, key, webhook) ได้และอ่านเขียน memory ได้ด้วย จึงไม่ควรส่งให้ agent',
     ],
     bullets: [
       'คงขอบเขตข้อมูลของแต่ละ space แต่มี recall endpoint เดียว',
       'วาง space ที่เฉพาะเจาะจงหรือเชื่อถือได้ที่สุดไว้ก่อน',
       'ใช้ space เดิมซ้ำโดยไม่ต้องคัดลอก memory',
-      'หมุนเวียนหรือปิด Space Chain key ได้โดยไม่กระทบ space key ด้านล่าง',
+      'หมุนเวียนหรือปิด memory key ได้โดยไม่กระทบ space key ด้านล่าง',
     ],
     subsections: [
       {
@@ -276,8 +286,10 @@ const spaceChainDocsSections: Record<DocsLocale, DocsSection> = {
       {
         title: 'สร้างและ import chain',
         bullets: [
-          'Create Space Chain สร้าง chain ใหม่และ chain key',
-          'Import key เพิ่ม chain key ที่มีอยู่เข้า Console เพื่อจัดการหรือทดสอบ',
+          'Create Space Chain สร้าง chain ใหม่และแสดง memory key เพียงครั้งเดียว ให้คัดลอกทันที ส่วน management key จะอยู่ใน Console',
+          'Import key เพิ่ม chain ที่มีอยู่เข้า Console เพื่อจัดการหรือทดสอบ รับเฉพาะ management key และจะปฏิเสธ memory key',
+          'Create key บน chain ออก memory key เพิ่ม และไม่มีวิธีผูก key ที่มีอยู่แล้ว',
+          'ปิดใช้งาน management key ตัวสุดท้ายไม่ได้ แต่ memory key ปิดใช้งานได้ทั้งหมด',
           'เพิ่ม node จาก space เดิม แล้วบันทึกลำดับ node ก่อนใช้งาน recall จริง',
           'ใช้ Recall test เพื่อเปรียบเทียบ recall ตามลำดับกับ Force scanAll',
         ],

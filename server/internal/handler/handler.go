@@ -380,6 +380,9 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 		})
 	case errors.Is(err, domain.ErrNotFound):
 		return respondError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, domain.ErrManagementKeyRequired):
+		// A valid key of the wrong role: say what is needed, never echo the key.
+		return respondError(w, http.StatusUnauthorized, domain.ErrManagementKeyRequired.Error())
 	case errors.Is(err, domain.ErrWriteConflict):
 		return respondError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, domain.ErrConflict):
@@ -432,7 +435,21 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 
 // decode reads and JSON-decodes the request body.
 func decode(r *http.Request, dst any) error {
+	return decodeBody(r, dst, false)
+}
+
+// decodeOptional is decode for requests whose body may be left out: an empty
+// body is read as an empty JSON object. Invalid JSON and oversized bodies are
+// still errors.
+func decodeOptional(r *http.Request, dst any) error {
+	return decodeBody(r, dst, true)
+}
+
+func decodeBody(r *http.Request, dst any, allowEmpty bool) error {
 	if r.Body == nil {
+		if allowEmpty {
+			return nil
+		}
 		return &domain.ValidationError{Message: "request body required"}
 	}
 	const maxJSONBodyBytes = 1 << 20
@@ -447,6 +464,9 @@ func decode(r *http.Request, dst any) error {
 			return err
 		}
 		return &domain.ValidationError{Message: "invalid JSON: " + err.Error()}
+	}
+	if allowEmpty && len(strings.TrimSpace(string(body))) == 0 {
+		return nil
 	}
 	if err := json.Unmarshal(body, dst); err != nil {
 		return &domain.ValidationError{Message: "invalid JSON: " + err.Error()}

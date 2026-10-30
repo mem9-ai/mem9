@@ -136,21 +136,21 @@ Webhook events and delivery behavior are documented in [docs/webhooks-api-design
 
 #### Space Chain Management
 
-Space Chains let you compose ordered multi-space recall and routing pipelines. Use the `chain_` management key returned at creation time as the `X-API-Key` for all management endpoints below. Read nodes via their own Space `X-API-Key`.
+Space Chains let you compose ordered multi-space recall and routing pipelines. Every Space Chain has two kinds of `chain_` key, and the server decides which kind a key is. The **management key** can change the chain (nodes, keys, webhooks, deletion) and can also read and write memory. The **memory key** can only read and write memory; it gets `401` on every endpoint below except creating a chain. Use the management key as the `X-API-Key` for all management endpoints below, and give the memory key to anything that only needs to read and write memory. Read nodes via their own Space `X-API-Key`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/v1alpha2/space-chains` | Create a Space Chain. No `X-API-Key` required — the management key (`chain_` prefix) is returned in the response body. All subsequent management endpoints require this key. If the server has its [create gate](#space-chain-create-gate) switched on, the request must also carry `Authorization: Bearer <create secret>`, otherwise it gets `401` |
-| `GET` | `/v1alpha2/space-chains/by-key` | Look up a Space Chain by its management key. Requires the `chain_` key in `X-API-Key` |
-| `GET` | `/v1alpha2/space-chains/{chainID}` | Get Space Chain details. Requires `chain_` management key |
-| `PATCH` | `/v1alpha2/space-chains/{chainID}` | Update Space Chain name/description. Requires `chain_` management key |
-| `DELETE` | `/v1alpha2/space-chains/{chainID}` | Soft-delete a Space Chain. Requires `chain_` management key |
-| `GET` | `/v1alpha2/space-chains/{chainID}/nodes` | List all nodes in the chain (ordered by position). Requires `chain_` management key |
-| `PUT` | `/v1alpha2/space-chains/{chainID}/nodes` | Replace all nodes in the chain (full replacement). Requires `chain_` management key |
-| `PUT` | `/v1alpha2/space-chains/{chainID}/nodes/{nodeID}/routing-policy` | Update routing policy for a specific chain node. Requires `chain_` management key |
-| `GET` | `/v1alpha2/space-chains/{chainID}/bindings` | List all API key bindings for the chain. Requires `chain_` management key |
-| `POST` | `/v1alpha2/space-chains/{chainID}/bindings` | Create a new API key binding for the chain. Requires `chain_` management key |
-| `PATCH` | `/v1alpha2/space-chains/{chainID}/bindings/{bindingID}` | Disable an API key binding. Requires `chain_` management key |
+| `POST` | `/v1alpha2/space-chains` | Create a Space Chain. No `X-API-Key` required. The `201` response has exactly three fields: `chain` (the chain, with masked keys), `management_binding` and `memory_binding`. Each binding has `id`, `role` and `chain_api_key`; these are the only plaintext keys you will ever get, so store them now. If the server has its [create gate](#space-chain-create-gate) switched on, the request must also carry `Authorization: Bearer <create secret>`, otherwise it gets `401` |
+| `GET` | `/v1alpha2/space-chains/by-key` | Look up a Space Chain by its management key. Requires the management key in `X-API-Key`; a memory key gets `401` |
+| `GET` | `/v1alpha2/space-chains/{chainID}` | Get Space Chain details. Requires the management key |
+| `PATCH` | `/v1alpha2/space-chains/{chainID}` | Update Space Chain name/description. Requires the management key |
+| `DELETE` | `/v1alpha2/space-chains/{chainID}` | Soft-delete a Space Chain. Requires the management key |
+| `GET` | `/v1alpha2/space-chains/{chainID}/nodes` | List all nodes in the chain (ordered by position). Requires the management key |
+| `PUT` | `/v1alpha2/space-chains/{chainID}/nodes` | Replace all nodes in the chain (full replacement). Requires the management key |
+| `PUT` | `/v1alpha2/space-chains/{chainID}/nodes/{nodeID}/routing-policy` | Update routing policy for a specific chain node. Requires the management key |
+| `GET` | `/v1alpha2/space-chains/{chainID}/bindings` | List all keys (bindings) of the chain, each with its `role` and a masked key. Requires the management key |
+| `POST` | `/v1alpha2/space-chains/{chainID}/bindings` | Issue another key for the chain. It is always a memory key; a `role` in the body is ignored. The body is optional: it may carry `chain_api_key` to supply your own key (it must start with `chain_`) and `created_by_user_id`. The `201` response is the new binding: `id`, `chain_id`, `role`, `chain_api_key` (shown only now), `disabled` and `created_at`. Requires the management key |
+| `PATCH` | `/v1alpha2/space-chains/{chainID}/bindings/{bindingID}` | Disable a key. The last active management key cannot be disabled (`400`); memory keys can all be disabled. Requires the management key |
 
 #### Additional v1alpha2 Endpoints
 
@@ -295,7 +295,7 @@ By default, anyone who can reach the server can create a Space Chain. The create
 | `MNEMO_SPACE_CHAIN_CREATE_SECRET_REQUIRED` | No | `false` | Turn the create gate on. Accepts the usual boolean spellings such as `true`, `false`, `1` and `0`; surrounding whitespace is ignored and an empty value means off. Any other value stops the server from starting, so a typo cannot leave the gate silently off |
 | `MNEMO_SPACE_CHAIN_CREATE_SECRET` | When the gate is on | — | The create secret. Surrounding whitespace is ignored. The server refuses to start if the gate is on and this is empty. Keep it in a secret store; it is never written to logs, errors or responses |
 
-With the gate on, `POST /v1alpha2/space-chains` must carry `Authorization: Bearer <create secret>`. A request with no credential or a wrong one gets `401` and nothing is created; the answer is the same in both cases. The check runs before the request body is read. Only this one route is affected: every other endpoint, including the ones that use the returned `chain_` key, works as before, and a successful create returns the same response as before.
+With the gate on, `POST /v1alpha2/space-chains` must carry `Authorization: Bearer <create secret>`. A request with no credential or a wrong one gets `401` and nothing is created; the answer is the same in both cases. The check runs before the request body is read. Only this one route is affected: every other endpoint, including the ones that use the returned `chain_` keys, works as before, and a successful create returns the response described under Space Chain Management.
 
 #### Provisioning And Pooling
 

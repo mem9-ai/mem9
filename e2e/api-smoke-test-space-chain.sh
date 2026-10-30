@@ -5,18 +5,28 @@
 # Tests covered:
 #   1. Healthcheck
 #   2. Provision two fresh Spaces
-#   3. Create a Space Chain and capture the chain_ key
-#   4. Validate chain key status
+#   3. Create a Space Chain and capture its two chain_ keys (management and memory)
+#   4. Validate chain key status for both keys
 #   5. Verify empty-chain runtime writes fail clearly
-#   6. Resolve chain by key
-#   7. List initial chain bindings (masked key only, no plaintext)
+#   6. Resolve chain by key (management key)
+#   7. List initial chain bindings (role and masked key only, no plaintext)
 #   8. Reject duplicate nodes
 #   9. Replace nodes with two Spaces (no Space key echoed back)
 #  10. List nodes and verify order
-#  11. Write a deterministic memory through the chain key
+#  11. Write a deterministic memory through the management key
 #  12. Poll until the memory materialises with chain_source (no Space key)
-#  13. Get, update, and delete the memory by id through the chain key
-#  14. Soft-delete the chain and verify the key is inactive
+#  13. Get the memory by id through the management key
+#  14. Update the memory by id
+#  15. Delete the memory by id
+#  16. Verify the deleted memory returns 404
+#  17. Memory key reads and writes memory but is refused on chain administration
+#  18. Issue another memory key with an empty body
+#  19. Disable rules: the last management key stays, memory keys can all go
+#  20. Soft-delete the chain
+#  21. Verify the deleted chain key is inactive
+#
+# The management key can change the chain and also read and write memory. The
+# memory key can only read and write memory.
 #
 # Usage:
 #   bash e2e/api-smoke-test-space-chain.sh
@@ -39,7 +49,9 @@ POLL_TIMEOUT_S="${POLL_TIMEOUT_S:-30}"
 POLL_INTERVAL_S=1
 
 CHAIN_ID=""
+# CHAIN_API_KEY is the management key; MEMORY_API_KEY is the memory key.
 CHAIN_API_KEY=""
+MEMORY_API_KEY=""
 CHAIN_DELETED=false
 PROVISIONED_TENANT_ID=""
 PASS=0
@@ -221,6 +233,49 @@ curl_chain_mem_json() {
     "$url"
 }
 
+# Same as curl_chain_json and curl_chain_mem_json, with the key given first.
+curl_key_json() {
+  local key="$1" url="$2"
+  shift 2
+  curl_json "$@" \
+    -H "X-API-Key: $key" \
+    "$url"
+}
+
+curl_key_mem_json() {
+  local key="$1" url="$2"
+  shift 2
+  curl_json "$@" \
+    -H "X-Mnemo-Agent-Id: $AGENT_A" \
+    -H "X-API-Key: $key" \
+    "$url"
+}
+
+# Reads one field of the binding with the given id from a bindings list.
+binding_field_by_id() {
+  local id="$1"
+  local path="$2"
+  python3 -c '
+import json
+import sys
+
+bid = sys.argv[1]
+path = sys.argv[2].split(".")
+try:
+    data = json.load(sys.stdin)
+    cur = ""
+    for binding in data.get("bindings", []):
+        if binding.get("id") == bid:
+            cur = binding
+            for part in path:
+                cur = cur.get(part, "") if isinstance(cur, dict) else ""
+            break
+    print("" if cur is None else cur)
+except Exception:
+    print("")
+' "$id" "$path"
+}
+
 provision_space() {
   local label="$1"
   local resp code bdy tenant_id
@@ -300,15 +355,37 @@ if [ "$code" = "401" ] && [ -z "$CREATE_SECRET" ]; then
 fi
 check "POST /v1alpha2/space-chains returns 201" "$code" "201"
 CHAIN_ID=$(printf '%s' "$bdy" | json_field "chain.id")
-CHAIN_API_KEY=$(printf '%s' "$bdy" | json_field "chain_api_key")
-BINDING_ID=$(printf '%s' "$bdy" | json_field "binding_id")
-KEY_PREFIX=$(printf '%s' "$bdy" | json_field "key_prefix")
+CHAIN_API_KEY=$(printf '%s' "$bdy" | json_field "management_binding.chain_api_key")
+BINDING_ID=$(printf '%s' "$bdy" | json_field "management_binding.id")
+MANAGEMENT_ROLE=$(printf '%s' "$bdy" | json_field "management_binding.role")
+MEMORY_API_KEY=$(printf '%s' "$bdy" | json_field "memory_binding.chain_api_key")
+MEMORY_BINDING_ID=$(printf '%s' "$bdy" | json_field "memory_binding.id")
+MEMORY_ROLE=$(printf '%s' "$bdy" | json_field "memory_binding.role")
+OLD_TOP_LEVEL_KEY=$(printf '%s' "$bdy" | json_field "chain_api_key")
+CREATE_CHAIN_OBJECT=$(printf '%s' "$bdy" | json_field "chain")
 check_nonempty "chain ID extracted" "$CHAIN_ID"
-check_nonempty "chain API key extracted" "$CHAIN_API_KEY"
-check_nonempty "binding ID extracted" "$BINDING_ID"
-check "key prefix is chain_" "$KEY_PREFIX" "chain_"
+check_nonempty "management key extracted" "$CHAIN_API_KEY"
+check_nonempty "management binding ID extracted" "$BINDING_ID"
+check_nonempty "memory key extracted" "$MEMORY_API_KEY"
+check_nonempty "memory binding ID extracted" "$MEMORY_BINDING_ID"
+check "management key prefix is chain_" "${CHAIN_API_KEY:0:6}" "chain_"
+check "memory key prefix is chain_" "${MEMORY_API_KEY:0:6}" "chain_"
+check "management binding role" "$MANAGEMENT_ROLE" "management"
+check "memory binding role" "$MEMORY_ROLE" "memory"
+TOTAL=$((TOTAL+1))
+if [ "$CHAIN_API_KEY" != "$MEMORY_API_KEY" ]; then
+  ok "the two keys differ"
+  PASS=$((PASS+1))
+else
+  fail "the two keys are the same"
+  FAIL=$((FAIL+1))
+fi
+check "create response has no top-level chain_api_key" "$OLD_TOP_LEVEL_KEY" ""
+check_not_contains_secret "create response chain object omits the management key" "$CREATE_CHAIN_OBJECT" "$CHAIN_API_KEY"
+check_not_contains_secret "create response chain object omits the memory key" "$CREATE_CHAIN_OBJECT" "$MEMORY_API_KEY"
 info "Chain: $CHAIN_ID"
-info "Binding: $BINDING_ID"
+info "Management binding: $BINDING_ID"
+info "Memory binding: $MEMORY_BINDING_ID"
 
 # ============================================================================
 # TEST 4 - Validate chain key status
@@ -317,9 +394,15 @@ step "4" "Validate chain key status"
 resp=$(curl_chain_json "$BASE/v1alpha2/status")
 code=$(http_code "$resp")
 bdy=$(body "$resp")
-check "GET /v1alpha2/status returns 200 for chain key" "$code" "200"
+check "GET /v1alpha2/status returns 200 for management key" "$code" "200"
 STATUS=$(printf '%s' "$bdy" | json_field "status")
-check "chain key status is active" "$STATUS" "active"
+check "management key status is active" "$STATUS" "active"
+resp=$(curl_key_json "$MEMORY_API_KEY" "$BASE/v1alpha2/status")
+code=$(http_code "$resp")
+bdy=$(body "$resp")
+check "GET /v1alpha2/status returns 200 for memory key" "$code" "200"
+STATUS=$(printf '%s' "$bdy" | json_field "status")
+check "memory key status is active" "$STATUS" "active"
 
 # ============================================================================
 # TEST 5 - Empty-chain runtime write fails clearly
@@ -353,7 +436,7 @@ bdy=$(body "$resp")
 check "GET /space-chains/by-key returns 200" "$code" "200"
 BY_KEY_ID=$(printf '%s' "$bdy" | json_field "id")
 check "by-key chain ID matches" "$BY_KEY_ID" "$CHAIN_ID"
-check_not_contains_secret "by-key response omits the chain key" "$bdy" "$CHAIN_API_KEY"
+check_not_contains_secret "by-key response omits the management key" "$bdy" "$CHAIN_API_KEY"
 
 # ============================================================================
 # TEST 7 - List initial bindings
@@ -363,15 +446,17 @@ resp=$(curl_chain_json "$BASE/v1alpha2/space-chains/$CHAIN_ID/bindings")
 code=$(http_code "$resp")
 bdy=$(body "$resp")
 check "GET /space-chains/{id}/bindings returns 200" "$code" "200"
-GOT_BINDING_ID=$(printf '%s' "$bdy" | json_field "bindings.0.id")
-GOT_BINDING_MASK=$(printf '%s' "$bdy" | json_field "bindings.0.masked_chain_api_key")
-GOT_BINDING_PLAIN=$(printf '%s' "$bdy" | json_field "bindings.0.chain_api_key")
+# The two bindings are created together, so look each one up by id.
 # Mask rule: first 6 bytes + "..." + last 4 bytes of the chain key.
-EXPECTED_BINDING_MASK="${CHAIN_API_KEY:0:6}...${CHAIN_API_KEY: -4}"
-check "initial binding ID matches" "$GOT_BINDING_ID" "$BINDING_ID"
-check "initial binding key is masked" "$GOT_BINDING_MASK" "$EXPECTED_BINDING_MASK"
-check "binding list has no plaintext chain_api_key field" "$GOT_BINDING_PLAIN" ""
-check_not_contains_secret "binding list omits the chain key" "$bdy" "$CHAIN_API_KEY"
+EXPECTED_MANAGEMENT_MASK="${CHAIN_API_KEY:0:6}...${CHAIN_API_KEY: -4}"
+EXPECTED_MEMORY_MASK="${MEMORY_API_KEY:0:6}...${MEMORY_API_KEY: -4}"
+check "management binding role is listed" "$(printf '%s' "$bdy" | binding_field_by_id "$BINDING_ID" "role")" "management"
+check "management binding key is masked" "$(printf '%s' "$bdy" | binding_field_by_id "$BINDING_ID" "masked_chain_api_key")" "$EXPECTED_MANAGEMENT_MASK"
+check "memory binding role is listed" "$(printf '%s' "$bdy" | binding_field_by_id "$MEMORY_BINDING_ID" "role")" "memory"
+check "memory binding key is masked" "$(printf '%s' "$bdy" | binding_field_by_id "$MEMORY_BINDING_ID" "masked_chain_api_key")" "$EXPECTED_MEMORY_MASK"
+check "binding list has no plaintext chain_api_key field" "$(printf '%s' "$bdy" | binding_field_by_id "$BINDING_ID" "chain_api_key")" ""
+check_not_contains_secret "binding list omits the management key" "$bdy" "$CHAIN_API_KEY"
+check_not_contains_secret "binding list omits the memory key" "$bdy" "$MEMORY_API_KEY"
 
 # ============================================================================
 # TEST 8 - Duplicate node replacement is rejected
@@ -589,18 +674,117 @@ code=$(http_code "$resp")
 check "GET deleted memory returns 404" "$code" "404"
 
 # ============================================================================
-# TEST 17 - Soft-delete chain
+# TEST 17 - Memory key reads and writes memory, but not the chain
 # ============================================================================
-step "17" "Soft-delete Space Chain"
+step "17" "Memory key: memory allowed, chain administration refused"
+MEMORY_KEY_WRITE_PAYLOAD=$(RUN_TAG="$RUN_TAG" SESSION_ID="$SESSION_ID" RUN_ID="$RUN_ID" python3 -c '
+import json
+import os
+
+print(json.dumps({
+    "content": "Space Chain smoke test " + os.environ["RUN_ID"] + " writes through a memory key.",
+    "tags": ["space-chain-smoke", "memory-key", os.environ["RUN_TAG"]],
+    "session_id": os.environ["SESSION_ID"],
+}))
+')
+resp=$(curl_key_mem_json "$MEMORY_API_KEY" "$BASE/v1alpha2/mem9s/memories" -X POST \
+  -H "Content-Type: application/json" \
+  -d "$MEMORY_KEY_WRITE_PAYLOAD")
+code=$(http_code "$resp")
+bdy=$(body "$resp")
+check "POST /memories with memory key returns 202" "$code" "202"
+check_contains "memory key write has status=accepted" "$bdy" '"accepted"'
+resp=$(curl_key_mem_json "$MEMORY_API_KEY" "$BASE/v1alpha2/mem9s/memories?limit=10")
+code=$(http_code "$resp")
+check "GET /memories with memory key returns 200" "$code" "200"
+
+resp=$(curl_key_json "$MEMORY_API_KEY" "$BASE/v1alpha2/space-chains/by-key")
+code=$(http_code "$resp")
+bdy=$(body "$resp")
+check "GET /space-chains/by-key with memory key returns 401" "$code" "401"
+check_contains "401 asks for a management key" "$bdy" "management key"
+check_not_contains_secret "401 body omits the memory key" "$bdy" "$MEMORY_API_KEY"
+resp=$(curl_key_json "$MEMORY_API_KEY" "$BASE/v1alpha2/space-chains/$CHAIN_ID")
+code=$(http_code "$resp")
+check "GET /space-chains/{id} with memory key returns 401" "$code" "401"
+resp=$(curl_key_json "$MEMORY_API_KEY" "$BASE/v1alpha2/space-chains/$CHAIN_ID" -X PATCH \
+  -H "Content-Type: application/json" \
+  -d '{"name":"renamed by a memory key"}')
+code=$(http_code "$resp")
+check "PATCH /space-chains/{id} with memory key returns 401" "$code" "401"
+resp=$(curl_key_json "$MEMORY_API_KEY" "$BASE/v1alpha2/space-chains/$CHAIN_ID/bindings")
+code=$(http_code "$resp")
+check "GET /space-chains/{id}/bindings with memory key returns 401" "$code" "401"
+
+# ============================================================================
+# TEST 18 - Issue another memory key with an empty body
+# ============================================================================
+step "18" "Issue another memory key"
+resp=$(curl_chain_json "$BASE/v1alpha2/space-chains/$CHAIN_ID/bindings" -X POST)
+code=$(http_code "$resp")
+bdy=$(body "$resp")
+check "POST /space-chains/{id}/bindings with no body returns 201" "$code" "201"
+SECOND_MEMORY_KEY=$(printf '%s' "$bdy" | json_field "chain_api_key")
+SECOND_MEMORY_BINDING_ID=$(printf '%s' "$bdy" | json_field "id")
+SECOND_MEMORY_ROLE=$(printf '%s' "$bdy" | json_field "role")
+SECOND_MEMORY_CREATED_AT=$(printf '%s' "$bdy" | json_field "created_at")
+check_nonempty "issued key extracted" "$SECOND_MEMORY_KEY"
+check_nonempty "issued binding ID extracted" "$SECOND_MEMORY_BINDING_ID"
+check "issued key prefix is chain_" "${SECOND_MEMORY_KEY:0:6}" "chain_"
+check "issued key is a memory key" "$SECOND_MEMORY_ROLE" "memory"
+ZERO_TIME=false
+case "$SECOND_MEMORY_CREATED_AT" in 0001-*|"") ZERO_TIME=true ;; esac
+check "issued key has a real created_at" "$ZERO_TIME" "false"
+resp=$(curl_key_mem_json "$SECOND_MEMORY_KEY" "$BASE/v1alpha2/mem9s/memories?limit=10")
+code=$(http_code "$resp")
+check "issued memory key can read memory" "$code" "200"
+resp=$(curl_key_json "$SECOND_MEMORY_KEY" "$BASE/v1alpha2/space-chains/by-key")
+code=$(http_code "$resp")
+check "issued memory key is refused on by-key" "$code" "401"
+
+# ============================================================================
+# TEST 19 - Disable rules
+# ============================================================================
+step "19" "Disable rules: last management key stays, memory keys can all go"
+resp=$(curl_chain_json "$BASE/v1alpha2/space-chains/$CHAIN_ID/bindings/$BINDING_ID" -X PATCH \
+  -H "Content-Type: application/json" \
+  -d '{"disabled":true}')
+code=$(http_code "$resp")
+bdy=$(body "$resp")
+check "disabling the last management key returns 400" "$code" "400"
+check_contains "400 names the management key rule" "$bdy" "management key must remain active"
+resp=$(curl_key_json "$CHAIN_API_KEY" "$BASE/v1alpha2/status")
+bdy=$(body "$resp")
+STATUS=$(printf '%s' "$bdy" | json_field "status")
+check "management key is still active" "$STATUS" "active"
+for target in "$MEMORY_BINDING_ID" "$SECOND_MEMORY_BINDING_ID"; do
+  resp=$(curl_chain_json "$BASE/v1alpha2/space-chains/$CHAIN_ID/bindings/$target" -X PATCH \
+    -H "Content-Type: application/json" \
+    -d '{"disabled":true}')
+  code=$(http_code "$resp")
+  check "disabling a memory key returns 204" "$code" "204"
+done
+resp=$(curl_key_json "$MEMORY_API_KEY" "$BASE/v1alpha2/status")
+bdy=$(body "$resp")
+STATUS=$(printf '%s' "$bdy" | json_field "status")
+check "disabled memory key status is inactive" "$STATUS" "inactive"
+resp=$(curl_key_mem_json "$MEMORY_API_KEY" "$BASE/v1alpha2/mem9s/memories?limit=1")
+code=$(http_code "$resp")
+check "disabled memory key can no longer read memory" "$code" "400"
+
+# ============================================================================
+# TEST 20 - Soft-delete chain
+# ============================================================================
+step "20" "Soft-delete Space Chain"
 resp=$(curl_chain_json "$BASE/v1alpha2/space-chains/$CHAIN_ID" -X DELETE)
 code=$(http_code "$resp")
 check "DELETE /space-chains/{id} returns 204" "$code" "204"
 CHAIN_DELETED=true
 
 # ============================================================================
-# TEST 18 - Deleted chain key is no longer active
+# TEST 21 - Deleted chain key is no longer active
 # ============================================================================
-step "18" "Verify deleted chain key is inactive"
+step "21" "Verify deleted chain key is inactive"
 resp=$(curl_chain_json "$BASE/v1alpha2/status")
 code=$(http_code "$resp")
 bdy=$(body "$resp")

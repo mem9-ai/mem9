@@ -30,12 +30,12 @@ type CreateSpaceChainRequest struct {
 	CreatedByUserID string `json:"created_by_user_id,omitempty"`
 }
 
+// CreateSpaceChainResult is the new chain with the two keys issued for it. The
+// bindings carry the plaintext keys; this is the only time they are returned.
 type CreateSpaceChainResult struct {
-	Chain      *domain.SpaceChain `json:"chain"`
-	ChainKey   string             `json:"chain_api_key"`
-	BindingID  string             `json:"binding_id"`
-	KeyPrefix  string             `json:"key_prefix"`
-	KeyPreview string             `json:"key_preview"`
+	Chain             *domain.SpaceChain
+	ManagementBinding *domain.SpaceChainBinding
+	MemoryBinding     *domain.SpaceChainBinding
 }
 
 type UpdateSpaceChainRequest struct {
@@ -82,13 +82,20 @@ func (s *SpaceChainService) Create(ctx context.Context, req CreateSpaceChainRequ
 		Description:     strings.TrimSpace(req.Description),
 		CreatedByUserID: strings.TrimSpace(req.CreatedByUserID),
 	}
-	binding := &domain.SpaceChainBinding{
-		ID:              uuid.New().String(),
-		ChainID:         chain.ID,
-		ChainAPIKey:     generateChainKey(),
-		CreatedByUserID: chain.CreatedByUserID,
+	newBinding := func(role string) *domain.SpaceChainBinding {
+		return &domain.SpaceChainBinding{
+			ID:              uuid.New().String(),
+			ChainID:         chain.ID,
+			Role:            role,
+			ChainAPIKey:     generateChainKey(),
+			CreatedByUserID: chain.CreatedByUserID,
+		}
 	}
-	if err := s.chains.Create(ctx, chain, binding); err != nil {
+	management := newBinding(domain.SpaceChainRoleManagement)
+	memory := newBinding(domain.SpaceChainRoleMemory)
+	// The chain and both bindings are written together, so a failure leaves
+	// neither a chain without keys nor a single key.
+	if err := s.chains.Create(ctx, chain, management, memory); err != nil {
 		return nil, err
 	}
 
@@ -96,13 +103,7 @@ func (s *SpaceChainService) Create(ctx context.Context, req CreateSpaceChainRequ
 	if err != nil {
 		return nil, err
 	}
-	return &CreateSpaceChainResult{
-		Chain:      created,
-		ChainKey:   binding.ChainAPIKey,
-		BindingID:  binding.ID,
-		KeyPrefix:  domain.ChainKeyPrefix,
-		KeyPreview: keyPreview(binding.ChainAPIKey),
-	}, nil
+	return &CreateSpaceChainResult{Chain: created, ManagementBinding: management, MemoryBinding: memory}, nil
 }
 
 func (s *SpaceChainService) Get(ctx context.Context, id string) (*domain.SpaceChain, error) {
@@ -135,8 +136,47 @@ func (s *SpaceChainService) Authorize(ctx context.Context, chainID, key string) 
 	return chain, nil
 }
 
+// AuthorizeManagement finds the chain for a key, checks the chain id, and then
+// requires the key to be a management key. Lookup and chain id failures stay
+// not-found; only a valid key of the wrong role gets ErrManagementKeyRequired.
 func (s *SpaceChainService) AuthorizeManagement(ctx context.Context, chainID, key string) (*domain.SpaceChain, error) {
-	return s.Authorize(ctx, chainID, key)
+	chain, err := s.Authorize(ctx, chainID, key)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireManagementKey(chain, strings.TrimSpace(key)); err != nil {
+		return nil, err
+	}
+	return chain, nil
+}
+
+// GetByManagementKey is the lookup by key for callers that administer the
+// chain: the key must belong to a management binding.
+func (s *SpaceChainService) GetByManagementKey(ctx context.Context, key string) (*domain.SpaceChain, error) {
+	chain, err := s.GetByKey(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireManagementKey(chain, strings.TrimSpace(key)); err != nil {
+		return nil, err
+	}
+	return chain, nil
+}
+
+// requireManagementKey is the one place that decides whether a presented key
+// is a management key. Only the exact role "management" qualifies, so an empty
+// or unknown role, or a key that matches no active binding, is refused.
+func requireManagementKey(chain *domain.SpaceChain, key string) error {
+	for _, binding := range chain.Bindings {
+		if binding.ChainAPIKey != key || binding.Disabled {
+			continue
+		}
+		if binding.Role == domain.SpaceChainRoleManagement {
+			return nil
+		}
+		break
+	}
+	return domain.ErrManagementKeyRequired
 }
 
 func (s *SpaceChainService) Update(ctx context.Context, chainID string, req UpdateSpaceChainRequest) (*domain.SpaceChain, error) {
@@ -177,14 +217,26 @@ func (s *SpaceChainService) CreateBinding(ctx context.Context, chainID string, r
 	} else if !strings.HasPrefix(chainAPIKey, domain.ChainKeyPrefix) {
 		return nil, &domain.ValidationError{Field: "chain_api_key", Message: "must start with " + domain.ChainKeyPrefix}
 	}
+	// Every key issued after the chain is created is a memory key; the request
+	// has no say in the role.
 	binding := &domain.SpaceChainBinding{
 		ID:              uuid.New().String(),
 		ChainID:         chainID,
+		Role:            domain.SpaceChainRoleMemory,
 		ChainAPIKey:     chainAPIKey,
 		CreatedByUserID: strings.TrimSpace(req.CreatedByUserID),
 	}
 	if err := s.chains.CreateBinding(ctx, binding); err != nil {
 		return nil, err
+	}
+	// The stores do not fill created_at on the value they are given, so read the
+	// row back. The key is already issued, so a failed read must not fail the call.
+	if stored, err := s.chains.ListBindings(ctx, chainID); err == nil {
+		for i := range stored {
+			if stored[i].ID == binding.ID {
+				return &stored[i], nil
+			}
+		}
 	}
 	return binding, nil
 }
@@ -202,26 +254,29 @@ func (s *SpaceChainService) DisableBinding(ctx context.Context, chainID, binding
 	if bindingID == "" {
 		return &domain.ValidationError{Field: "binding_id", Message: "required"}
 	}
-	foundActive := false
-	active := 0
 	bindings, err := s.chains.ListBindings(ctx, chainID)
 	if err != nil {
 		return err
 	}
-	for _, binding := range bindings {
+	var target *domain.SpaceChainBinding
+	activeManagement := 0
+	for i, binding := range bindings {
 		if binding.Disabled {
 			continue
 		}
-		active++
+		if binding.Role == domain.SpaceChainRoleManagement {
+			activeManagement++
+		}
 		if binding.ID == bindingID {
-			foundActive = true
+			target = &bindings[i]
 		}
 	}
-	if !foundActive {
+	if target == nil {
 		return domain.ErrNotFound
 	}
-	if active <= 1 {
-		return &domain.ValidationError{Field: "binding_id", Message: "at least one Space Chain key must remain active"}
+	// Memory keys can all be disabled; the last active management key cannot.
+	if target.Role == domain.SpaceChainRoleManagement && activeManagement <= 1 {
+		return &domain.ValidationError{Field: "binding_id", Message: "at least one management key must remain active"}
 	}
 	return s.chains.DisableBinding(ctx, chainID, bindingID, strings.TrimSpace(disabledByUserID))
 }
@@ -364,11 +419,4 @@ func generateChainKey() string {
 		return domain.ChainKeyPrefix + strings.ReplaceAll(uuid.New().String(), "-", "")
 	}
 	return domain.ChainKeyPrefix + base64.RawURLEncoding.EncodeToString(b[:])
-}
-
-func keyPreview(key string) string {
-	if len(key) <= len(domain.ChainKeyPrefix)+6 {
-		return key
-	}
-	return key[:len(domain.ChainKeyPrefix)+6] + "..."
 }

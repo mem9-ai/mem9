@@ -1,6 +1,6 @@
 # Space Chain Web Console Management Plan
 
-> **Note:** Space Chain read responses (get, update, list bindings, list nodes, node routing policy) no longer expose plaintext `chain_` keys or Space keys. Bindings return `masked_chain_api_key`, and nodes and `chain_source` no longer include `tenant_id`. Only the create-chain and create-binding responses return the plaintext `chain_api_key`. Statements below that describe the old read shapes are historical.
+> **Note:** Space Chain read responses (get, update, list bindings, list nodes, node routing policy) no longer expose plaintext `chain_` keys or Space keys. Bindings return `masked_chain_api_key`, and nodes and `chain_source` no longer include `tenant_id`. Only the create-chain and create-binding responses return the plaintext `chain_api_key`. Statements below that describe the old read shapes are historical. Since the key-role change, the create-chain response returns `management_binding` and `memory_binding` (each with `chain_api_key`) instead of a top-level `chain_api_key`, every binding carries a `role`, the create-binding response issues a memory key, and the chain administration routes require a management key.
 
 ## Summary
 

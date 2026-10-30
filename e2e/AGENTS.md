@@ -100,21 +100,27 @@ concurrent async ingest bumps.
 ### Space Chain (`api-smoke-test-space-chain.sh`)
 
 Validates the primary Space Chain happy path against a live server. The script
-provisions two fresh Spaces, creates a Space Chain, verifies the empty-chain
-runtime error, replaces nodes with the exact management API payload shape,
-writes through the `chain_` key, verifies `chain_source` provenance, exercises
-get/update/delete by id through the chain key, soft-deletes the chain, and
-confirms the deleted chain key is no longer active.
+provisions two fresh Spaces, creates a Space Chain (which returns two `chain_`
+keys: a management key and a memory key), verifies the empty-chain runtime
+error, replaces nodes with the exact management API payload shape, writes
+through the management key, verifies `chain_source` provenance, exercises
+get/update/delete by id through the management key, checks that the memory key
+can read and write memory but is refused on chain administration, issues another
+memory key, checks the disable rules, soft-deletes the chain, and confirms the
+deleted chain key is no longer active.
+
+The management key can change the chain and also read and write memory. The
+memory key can only read and write memory.
 
 | #   | Case                     | What is verified                                                                                 |
 | --- | ------------------------ | ------------------------------------------------------------------------------------------------ |
 | 1   | Healthcheck              | `GET /healthz` returns 200 with `status=ok`                                                       |
 | 2   | Provision Spaces         | Two `POST /v1alpha1/mem9s` calls return fresh tenant IDs                                          |
-| 3   | Create Space Chain       | `POST /v1alpha2/space-chains` returns a chain id, binding id, and `chain_` key; sends `Authorization: Bearer` when `MNEMO_SPACE_CHAIN_CREATE_SECRET` is set |
-| 4   | Chain key status         | `GET /v1alpha2/status` returns `active` for the chain key                                         |
+| 3   | Create Space Chain       | `POST /v1alpha2/space-chains` returns `chain`, `management_binding` and `memory_binding`, each key starting with `chain_` and different from the other; the `chain` object holds no plaintext key; sends `Authorization: Bearer` when `MNEMO_SPACE_CHAIN_CREATE_SECRET` is set |
+| 4   | Chain key status         | `GET /v1alpha2/status` returns `active` for both the management key and the memory key            |
 | 5   | Empty-chain write        | Runtime write through a chain with no nodes returns 400 with a clear error                        |
-| 6   | By-key lookup            | `GET /v1alpha2/space-chains/by-key` resolves the created chain                                    |
-| 7   | Binding list             | `GET /v1alpha2/space-chains/{id}/bindings` returns the initial binding with `masked_chain_api_key` only |
+| 6   | By-key lookup            | `GET /v1alpha2/space-chains/by-key` with the management key resolves the created chain            |
+| 7   | Binding list             | `GET /v1alpha2/space-chains/{id}/bindings` returns both bindings with their `role` and `masked_chain_api_key` only |
 | 8   | Duplicate nodes rejected | Duplicate `tenant_id` node replacement returns 400                                                |
 | 9   | Replace nodes            | `PUT /v1alpha2/space-chains/{id}/nodes` stores two nodes with positions 0 and 1; the response has no Space key |
 | 10  | List nodes               | `GET /v1alpha2/space-chains/{id}/nodes` returns the stored order without Space keys               |
@@ -124,8 +130,11 @@ confirms the deleted chain key is no longer active.
 | 14  | Chain update by id       | `PUT /v1alpha2/mem9s/memories/{id}` advances version and preserves first-node provenance          |
 | 15  | Chain delete by id       | `DELETE /v1alpha2/mem9s/memories/{id}` returns 204                                                |
 | 16  | Deleted memory 404       | Subsequent chain `GET /memories/{id}` returns 404                                                 |
-| 17  | Chain soft-delete        | `DELETE /v1alpha2/space-chains/{id}` returns 204                                                  |
-| 18  | Deleted key inactive     | `GET /v1alpha2/status` returns `inactive` for the deleted chain key                               |
+| 17  | Memory key               | The memory key writes (202) and lists (200) memory; by-key, chain read, chain update and bindings list return 401 and the 401 body does not contain the key |
+| 18  | Issue another memory key | `POST /v1alpha2/space-chains/{id}/bindings` with no body returns 201 with a `memory` binding, a real `created_at`, and a key that reads memory but is refused on by-key |
+| 19  | Disable rules            | Disabling the only management key returns 400 and the key stays active; both memory keys can be disabled (204) and then report `inactive` and no longer read memory |
+| 20  | Chain soft-delete        | `DELETE /v1alpha2/space-chains/{id}` returns 204                                                  |
+| 21  | Deleted key inactive     | `GET /v1alpha2/status` returns `inactive` for the deleted chain key                               |
 
 ### Session storage (`api-smoke-test-sessions.sh`)
 
@@ -256,7 +265,7 @@ python3 e2e/concurrent-real-doc-test.py
 
 - `api-smoke-test.sh` / `api-smoke-test-v1alpha2.sh` — CRUD smoke, ingest, search, tag filter (tests 1–11)
 - `api-smoke-test-round2.sh` / `api-smoke-test-round2-v1alpha2.sh` — per-ID ops: GET, PUT, If-Match LWW, DELETE, idempotent re-delete (tests 1–9)
-- `api-smoke-test-space-chain.sh` — Space Chain management/runtime: create chain, validate nodes/bindings, write/read/update/delete via `chain_` key, cleanup (tests 1–18)
+- `api-smoke-test-space-chain.sh` — Space Chain management/runtime: create chain with its management and memory keys, validate nodes/bindings, write/read/update/delete via the management key, check the memory key and the disable rules, cleanup (tests 1–21)
 - `api-smoke-test-sessions.sh` — session storage: write, dedup, unified search, type filter, metadata, no-query session list, per-ID get/delete, batch delete, lazy migration (tests 1–17; tests 15–17 require `MNEMO_EXISTING_TENANT_ID`)
 - `api-smoke-test-existing-tenant.sh` — backward-compat: pre-existing tenant read/write/search across v1alpha1 and v1alpha2 (tests 1–12)
 - `api-smoke-test-utm.sh` — UTM attribution: param normalization, filtering, empty-value dropping (tests 1–5 always; tests 6–10 require `MNEMO_METADB_DSN` and `MNEMO_UTM_ENABLED=true` on server)

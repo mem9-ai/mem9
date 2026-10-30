@@ -6,6 +6,8 @@ created: 2026-05-13
 
 # Space Chain PRD
 
+> **Note:** This PRD was written when a Space Chain had one kind of `chain_` key. A chain now has two roles of key. A management key can change the chain and also read and write memory. A memory key can only read and write memory and gets `401` on the chain administration routes. Creating a chain returns both keys once as `management_binding` and `memory_binding`, every binding carries a `role`, and issuing another key always issues a memory key. Statements below that describe a single chain key are historical.
+
 ## 1. Summary
 
 Space Chain is a first-class open-source mem9/server capability for sharing

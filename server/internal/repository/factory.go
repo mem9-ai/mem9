@@ -49,6 +49,19 @@ func NewSpaceChainRepo(backend string, db *sql.DB) SpaceChainRepo {
 	}
 }
 
+// EnsureSpaceChainSchema brings the Space Chain tables up to the shape this
+// version reads, for the specified backend. Call it once at startup.
+func EnsureSpaceChainSchema(ctx context.Context, backend string, db *sql.DB) error {
+	switch backend {
+	case "db9":
+		return db9.EnsureSpaceChainSchema(ctx, db)
+	case "postgres":
+		return postgres.EnsureSpaceChainSchema(ctx, db)
+	default:
+		return tidb.EnsureSpaceChainSchema(ctx, db)
+	}
+}
+
 // NewUploadTaskRepo creates an UploadTaskRepo for the specified backend.
 func NewUploadTaskRepo(backend string, db *sql.DB) UploadTaskRepo {
 	switch backend {

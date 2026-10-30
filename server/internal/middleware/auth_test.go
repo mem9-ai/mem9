@@ -466,6 +466,45 @@ func TestResolveApiKey_SpaceChainResolvesNodesConcurrently(t *testing.T) {
 	}
 }
 
+// The memory routes accept any active chain key: authentication does not look
+// at the binding role, so a memory key works there just like a management key.
+func TestResolveApiKey_SpaceChainKeyOfEitherRoleAuthenticates(t *testing.T) {
+	for _, role := range []string{domain.SpaceChainRoleManagement, domain.SpaceChainRoleMemory} {
+		t.Run(role, func(t *testing.T) {
+			db := sql.OpenDB(pingOKConnector{})
+			defer db.Close()
+			repo := stubTenantRepo{
+				tenants: map[string]*domain.Tenant{
+					"tenant-1": {ID: "tenant-1", Status: domain.TenantActive, DBHost: "127.0.0.1", DBPort: 4000, DBUser: "user", DBName: "db1", Provider: "tidb"},
+				},
+			}
+			chains := &stubSpaceChainRepo{
+				chain: &domain.SpaceChain{
+					ID:       "chain-1",
+					Bindings: []domain.SpaceChainBinding{{ID: "binding-1", ChainID: "chain-1", Role: role, ChainAPIKey: domain.ChainKeyPrefix + "test"}},
+					Nodes:    []domain.SpaceChainNode{{ID: "node-1", ChainID: "chain-1", TenantID: "tenant-1", Position: 0}},
+				},
+			}
+			mw := ResolveApiKey(repo, stubPool{db: db}, encrypt.NewPlainEncryptor(), nil, WithSpaceChainRepo(chains))
+			handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if info := AuthFromContext(r.Context()); info == nil || info.Chain == nil || info.Chain.ChainID != "chain-1" {
+					t.Fatalf("chain auth info = %+v, want chain-1", info)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, "/v1alpha2/mem9s/memories", nil)
+			req.Header.Set(APIKeyHeader, domain.ChainKeyPrefix+"test")
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want %d; body = %s", rr.Code, http.StatusNoContent, rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestResolveApiKey_MD5Encryptor_DecryptsPassword(t *testing.T) {
 	pool := tenant.NewPool(tenant.PoolConfig{Backend: "tidb"})
 	defer pool.Close()
@@ -733,7 +772,7 @@ type stubSpaceChainRepo struct {
 	err   error
 }
 
-func (r *stubSpaceChainRepo) Create(context.Context, *domain.SpaceChain, *domain.SpaceChainBinding) error {
+func (r *stubSpaceChainRepo) Create(context.Context, *domain.SpaceChain, ...*domain.SpaceChainBinding) error {
 	return nil
 }
 

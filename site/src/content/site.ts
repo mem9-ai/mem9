@@ -1062,11 +1062,15 @@ const hostedMultipartHeaders: SiteApiFieldCopy[] = [
 ];
 
 const chainManagementHeaders: SiteApiFieldCopy[] = [
+  { name: 'X-API-Key', description: 'Active Space Chain management key for this chain.', required: true },
+];
+
+const chainRuntimeHeaders: SiteApiFieldCopy[] = [
   { name: 'X-API-Key', description: 'Active Space Chain API key for this chain.', required: true },
 ];
 
 const chainJSONWriteHeaders: SiteApiFieldCopy[] = [
-  { name: 'X-API-Key', description: 'Active Space Chain API key for this chain.', required: true },
+  { name: 'X-API-Key', description: 'Active Space Chain management key for this chain.', required: true },
   { name: 'Content-Type', description: 'Set to `application/json` for JSON request bodies.', required: true },
 ];
 
@@ -1241,10 +1245,26 @@ const spaceChainCreateBodyFields: SiteApiFieldCopy[] = [
 
 const spaceChainCreateResponseFields: SiteApiFieldCopy[] = [
   { name: 'chain', description: 'Created Space Chain object.', required: true },
-  { name: 'chain_api_key', description: 'New plaintext Space Chain API key. Store it now.', required: true },
-  { name: 'binding_id', description: 'Identifier of the initial key binding.', required: true },
-  { name: 'key_prefix', description: 'Space Chain key prefix, currently `chain_`.', required: true },
-  { name: 'key_preview', description: 'Short masked preview of the new key.', required: true },
+  {
+    name: 'management_binding',
+    description: 'Management key binding. This key can change the chain and also read and write memory.',
+    required: true,
+  },
+  { name: 'management_binding.id', description: 'Binding id.', required: true },
+  { name: 'management_binding.role', description: 'Key role: `management` or `memory`.', required: true },
+  {
+    name: 'management_binding.chain_api_key',
+    description: 'Plaintext management key. Store it now; it is never shown again.',
+    required: true,
+  },
+  { name: 'memory_binding', description: 'Memory key binding. This key can only read and write memory.', required: true },
+  { name: 'memory_binding.id', description: 'Binding id.', required: true },
+  { name: 'memory_binding.role', description: 'Key role: `management` or `memory`.', required: true },
+  {
+    name: 'memory_binding.chain_api_key',
+    description: 'Plaintext memory key. Store it now; it is never shown again.',
+    required: true,
+  },
 ];
 
 const spaceChainObjectResponseFields: SiteApiFieldCopy[] = [
@@ -1253,6 +1273,7 @@ const spaceChainObjectResponseFields: SiteApiFieldCopy[] = [
   { name: 'name', description: 'Space Chain name.', required: true },
   { name: 'description', description: 'Space Chain description.' },
   { name: 'bindings', description: 'Key bindings when included.' },
+  { name: 'bindings[].role', description: 'Key role: `management` or `memory`.' },
   { name: 'bindings[].masked_chain_api_key', description: 'Masked Space Chain API key. The plaintext key is returned only when it is created.' },
   { name: 'nodes', description: 'Ordered node list when included.' },
   { name: 'created_at', description: 'Creation timestamp.', required: true },
@@ -1317,6 +1338,7 @@ const spaceChainNodesResponseFields: SiteApiFieldCopy[] = [
 
 const spaceChainBindingsResponseFields: SiteApiFieldCopy[] = [
   { name: 'bindings', description: 'Array of Space Chain API key bindings.', required: true },
+  { name: 'bindings[].role', description: 'Key role: `management` or `memory`.', required: true },
   { name: 'bindings[].masked_chain_api_key', description: 'Masked Space Chain API key. The plaintext key is returned only when it is created.', required: true },
 ];
 
@@ -1328,7 +1350,8 @@ const spaceChainBindingBodyFields: SiteApiFieldCopy[] = [
 const spaceChainBindingResponseFields: SiteApiFieldCopy[] = [
   { name: 'id', description: 'Binding id.', required: true },
   { name: 'chain_id', description: 'Space Chain id.', required: true },
-  { name: 'chain_api_key', description: 'Plaintext key for newly created bindings.', required: true },
+  { name: 'role', description: 'Key role: `management` or `memory`.', required: true },
+  { name: 'chain_api_key', description: 'Plaintext memory key. Store it now; it is never shown again.', required: true },
   { name: 'disabled', description: 'Whether this key binding is disabled.', required: true },
   { name: 'created_at', description: 'Creation timestamp.', required: true },
 ];
@@ -1456,14 +1479,14 @@ const spaceChainEndpointGroup: SiteApiEndpointGroupCopy = {
   id: 'space-chains',
   title: 'Space Chains',
   description:
-    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`.',
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`. Each chain has a management key, which can change the chain and also read and write memory, and a memory key, which can only read and write memory. A memory key gets `401` on the endpoints that read or change the chain itself.',
   endpoints: [
     {
       method: 'POST',
       path: '/v1alpha2/space-chains',
       summary: 'Create a Space Chain.',
       description:
-        'Creates a Space Chain and returns its first plaintext chain key once. Store `chain_api_key` securely; later list responses only expose masked or bound key records.',
+        'Creates a Space Chain and returns two plaintext keys once: a management key and a memory key. Store both securely; later responses only show masked keys.',
       headers: [{ name: 'Content-Type', description: 'Set to `application/json` for JSON request bodies.', required: true }],
       bodyFields: spaceChainCreateBodyFields,
       responseFields: spaceChainCreateResponseFields,
@@ -1545,7 +1568,7 @@ const spaceChainEndpointGroup: SiteApiEndpointGroupCopy = {
       method: 'GET',
       path: '/v1alpha2/space-chains/{chain_id}/bindings',
       summary: 'List Space Chain key bindings.',
-      description: 'Returns all key bindings visible to the management key for this Space Chain.',
+      description: 'Returns all key bindings of this Space Chain, each with its role and a masked key.',
       headers: chainManagementHeaders,
       responseFields: spaceChainBindingsResponseFields,
       examples: [{ label: 'List bindings', code: listSpaceChainBindingsCode }],
@@ -1553,8 +1576,9 @@ const spaceChainEndpointGroup: SiteApiEndpointGroupCopy = {
     {
       method: 'POST',
       path: '/v1alpha2/space-chains/{chain_id}/bindings',
-      summary: 'Create a Space Chain key binding.',
-      description: 'Creates another chain key. Omit `chain_api_key` to let mem9 generate a key.',
+      summary: 'Issue a Space Chain memory key.',
+      description:
+        'Issues another memory key for the chain. The request body is optional, and any `role` in it is ignored: keys issued here are always memory keys. Omit `chain_api_key` to let mem9 generate a key.',
       headers: chainJSONWriteHeaders,
       bodyFields: spaceChainBindingBodyFields,
       responseFields: spaceChainBindingResponseFields,
@@ -1564,7 +1588,8 @@ const spaceChainEndpointGroup: SiteApiEndpointGroupCopy = {
       method: 'PATCH',
       path: '/v1alpha2/space-chains/{chain_id}/bindings/{binding_id}',
       summary: 'Disable a Space Chain key binding.',
-      description: 'Disables an active binding. The API rejects disabling the last active key for a chain.',
+      description:
+        'Disables an active binding. The API rejects disabling the last active management key; memory keys can all be disabled.',
       headers: chainJSONWriteHeaders,
       bodyFields: spaceChainDisableBindingBodyFields,
       examples: [{ label: 'Disable binding', code: disableSpaceChainBindingCode }],
@@ -1575,7 +1600,7 @@ const spaceChainEndpointGroup: SiteApiEndpointGroupCopy = {
       summary: 'Recall across a Space Chain.',
       description:
         'Use the normal memory search endpoint with a Space Chain key. By default recall visits nodes in order and stops early on high confidence; pass `scanAll=true` to search every node and globally rerank.',
-      headers: chainManagementHeaders,
+      headers: chainRuntimeHeaders,
       queryParams: memoryListQueryParams,
       responseFields: spaceChainRuntimeResponseFields,
       examples: [{ label: 'Recall with scanAll', code: recallSpaceChainCode }],
@@ -5536,9 +5561,18 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'Deletes the provided memory ids in one request. When authenticated with a Space Chain key, the handler resolves each id to the node that owns it.': '在一个请求中删除给定的 memory ids。使用 Space Chain key 认证时，handler 会将每个 id 解析到拥有它的节点。',
     'Batch delete memories': '批量删除 memories',
     'Space Chains': 'Space Chains',
-    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`.': '创建和管理有序 Space 链。Runtime memory endpoint 可接受 Space Chain key，并按节点顺序搜索 chain；`scanAll=true` 时搜索所有节点。',
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`. Each chain has a management key, which can change the chain and also read and write memory, and a memory key, which can only read and write memory. A memory key gets `401` on the endpoints that read or change the chain itself.':
+      '创建和管理有序 Space 链。Runtime memory endpoint 可接受 Space Chain key，并按节点顺序搜索 chain；`scanAll=true` 时搜索所有节点。每条 chain 有一个管理 key 和一个 memory key：管理 key 可以修改 chain，也可以读写 memory；memory key 只能读写 memory。memory key 调用读取或修改 chain 本身的 endpoint 时会返回 `401`。',
     'Create a Space Chain.': '创建 Space Chain。',
-    'Creates a Space Chain and returns its first plaintext chain key once. Store `chain_api_key` securely; later list responses only expose masked or bound key records.': '创建 Space Chain，并且只返回一次首个明文 chain key。请安全保存 `chain_api_key`；后续列表响应只会暴露脱敏或绑定记录。',
+    'Creates a Space Chain and returns two plaintext keys once: a management key and a memory key. Store both securely; later responses only show masked keys.':
+      '创建 Space Chain，并且只返回一次两个明文 key：管理 key 和 memory key。请安全保存这两个 key；后续响应只会显示脱敏后的 key。',
+    'Active Space Chain management key for this chain.': '这条 Space Chain 当前可用的管理 key。',
+    'Management key binding. This key can change the chain and also read and write memory.':
+      '管理 key 的 binding。该 key 可以修改 chain，也可以读写 memory。',
+    'Memory key binding. This key can only read and write memory.': 'memory key 的 binding。该 key 只能读写 memory。',
+    'Key role: `management` or `memory`.': 'Key 角色：`management` 或 `memory`。',
+    'Plaintext management key. Store it now; it is never shown again.': '明文管理 key。请现在保存；之后不会再显示。',
+    'Plaintext memory key. Store it now; it is never shown again.': '明文 memory key。请现在保存；之后不会再显示。',
     'Create Space Chain': '创建 Space Chain',
     'Export Space Chain env vars': '导出 Space Chain 环境变量',
     'Read the Space Chain for a key.': '读取某个 key 对应的 Space Chain。',
@@ -5580,13 +5614,15 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
       '匹配事实是否只通过 Space Chain webhook 投递。',
     'Configure knowledge extraction routing': '配置知识抽取路由',
     'List Space Chain key bindings.': '列出 Space Chain key bindings。',
-    'Returns all key bindings visible to the management key for this Space Chain.': '返回该 Space Chain 管理 key 可见的全部 key bindings。',
+    'Returns all key bindings of this Space Chain, each with its role and a masked key.': '返回该 Space Chain 的全部 key bindings，每条包含角色和脱敏后的 key。',
     'List bindings': '列出 bindings',
-    'Create a Space Chain key binding.': '创建 Space Chain key binding。',
-    'Creates another chain key. Omit `chain_api_key` to let mem9 generate a key.': '创建另一个 chain key。省略 `chain_api_key` 时由 mem9 生成 key。',
+    'Issue a Space Chain memory key.': '签发 Space Chain memory key。',
+    'Issues another memory key for the chain. The request body is optional, and any `role` in it is ignored: keys issued here are always memory keys. Omit `chain_api_key` to let mem9 generate a key.':
+      '为该 chain 签发另一个 memory key。请求体可省略，其中的 `role` 会被忽略：这里签发的 key 一律是 memory key。省略 `chain_api_key` 时由 mem9 生成 key。',
     'Create binding': '创建 binding',
     'Disable a Space Chain key binding.': '禁用 Space Chain key binding。',
-    'Disables an active binding. The API rejects disabling the last active key for a chain.': '禁用一个 active binding。API 会拒绝禁用某条 chain 的最后一个 active key。',
+    'Disables an active binding. The API rejects disabling the last active management key; memory keys can all be disabled.':
+      '禁用一个 active binding。API 会拒绝禁用最后一个 active 管理 key；memory key 可以全部禁用。',
     'Disable binding': '禁用 binding',
     'Recall across a Space Chain.': '跨 Space Chain recall。',
     'Use the normal memory search endpoint with a Space Chain key. By default recall visits nodes in order and stops early on high confidence; pass `scanAll=true` to search every node and globally rerank.': '使用普通 memory search endpoint，但传入 Space Chain key。默认 recall 会按顺序访问节点，并在高置信结果处提前停止；传 `scanAll=true` 时搜索所有节点并全局 rerank。',
@@ -5616,6 +5652,23 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'Whether matching facts are delivered only through Space Chain webhooks.':
       '符合的事實是否只透過 Space Chain webhook 傳送。',
     'Configure knowledge extraction routing': '設定知識擷取路由',
+    'Active Space Chain management key for this chain.': '這條 Space Chain 目前可用的管理 key。',
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`. Each chain has a management key, which can change the chain and also read and write memory, and a memory key, which can only read and write memory. A memory key gets `401` on the endpoints that read or change the chain itself.':
+      '建立和管理有序 Space 鏈。Runtime memory endpoint 可接受 Space Chain key，並依節點順序搜尋 chain；`scanAll=true` 時搜尋所有節點。每條 chain 有一個管理 key 和一個 memory key：管理 key 可以修改 chain，也可以讀寫 memory；memory key 只能讀寫 memory。memory key 呼叫讀取或修改 chain 本身的 endpoint 時會回傳 `401`。',
+    'Creates a Space Chain and returns two plaintext keys once: a management key and a memory key. Store both securely; later responses only show masked keys.':
+      '建立 Space Chain，並且只回傳一次兩個明文 key：管理 key 和 memory key。請妥善保存這兩個 key；後續回應只會顯示遮罩後的 key。',
+    'Management key binding. This key can change the chain and also read and write memory.':
+      '管理 key 的 binding。此 key 可以修改 chain，也可以讀寫 memory。',
+    'Memory key binding. This key can only read and write memory.': 'memory key 的 binding。此 key 只能讀寫 memory。',
+    'Key role: `management` or `memory`.': 'Key 角色：`management` 或 `memory`。',
+    'Plaintext management key. Store it now; it is never shown again.': '明文管理 key。請現在保存；之後不會再顯示。',
+    'Plaintext memory key. Store it now; it is never shown again.': '明文 memory key。請現在保存；之後不會再顯示。',
+    'Returns all key bindings of this Space Chain, each with its role and a masked key.': '回傳此 Space Chain 的全部 key bindings，每筆包含角色和遮罩後的 key。',
+    'Issue a Space Chain memory key.': '核發 Space Chain memory key。',
+    'Issues another memory key for the chain. The request body is optional, and any `role` in it is ignored: keys issued here are always memory keys. Omit `chain_api_key` to let mem9 generate a key.':
+      '為此 chain 核發另一個 memory key。請求本文可省略，其中的 `role` 會被忽略：此處核發的 key 一律是 memory key。省略 `chain_api_key` 時由 mem9 產生 key。',
+    'Disables an active binding. The API rejects disabling the last active management key; memory keys can all be disabled.':
+      '停用一個 active binding。API 會拒絕停用最後一個 active 管理 key；memory key 可以全部停用。',
   },
   ja: {
     'Update a Space Chain knowledge extraction policy.': 'Space Chain の知識抽出ポリシーを更新します。',
@@ -5638,6 +5691,23 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'Whether matching facts are delivered only through Space Chain webhooks.':
       '一致した fact を Space Chain webhook だけで配信するかどうか。',
     'Configure knowledge extraction routing': '知識抽出 routing を設定',
+    'Active Space Chain management key for this chain.': 'この chain で有効な Space Chain management key。',
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`. Each chain has a management key, which can change the chain and also read and write memory, and a memory key, which can only read and write memory. A memory key gets `401` on the endpoints that read or change the chain itself.':
+      'Space の順序付き chain を作成・管理します。Runtime memory endpoint は Space Chain key を受け付け、chain を node 順に検索します。`scanAll=true` の場合はすべての node を検索します。各 chain には management key と memory key があります。management key は chain を変更でき、memory の読み書きもできます。memory key は memory の読み書きだけができます。chain 自体を読み取る、または変更する endpoint に memory key を使うと `401` が返ります。',
+    'Creates a Space Chain and returns two plaintext keys once: a management key and a memory key. Store both securely; later responses only show masked keys.':
+      'Space Chain を作成し、management key と memory key の 2 つの平文 key を 1 回だけ返します。両方を安全に保管してください。以降の response にはマスクされた key だけが表示されます。',
+    'Management key binding. This key can change the chain and also read and write memory.':
+      'management key の binding。この key は chain を変更でき、memory の読み書きもできます。',
+    'Memory key binding. This key can only read and write memory.': 'memory key の binding。この key は memory の読み書きだけができます。',
+    'Key role: `management` or `memory`.': 'key の role: `management` または `memory`。',
+    'Plaintext management key. Store it now; it is never shown again.': '平文の management key。今すぐ保存してください。再表示されません。',
+    'Plaintext memory key. Store it now; it is never shown again.': '平文の memory key。今すぐ保存してください。再表示されません。',
+    'Returns all key bindings of this Space Chain, each with its role and a masked key.': 'この Space Chain のすべての key binding を、それぞれの role とマスクされた key とともに返します。',
+    'Issue a Space Chain memory key.': 'Space Chain の memory key を発行します。',
+    'Issues another memory key for the chain. The request body is optional, and any `role` in it is ignored: keys issued here are always memory keys. Omit `chain_api_key` to let mem9 generate a key.':
+      'chain に別の memory key を発行します。request body は省略でき、含まれる `role` は無視されます。ここで発行される key は常に memory key です。`chain_api_key` を省略すると mem9 が key を生成します。',
+    'Disables an active binding. The API rejects disabling the last active management key; memory keys can all be disabled.':
+      'active な binding を無効にします。最後の active な management key は無効にできず、API が拒否します。memory key はすべて無効にできます。',
   },
   ko: {
     'Update a Space Chain knowledge extraction policy.': 'Space Chain 지식 추출 policy를 업데이트합니다.',
@@ -5660,6 +5730,23 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'Whether matching facts are delivered only through Space Chain webhooks.':
       '일치하는 fact를 Space Chain webhook으로만 전달하는지 여부.',
     'Configure knowledge extraction routing': '지식 추출 routing 설정',
+    'Active Space Chain management key for this chain.': '이 chain에서 사용할 수 있는 활성 Space Chain management key.',
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`. Each chain has a management key, which can change the chain and also read and write memory, and a memory key, which can only read and write memory. A memory key gets `401` on the endpoints that read or change the chain itself.':
+      'Space의 순서 있는 chain을 만들고 관리합니다. Runtime memory endpoint는 Space Chain key를 받아 chain을 node 순서대로 검색하며, `scanAll=true`이면 모든 node를 검색합니다. 각 chain에는 management key와 memory key가 있습니다. management key는 chain을 변경할 수 있고 memory도 읽고 쓸 수 있으며, memory key는 memory만 읽고 쓸 수 있습니다. chain 자체를 읽거나 변경하는 endpoint에 memory key를 사용하면 `401`이 반환됩니다.',
+    'Creates a Space Chain and returns two plaintext keys once: a management key and a memory key. Store both securely; later responses only show masked keys.':
+      'Space Chain을 만들고 management key와 memory key, 두 개의 평문 key를 한 번만 반환합니다. 두 key를 모두 안전하게 보관하세요. 이후 응답에는 마스킹된 key만 표시됩니다.',
+    'Management key binding. This key can change the chain and also read and write memory.':
+      'management key binding. 이 key는 chain을 변경할 수 있고 memory도 읽고 쓸 수 있습니다.',
+    'Memory key binding. This key can only read and write memory.': 'memory key binding. 이 key는 memory만 읽고 쓸 수 있습니다.',
+    'Key role: `management` or `memory`.': 'key의 role: `management` 또는 `memory`.',
+    'Plaintext management key. Store it now; it is never shown again.': '평문 management key. 지금 보관하세요. 다시 표시되지 않습니다.',
+    'Plaintext memory key. Store it now; it is never shown again.': '평문 memory key. 지금 보관하세요. 다시 표시되지 않습니다.',
+    'Returns all key bindings of this Space Chain, each with its role and a masked key.': '이 Space Chain의 모든 key binding을 role과 마스킹된 key와 함께 반환합니다.',
+    'Issue a Space Chain memory key.': 'Space Chain memory key를 발급합니다.',
+    'Issues another memory key for the chain. The request body is optional, and any `role` in it is ignored: keys issued here are always memory keys. Omit `chain_api_key` to let mem9 generate a key.':
+      'chain에 memory key를 하나 더 발급합니다. request body는 생략할 수 있으며, 그 안의 `role`은 무시됩니다. 여기서 발급하는 key는 항상 memory key입니다. `chain_api_key`를 생략하면 mem9가 key를 생성합니다.',
+    'Disables an active binding. The API rejects disabling the last active management key; memory keys can all be disabled.':
+      '활성 binding을 비활성화합니다. 마지막 활성 management key는 비활성화할 수 없어 API가 거부합니다. memory key는 모두 비활성화할 수 있습니다.',
   },
   id: {
     'Update a Space Chain knowledge extraction policy.': 'Perbarui kebijakan ekstraksi pengetahuan Space Chain.',
@@ -5682,6 +5769,23 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'Whether matching facts are delivered only through Space Chain webhooks.':
       'Apakah fact yang cocok hanya dikirim melalui webhook Space Chain.',
     'Configure knowledge extraction routing': 'Atur routing ekstraksi pengetahuan',
+    'Active Space Chain management key for this chain.': 'Management key Space Chain yang aktif untuk chain ini.',
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`. Each chain has a management key, which can change the chain and also read and write memory, and a memory key, which can only read and write memory. A memory key gets `401` on the endpoints that read or change the chain itself.':
+      'Buat dan kelola chain Space yang berurutan. Runtime memory endpoint menerima Space Chain key dan mencari chain sesuai urutan node, atau semua node saat `scanAll=true`. Setiap chain memiliki management key, yang dapat mengubah chain dan juga membaca serta menulis memory, dan memory key, yang hanya dapat membaca dan menulis memory. Memory key mendapat `401` pada endpoint yang membaca atau mengubah chain itu sendiri.',
+    'Creates a Space Chain and returns two plaintext keys once: a management key and a memory key. Store both securely; later responses only show masked keys.':
+      'Membuat Space Chain dan mengembalikan dua key plaintext satu kali saja: management key dan memory key. Simpan keduanya dengan aman; respons berikutnya hanya menampilkan key yang dimasking.',
+    'Management key binding. This key can change the chain and also read and write memory.':
+      'Binding management key. Key ini dapat mengubah chain dan juga membaca serta menulis memory.',
+    'Memory key binding. This key can only read and write memory.': 'Binding memory key. Key ini hanya dapat membaca dan menulis memory.',
+    'Key role: `management` or `memory`.': 'Role key: `management` atau `memory`.',
+    'Plaintext management key. Store it now; it is never shown again.': 'Management key plaintext. Simpan sekarang; key ini tidak akan ditampilkan lagi.',
+    'Plaintext memory key. Store it now; it is never shown again.': 'Memory key plaintext. Simpan sekarang; key ini tidak akan ditampilkan lagi.',
+    'Returns all key bindings of this Space Chain, each with its role and a masked key.': 'Mengembalikan semua key binding Space Chain ini, masing-masing dengan role dan key yang dimasking.',
+    'Issue a Space Chain memory key.': 'Terbitkan memory key Space Chain.',
+    'Issues another memory key for the chain. The request body is optional, and any `role` in it is ignored: keys issued here are always memory keys. Omit `chain_api_key` to let mem9 generate a key.':
+      'Menerbitkan memory key lain untuk chain. Request body bersifat opsional, dan `role` di dalamnya diabaikan: key yang diterbitkan di sini selalu memory key. Hilangkan `chain_api_key` agar mem9 membuat key.',
+    'Disables an active binding. The API rejects disabling the last active management key; memory keys can all be disabled.':
+      'Menonaktifkan binding yang aktif. API menolak penonaktifan management key aktif terakhir; semua memory key boleh dinonaktifkan.',
   },
   th: {
     'Update a Space Chain knowledge extraction policy.': 'อัปเดต policy การสกัดความรู้ของ Space Chain',
@@ -5704,6 +5808,23 @@ const apiSharedTextTranslations: Partial<Record<SiteLocale, Record<string, strin
     'Whether matching facts are delivered only through Space Chain webhooks.':
       'fact ที่ตรงกันถูกส่งผ่าน Space Chain webhook เท่านั้นหรือไม่',
     'Configure knowledge extraction routing': 'ตั้งค่า routing การสกัดความรู้',
+    'Active Space Chain management key for this chain.': 'management key ของ Space Chain ที่ยังใช้งานได้สำหรับ chain นี้',
+    'Create and manage ordered chains of Spaces. Runtime memory endpoints accept a Space Chain key and search the chain in node order, or all nodes when `scanAll=true`. Each chain has a management key, which can change the chain and also read and write memory, and a memory key, which can only read and write memory. A memory key gets `401` on the endpoints that read or change the chain itself.':
+      'สร้างและจัดการ chain ของ Space ที่เรียงลำดับ Runtime memory endpoint รับ Space Chain key และค้นหา chain ตามลำดับ node หรือค้นหาทุก node เมื่อ `scanAll=true` แต่ละ chain มี management key ซึ่งแก้ไข chain ได้และอ่านเขียน memory ได้ด้วย และ memory key ซึ่งอ่านเขียน memory ได้เท่านั้น memory key จะได้รับ `401` จาก endpoint ที่อ่านหรือแก้ไข chain เอง',
+    'Creates a Space Chain and returns two plaintext keys once: a management key and a memory key. Store both securely; later responses only show masked keys.':
+      'สร้าง Space Chain และส่งคืน key แบบ plaintext สองตัวเพียงครั้งเดียว คือ management key และ memory key เก็บทั้งสองไว้อย่างปลอดภัย response ครั้งต่อไปจะแสดงเฉพาะ key ที่ถูก mask',
+    'Management key binding. This key can change the chain and also read and write memory.':
+      'binding ของ management key ซึ่งแก้ไข chain ได้และอ่านเขียน memory ได้ด้วย',
+    'Memory key binding. This key can only read and write memory.': 'binding ของ memory key ซึ่งอ่านเขียน memory ได้เท่านั้น',
+    'Key role: `management` or `memory`.': 'role ของ key: `management` หรือ `memory`',
+    'Plaintext management key. Store it now; it is never shown again.': 'management key แบบ plaintext เก็บไว้ตอนนี้ เพราะจะไม่แสดงอีก',
+    'Plaintext memory key. Store it now; it is never shown again.': 'memory key แบบ plaintext เก็บไว้ตอนนี้ เพราะจะไม่แสดงอีก',
+    'Returns all key bindings of this Space Chain, each with its role and a masked key.': 'ส่งคืน key binding ทั้งหมดของ Space Chain นี้ พร้อม role และ key ที่ถูก mask',
+    'Issue a Space Chain memory key.': 'ออก memory key ของ Space Chain',
+    'Issues another memory key for the chain. The request body is optional, and any `role` in it is ignored: keys issued here are always memory keys. Omit `chain_api_key` to let mem9 generate a key.':
+      'ออก memory key เพิ่มให้ chain request body เป็นตัวเลือก และ `role` ในนั้นจะถูกละเว้น key ที่ออกที่นี่เป็น memory key เสมอ หากไม่ส่ง `chain_api_key` mem9 จะสร้าง key ให้',
+    'Disables an active binding. The API rejects disabling the last active management key; memory keys can all be disabled.':
+      'ปิดใช้งาน binding ที่ active API จะปฏิเสธการปิดใช้งาน management key ที่ active ตัวสุดท้าย ส่วน memory key ปิดใช้งานได้ทั้งหมด',
   },
 };
 
