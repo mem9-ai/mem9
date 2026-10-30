@@ -184,6 +184,40 @@ func (s *stubSessionRepo) DeleteSessionEdit(_ context.Context, id string) (int64
 	return 0, nil
 }
 
+func (s *stubSessionRepo) MarkSessionEdit(_ context.Context, edit *domain.SessionEdit) error {
+	if s.overlays == nil {
+		s.overlays = map[string]*domain.SessionEdit{}
+	}
+	if existing, ok := s.overlays[edit.ID]; ok {
+		existing.Correctness = edit.Correctness
+		existing.Version++
+		return nil
+	}
+	cp := *edit
+	cp.EditedContent = ""
+	cp.EditedContentSet = false
+	cp.Version = 1
+	if cp.State == "" {
+		cp.State = domain.StateActive
+	}
+	s.overlays[edit.ID] = &cp
+	return nil
+}
+
+func (s *stubSessionRepo) ClearSessionEditMark(_ context.Context, id string) (bool, error) {
+	ov, ok := s.overlays[id]
+	if !ok || ov.Correctness == "" {
+		return false, nil
+	}
+	if !ov.EditedContentSet {
+		delete(s.overlays, id)
+		return true, nil
+	}
+	ov.Correctness = ""
+	ov.Version++
+	return true, nil
+}
+
 func newTestSessionService(repo *stubSessionRepo) *SessionService {
 	return NewSessionService(repo, nil, "")
 }
@@ -661,4 +695,10 @@ func (c *capturingSessionRepo) GetSessionEditsByIDs(ctx context.Context, ids []s
 }
 func (c *capturingSessionRepo) DeleteSessionEdit(ctx context.Context, id string) (int64, error) {
 	return c.stub.DeleteSessionEdit(ctx, id)
+}
+func (c *capturingSessionRepo) MarkSessionEdit(ctx context.Context, edit *domain.SessionEdit) error {
+	return c.stub.MarkSessionEdit(ctx, edit)
+}
+func (c *capturingSessionRepo) ClearSessionEditMark(ctx context.Context, id string) (bool, error) {
+	return c.stub.ClearSessionEditMark(ctx, id)
 }

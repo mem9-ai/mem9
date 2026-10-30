@@ -14,7 +14,7 @@ import (
 
 func TestApplySessionOverlay_RewritesOnlyEditedSessions(t *testing.T) {
 	repo := &stubSessionRepo{overlays: map[string]*domain.SessionEdit{
-		"s1": {ID: "s1", EditedContent: "edited one", Version: 2, State: domain.StateActive},
+		"s1": {ID: "s1", EditedContent: "edited one", EditedContentSet: true, Version: 2, State: domain.StateActive},
 	}}
 	svc := newTestSessionService(repo)
 
