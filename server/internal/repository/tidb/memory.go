@@ -1022,6 +1022,7 @@ func scanMemory(row *sql.Row) (*domain.Memory, error) {
 	m.SupersededBy = supersededBy.String
 	m.Tags = unmarshalTags(tagsJSON)
 	m.Metadata = unmarshalRawJSON(metadataJSON)
+	m.Embedding = parseVecString(embeddingStr)
 	return &m, nil
 }
 
