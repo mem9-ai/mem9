@@ -45,9 +45,9 @@ func (s *Store) query(q string) string {
 }
 
 func (s *Store) CheckSchema(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, hash_version, key_hash, encrypted_key, tenant_id FROM api_keys LIMIT 0")
+	rows, err := s.db.QueryContext(ctx, "SELECT id, hash_version, key_hash, encrypted_key, tenant_id FROM space_keys LIMIT 0")
 	if err != nil {
-		return errors.New("credential schema missing; apply the api_keys schema before starting the server")
+		return errors.New("credential schema missing; apply the space_keys schema before starting the server")
 	}
 	return rows.Close()
 }
@@ -57,7 +57,7 @@ func (s *Store) CheckSchema(ctx context.Context) error {
 func (s *Store) LookupTenantID(ctx context.Context, key string) (string, error) {
 	for _, version := range s.keys.versions() {
 		var tenantID string
-		err := s.db.QueryRowContext(ctx, s.query("SELECT tenant_id FROM api_keys WHERE hash_version = ? AND key_hash = ?"), version, s.keys.digest(version, key)).Scan(&tenantID)
+		err := s.db.QueryRowContext(ctx, s.query("SELECT tenant_id FROM space_keys WHERE hash_version = ? AND key_hash = ?"), version, s.keys.digest(version, key)).Scan(&tenantID)
 		if err == nil {
 			return tenantID, nil
 		}
@@ -89,7 +89,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIM
 	if err != nil {
 		return errors.New("tenant registration failed")
 	}
-	if _, err := tx.ExecContext(ctx, s.query("INSERT INTO api_keys (id, hash_version, key_hash, encrypted_key, tenant_id) VALUES (?, ?, ?, ?, ?)"),
+	if _, err := tx.ExecContext(ctx, s.query("INSERT INTO space_keys (id, hash_version, key_hash, encrypted_key, tenant_id) VALUES (?, ?, ?, ?, ?)"),
 		id, s.keys.HashVersion, s.keys.digest(s.keys.HashVersion, t.ID), sealed, t.ID); err != nil {
 		return errors.New("tenant credential registration failed")
 	}

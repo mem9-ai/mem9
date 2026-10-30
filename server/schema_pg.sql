@@ -26,7 +26,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_name ON tenants(name);
 CREATE INDEX IF NOT EXISTS idx_tenant_status ON tenants(status);
 CREATE INDEX IF NOT EXISTS idx_tenant_provider ON tenants(provider);
 
-CREATE TABLE IF NOT EXISTS api_keys (
+CREATE TABLE IF NOT EXISTS space_keys (
   id VARCHAR(36) PRIMARY KEY,
   hash_version VARCHAR(32) NOT NULL,
   key_hash BYTEA NOT NULL,

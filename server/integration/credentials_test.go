@@ -72,10 +72,10 @@ func TestCredentialMappings(t *testing.T) {
 	schema, err := os.ReadFile("../schema.sql")
 	must(t, err)
 	for _, statement := range statements(string(schema)) {
-		for _, table := range []string{"tenants", "api_keys", "space_chains", "space_chain_bindings", "space_chain_nodes"} {
+		for _, table := range []string{"tenants", "space_keys", "space_chains", "space_chain_bindings", "space_chain_nodes"} {
 			if strings.HasPrefix(strings.TrimSpace(statement), "CREATE TABLE IF NOT EXISTS "+table+" (") {
 				exec(t, ctx, db, statement)
-				if table == "api_keys" {
+				if table == "space_keys" {
 					// Schema preparation must be safe to repeat.
 					exec(t, ctx, db, statement)
 				}
@@ -125,7 +125,7 @@ func TestCredentialMappings(t *testing.T) {
 	}
 	var mappedID, ciphertext string
 	var digest []byte
-	must(t, db.QueryRowContext(ctx, "SELECT tenant_id, key_hash, encrypted_key FROM api_keys").Scan(&mappedID, &digest, &ciphertext))
+	must(t, db.QueryRowContext(ctx, "SELECT tenant_id, key_hash, encrypted_key FROM space_keys").Scan(&mappedID, &digest, &ciphertext))
 	hash := hmac.New(sha256.New, []byte(strings.Repeat("h", 32)))
 	hash.Write([]byte(fresh))
 	if mappedID != fresh || !hmac.Equal(digest, hash.Sum(nil)) || strings.Contains(ciphertext, fresh) {
@@ -170,7 +170,7 @@ func TestCredentialMappings(t *testing.T) {
 	assertAuth(old, old)
 	assertAuth(fresh, fresh)
 	var count int
-	must(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM api_keys").Scan(&count))
+	must(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM space_keys").Scan(&count))
 	if count != 1 {
 		t.Fatal("authentication unexpectedly registered an old key")
 	}
@@ -178,9 +178,9 @@ func TestCredentialMappings(t *testing.T) {
 
 	// A synthetic remapping proves lookup precedence and raw-key propagation
 	// even when the resolved tenant ID differs; provisioning never makes this change.
-	exec(t, ctx, db, "UPDATE api_keys SET tenant_id=? WHERE tenant_id=?", old, fresh)
+	exec(t, ctx, db, "UPDATE space_keys SET tenant_id=? WHERE tenant_id=?", old, fresh)
 	assertAuth(fresh, old)
-	exec(t, ctx, db, "UPDATE api_keys SET tenant_id=? WHERE tenant_id=?", fresh, old)
+	exec(t, ctx, db, "UPDATE space_keys SET tenant_id=? WHERE tenant_id=?", fresh, old)
 
 	chain, chainKey := uuid.NewString(), "chain_"+uuid.NewString()
 	exec(t, ctx, db, "INSERT INTO space_chains(id,name) VALUES(?,'integration')", chain)
@@ -216,7 +216,7 @@ func TestCredentialMappings(t *testing.T) {
 
 	// Removing the mapping table must fail reads explicitly, not fall through.
 	// A failed mapping insert must also roll back its preceding tenant insert.
-	exec(t, ctx, db, "RENAME TABLE api_keys TO api_keys_unavailable")
+	exec(t, ctx, db, "RENAME TABLE space_keys TO space_keys_unavailable")
 	request(t, api, http.MethodGet, "/", old, http.StatusServiceUnavailable)
 	failedID := uuid.NewString()
 	failedSvc := service.NewTenantService(repo, fixtureProvisioner{failedID}, realPool{db}, logger, "", 0, 0, false, encrypt.NewPlainEncryptor()).WithCredentials(store)
@@ -226,7 +226,7 @@ func TestCredentialMappings(t *testing.T) {
 	if _, err := repo.GetByID(ctx, failedID); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatal("failed mapping insert left a partially provisioned tenant")
 	}
-	exec(t, ctx, db, "RENAME TABLE api_keys_unavailable TO api_keys")
+	exec(t, ctx, db, "RENAME TABLE space_keys_unavailable TO space_keys")
 	assertAuth(fresh, fresh)
 	t.Log("verified unchanged keys, transactional mappings, legacy fallback, read-only auth, raw Console subjects, Chain compatibility and transaction rollback")
 }

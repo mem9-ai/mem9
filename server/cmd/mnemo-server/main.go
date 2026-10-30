@@ -47,7 +47,7 @@ func main() {
 	defer db.Close()
 	logger.Info("database connected", "backend", cfg.DBBackend)
 
-	credentialStore, err := credentials.New(db, cfg.DBBackend, os.Getenv("MNEMO_API_KEYS_SECRET_FILE"))
+	credentialStore, err := credentials.New(db, cfg.DBBackend, os.Getenv("MNEMO_SPACE_CREDENTIAL_KEYRING_FILE"))
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		err = credentialStore.CheckSchema(ctx)
