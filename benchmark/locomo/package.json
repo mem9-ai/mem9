@@ -7,9 +7,6 @@
     "start": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "dependencies": {
-    "picospinner": "^3.0.0"
-  },
   "devDependencies": {
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

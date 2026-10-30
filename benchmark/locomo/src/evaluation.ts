@@ -1,6 +1,6 @@
 import type { QACategory } from './types.js'
 
-const ARTICLES = new Set(['a', 'an', 'and', 'the'])
+const ARTICLES = new Set(['a', 'an', 'the'])
 
 const normalizeAnswer = (s: number | string): string =>
   String(s)
