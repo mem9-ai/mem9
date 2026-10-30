@@ -145,6 +145,9 @@ func TestComplete(t *testing.T) {
 			if req.EnableThinking != nil {
 				t.Fatalf("enable_thinking = %v, want nil", *req.EnableThinking)
 			}
+			if req.Thinking != nil {
+				t.Fatalf("thinking = %#v, want nil", req.Thinking)
+			}
 
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
@@ -246,6 +249,9 @@ func TestComplete(t *testing.T) {
 			if req.ReasoningSplit == nil || !*req.ReasoningSplit {
 				t.Fatalf("reasoning_split = %v, want %v", req.ReasoningSplit, true)
 			}
+			if req.Thinking != nil {
+				t.Fatalf("thinking = %#v, want nil", req.Thinking)
+			}
 
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
@@ -253,6 +259,41 @@ func TestComplete(t *testing.T) {
 		defer server.Close()
 
 		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M2.7"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("minimax m3 disables thinking without reasoning_split", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if req.EnableThinking != nil {
+				t.Fatalf("enable_thinking = %v, want nil", *req.EnableThinking)
+			}
+			if req.Thinking == nil || req.Thinking.Type != "disabled" {
+				t.Fatalf("thinking = %#v, want type disabled", req.Thinking)
+			}
+			if req.ReasoningSplit != nil {
+				t.Fatalf("reasoning_split = %v, want nil", *req.ReasoningSplit)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M3"})
 		if client == nil {
 			t.Fatal("expected client, got nil")
 		}
@@ -501,6 +542,49 @@ func TestComplete(t *testing.T) {
 		}
 		if requests[1].ReasoningSplit != nil {
 			t.Fatalf("second request reasoning_split = %v, want nil", requests[1].ReasoningSplit)
+		}
+	})
+
+	t.Run("400 with minimax m3 thinking retries without it", func(t *testing.T) {
+		var requests []chatRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req chatRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			requests = append(requests, req)
+
+			if len(requests) == 1 {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":{"message":"unsupported param"}}`))
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+		}))
+		defer server.Close()
+
+		client := New(Config{APIKey: "key", BaseURL: server.URL, Model: "MiniMax-M3"})
+		if client == nil {
+			t.Fatal("expected client, got nil")
+		}
+
+		got, err := client.Complete(context.Background(), "sys", "user")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != "hello" {
+			t.Fatalf("content = %q, want %q", got, "hello")
+		}
+		if len(requests) != 2 {
+			t.Fatalf("request count = %d, want 2", len(requests))
+		}
+		if requests[0].Thinking == nil || requests[0].Thinking.Type != "disabled" {
+			t.Fatalf("first request thinking = %#v, want type disabled", requests[0].Thinking)
+		}
+		if requests[1].Thinking != nil {
+			t.Fatalf("second request thinking = %#v, want nil", requests[1].Thinking)
 		}
 	})
 
