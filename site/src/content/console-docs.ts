@@ -701,8 +701,8 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
           {
             title: 'Create or import',
             bullets: [
-              'Create Space Chain to start a new chain in the current project.',
-              'Import key when you already have a chain key and want Console to manage or test it.',
+              'Create Space Chain to start a new chain in the current project. Copy the memory key when it is shown, because it appears only once; Console keeps the management key.',
+              'Import key when you already have a chain and want Console to manage or test it. Import accepts only a management key; a memory key is rejected.',
               'Open a chain to edit its details, keys, nodes, and memory tools.',
             ],
           },
@@ -718,8 +718,8 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
           {
             title: 'Chain keys and testing',
             bullets: [
-              'Create or bind chain keys from the detail page.',
-              'Disable a chain key when it should no longer be used.',
+              'Create key on the detail page issues another memory key. You cannot attach an existing key.',
+              'Disable a key when it should no longer be used. The last management key cannot be disabled; memory keys can all be disabled.',
               'Use the recall and memory tools to compare chain behavior with a single Space.',
             ],
           },
@@ -967,8 +967,8 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
           {
             title: '创建或导入',
             bullets: [
-              '用 Create Space Chain 在当前 project 新建 chain。',
-              '已经有 chain key 时，用 Import key 让 Console 管理或测试它。',
+              '用 Create Space Chain 在当前 project 新建 chain。memory key 只显示一次，请在出现时复制；管理 key 由 Console 保管。',
+              '已经有 chain 时，用 Import key 让 Console 管理或测试它。Import 只接受管理 key，memory key 会被拒绝。',
               '打开 chain 后，可以编辑详情、key、nodes 和记忆工具。',
             ],
           },
@@ -984,8 +984,8 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
           {
             title: 'Chain key 和测试',
             bullets: [
-              '在详情页创建或绑定 chain key。',
-              '不再使用某个 chain key 时，将它 disable。',
+              '在详情页点 Create key 会签发另一个 memory key，不能绑定已有的 key。',
+              '不再使用某个 key 时，将它 disable。最后一个管理 key 不能 disable；memory key 可以全部 disable。',
               '使用 recall 和 memory 工具对比 chain 与单个 Space 的行为。',
             ],
           },
@@ -1176,9 +1176,9 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
         label: '07',
         title: 'Space Chains',
         subsections: [
-          { title: 'Create or import', bullets: ['新しい chain を作るか、既存 chain key を import します。', 'detail で key、nodes、memory tools を管理します。'] },
+          { title: 'Create or import', bullets: ['新しい chain を作るか、既存 chain を import します。memory key は 1 回だけ表示されるので、その場でコピーしてください。import で受け付けるのは management key だけです。', 'detail で key、nodes、memory tools を管理します。'] },
           { title: 'Nodes and routing', bullets: ['active key のある Space を追加します。', 'node order が recall order になります。', 'routing policy prompt で検索条件を絞れます。'] },
-          { title: 'Chain keys', bullets: ['chain key を作成または bind します。', '不要な key は disable します。', 'recall tools で single Space と比較します。'] },
+          { title: 'Chain keys', bullets: ['Create key は memory key を発行します。既存の key を bind することはできません。', '不要な key は disable します。最後の management key は disable できず、memory key はすべて disable できます。', 'recall tools で single Space と比較します。'] },
         ],
       },
       {
@@ -1253,7 +1253,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'spaces', label: '04', title: 'Spaces', bullets: ['제품, 환경, agent 그룹, 격리 경계별로 Space 를 만듭니다.', '목록에서 name, description, API key 상태를 확인합니다.', 'Space 이름을 눌러 detail 을 엽니다.', '행 메뉴에서 edit, configure key, delete 를 실행합니다.'] },
       { id: 'space-detail', label: '05', title: 'Space Detail', subsections: [{ title: 'Tenant key', bullets: ['memory data 를 보기 전에 key 를 설정합니다.', '필요할 때만 key 를 reveal / copy 합니다.', 'Console 은 기본적으로 masked key 를 보여줍니다.'] }, { title: 'Metrics and imports', bullets: ['total, pinned, insight memories 를 확인합니다.', 'latest import 상태를 확인합니다.', 'Space switcher 로 다른 Space 를 봅니다.'] }, { title: 'Memory workbench', bullets: ['memory 를 생성, 편집, 삭제합니다.', 'Smart ingest 는 pasted message 에서 durable facts 를 추출합니다.', 'appId 로 같은 key 안의 용도를 분리합니다.'] }] },
       { id: 'memories', label: '06', title: 'Memories', bullets: ['Space 를 선택해 memory 를 봅니다.', 'text, type, state, agent, tags, appId 로 필터합니다.', 'detail 에서 content, metadata, tags, score, confidence, session, agent, version, timestamps 를 확인합니다.', 'Space 에 key 가 없으면 key settings 를 먼저 설정합니다.'] },
-      { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['새 chain 을 만들거나 기존 chain key 를 import 합니다.', 'detail 에서 key, nodes, memory tools 를 관리합니다.'] }, { title: 'Nodes and routing', bullets: ['active key 가 있는 Space 를 추가합니다.', 'node order 가 recall order 입니다.', 'routing policy prompt 로 검색 조건을 제한할 수 있습니다.'] }, { title: 'Chain keys', bullets: ['chain key 를 만들거나 bind 합니다.', '필요 없는 key 는 disable 합니다.', 'recall tools 로 single Space 와 비교합니다.'] }] },
+      { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['새 chain 을 만들거나 기존 chain 을 import 합니다. memory key 는 한 번만 표시되므로 그때 복사하세요. import 는 management key 만 받습니다.', 'detail 에서 key, nodes, memory tools 를 관리합니다.'] }, { title: 'Nodes and routing', bullets: ['active key 가 있는 Space 를 추가합니다.', 'node order 가 recall order 입니다.', 'routing policy prompt 로 검색 조건을 제한할 수 있습니다.'] }, { title: 'Chain keys', bullets: ['Create key 는 memory key 를 발급합니다. 기존 key 를 bind 할 수는 없습니다.', '필요 없는 key 는 disable 합니다. 마지막 management key 는 disable 할 수 없고, memory key 는 모두 disable 할 수 있습니다.', 'recall tools 로 single Space 와 비교합니다.'] }] },
       { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['Activity sidebar 에서 Webhooks 를 엽니다.', 'All, Space, Space Chain filter 로 project list 를 좁힙니다.', 'table 에서 endpoint, scope, URL host, enabled, events, last delivery 를 확인합니다.'] }, { title: 'Create and edit', bullets: ['Space 또는 Space Chain, resource, URL, events, enabled state 를 설정합니다.', 'production endpoint 는 HTTPS 를 사용합니다.', 'signing secret 은 create / rotate-secret 뒤 한 번만 표시됩니다.'] }, { title: 'Actions and deliveries', bullets: ['row menu 에서 edit, test, deliveries, rotate secret, enable / disable, delete 를 실행합니다.', 'deliveries drawer 에서 status, attempts, HTTP status, last error, retry time 을 확인합니다.'] }] },
       { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['recall / write request usage 를 확인합니다.', 'date range, daily trend, usage events 를 봅니다.'] }, { title: 'Billing', bullets: ['current plan, period, included access, on-demand settings 를 확인합니다.'] }, { title: 'Settings', bullets: ['account 와 organization 관리, theme, language, logout 에 사용합니다.'] }] },
       pricingDocsSections.ko,
@@ -1298,7 +1298,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'spaces', label: '04', title: 'Spaces', bullets: ['Buat Space untuk produk, environment, grup agent, atau batas isolasi.', 'Lihat name, description, dan status API key di tabel.', 'Klik nama Space untuk detail.', 'Gunakan action row untuk edit, configure key, atau delete.'] },
       { id: 'space-detail', label: '05', title: 'Space Detail', subsections: [{ title: 'Tenant key', bullets: ['Set key sebelum melihat data memory.', 'Reveal / copy key hanya saat perlu.', 'Console menampilkan masked key secara default.'] }, { title: 'Metrics and imports', bullets: ['Cek total, pinned, dan insight memories.', 'Pantau latest import.', 'Gunakan Space switcher untuk pindah Space.'] }, { title: 'Memory workbench', bullets: ['Buat, edit, dan hapus memory.', 'Smart ingest mengekstrak durable facts dari pesan.', 'Gunakan appId untuk isolasi di dalam key yang sama.'] }] },
       { id: 'memories', label: '06', title: 'Memories', bullets: ['Pilih Space untuk melihat memory.', 'Filter berdasarkan text, type, state, agent, tags, atau appId.', 'Buka detail untuk content, metadata, tags, score, confidence, session, agent, version, dan timestamps.', 'Jika Space belum punya key, konfigurasi key dulu.'] },
-      { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['Buat chain baru atau import chain key yang ada.', 'Detail page mengelola key, nodes, dan memory tools.'] }, { title: 'Nodes and routing', bullets: ['Tambahkan Space yang punya active key.', 'Node order menentukan recall order.', 'Routing policy prompt membatasi kapan node dicari.'] }, { title: 'Chain keys', bullets: ['Create atau bind chain key.', 'Disable key yang tidak dipakai.', 'Bandingkan chain dengan single Space memakai recall tools.'] }] },
+      { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['Buat chain baru atau import chain yang ada. Memory key hanya tampil sekali, jadi salin saat itu juga. Import hanya menerima management key.', 'Detail page mengelola key, nodes, dan memory tools.'] }, { title: 'Nodes and routing', bullets: ['Tambahkan Space yang punya active key.', 'Node order menentukan recall order.', 'Routing policy prompt membatasi kapan node dicari.'] }, { title: 'Chain keys', bullets: ['Create key menerbitkan memory key. Key yang sudah ada tidak dapat di-bind.', 'Disable key yang tidak dipakai. Management key terakhir tidak dapat di-disable; semua memory key boleh di-disable.', 'Bandingkan chain dengan single Space memakai recall tools.'] }] },
       { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['Buka Webhooks dari Activity sidebar.', 'Gunakan filter All, Space, atau Space Chain.', 'Tabel menampilkan endpoint, scope, URL host, enabled, events, dan last delivery.'] }, { title: 'Create and edit', bullets: ['Pilih Space atau Space Chain, resource, URL, events, dan enabled state.', 'Endpoint production harus HTTPS.', 'signing secret hanya muncul sekali setelah create atau rotate-secret.'] }, { title: 'Actions and deliveries', bullets: ['Row menu mendukung edit, test, deliveries, rotate secret, enable / disable, dan delete.', 'Drawer deliveries menampilkan status, attempts, HTTP status, last error, dan retry time.'] }] },
       { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['Pantau recall / write request usage.', 'Lihat date range, daily trend, dan usage events.'] }, { title: 'Billing', bullets: ['Lihat current plan, period, included access, dan on-demand settings.'] }, { title: 'Settings', bullets: ['Untuk account, organization, theme, language, dan logout.'] }] },
       pricingDocsSections.id,
@@ -1343,7 +1343,7 @@ export const consoleDocsCopy: Record<DocsLocale, DocsPageCopy> = {
       { id: 'spaces', label: '04', title: 'Spaces', bullets: ['สร้าง Space สำหรับ product, environment, agent group หรือขอบเขต isolation', 'ดู name, description และ API key status ในตาราง', 'คลิกชื่อ Space เพื่อเปิด detail', 'ใช้ row actions เพื่อ edit, configure key หรือ delete'] },
       { id: 'space-detail', label: '05', title: 'Space Detail', subsections: [{ title: 'Tenant key', bullets: ['ตั้ง key ก่อนดู memory data', 'Reveal / copy key เฉพาะเมื่อจำเป็น', 'Console แสดง masked key เป็นค่าเริ่มต้น'] }, { title: 'Metrics and imports', bullets: ['ตรวจ total, pinned และ insight memories', 'ดูสถานะ latest import', 'ใช้ Space switcher เพื่อเปลี่ยน Space'] }, { title: 'Memory workbench', bullets: ['สร้าง แก้ไข และลบ memory', 'Smart ingest ดึง durable facts จากข้อความ', 'ใช้ appId เพื่อแยกการใช้งานใน key เดียวกัน'] }] },
       { id: 'memories', label: '06', title: 'Memories', bullets: ['เลือก Space เพื่อดู memory', 'Filter ด้วย text, type, state, agent, tags หรือ appId', 'เปิด detail เพื่อดู content, metadata, tags, score, confidence, session, agent, version และ timestamps', 'ถ้า Space ไม่มี key ให้ตั้งค่า key ก่อน'] },
-      { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['สร้าง chain ใหม่หรือ import chain key เดิม', 'หน้า detail ใช้จัดการ key, nodes และ memory tools'] }, { title: 'Nodes and routing', bullets: ['เพิ่ม Space ที่มี active key', 'node order คือ recall order', 'routing policy prompt จำกัดว่า node ควรถูกค้นหาเมื่อใด'] }, { title: 'Chain keys', bullets: ['Create หรือ bind chain key', 'Disable key ที่ไม่ใช้แล้ว', 'ใช้ recall tools เปรียบเทียบ chain กับ Space เดี่ยว'] }] },
+      { id: 'space-chains', label: '07', title: 'Space Chains', subsections: [{ title: 'Create or import', bullets: ['สร้าง chain ใหม่หรือ import chain เดิม memory key จะแสดงเพียงครั้งเดียว จึงควรคัดลอกทันที และ import รับเฉพาะ management key', 'หน้า detail ใช้จัดการ key, nodes และ memory tools'] }, { title: 'Nodes and routing', bullets: ['เพิ่ม Space ที่มี active key', 'node order คือ recall order', 'routing policy prompt จำกัดว่า node ควรถูกค้นหาเมื่อใด'] }, { title: 'Chain keys', bullets: ['Create key จะออก memory key และไม่สามารถ bind key ที่มีอยู่แล้วได้', 'Disable key ที่ไม่ใช้แล้ว management key ตัวสุดท้ายจะ disable ไม่ได้ แต่ memory key disable ได้ทั้งหมด', 'ใช้ recall tools เปรียบเทียบ chain กับ Space เดี่ยว'] }] },
       { id: 'webhooks', label: '08', title: 'Webhooks', subsections: [{ title: 'Project view', bullets: ['เปิด Webhooks จาก Activity sidebar', 'ใช้ filter All, Space หรือ Space Chain', 'ตารางแสดง endpoint, scope, URL host, enabled, events และ last delivery'] }, { title: 'Create and edit', bullets: ['เลือก Space หรือ Space Chain, resource, URL, events และ enabled state', 'production endpoint ต้องใช้ HTTPS', 'signing secret แสดงเพียงครั้งเดียวหลัง create หรือ rotate-secret'] }, { title: 'Actions and deliveries', bullets: ['row menu ใช้ edit, test, deliveries, rotate secret, enable / disable และ delete', 'deliveries drawer แสดง status, attempts, HTTP status, last error และ retry time'] }] },
       { id: 'usage-billing-settings', label: '09', title: 'Usage, Billing, Settings', subsections: [{ title: 'Usage', bullets: ['ดู recall / write request usage', 'ดู date range, daily trend และ usage events'] }, { title: 'Billing', bullets: ['ดู current plan, period, included access และ on-demand settings'] }, { title: 'Settings', bullets: ['สำหรับ account, organization, theme, language และ logout'] }] },
       pricingDocsSections.th,
