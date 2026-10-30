@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/metrics"
@@ -27,6 +28,7 @@ type tenantDBPool interface {
 }
 
 type TenantService struct {
+	credentials *credentials.Store
 	tenants     repository.TenantRepo
 	utms        utmRepo
 	provisioner tenant.Provisioner
@@ -74,6 +76,11 @@ func (s *TenantService) WithUTMRepo(r utmRepo) *TenantService {
 	return s
 }
 
+func (s *TenantService) WithCredentials(store *credentials.Store) *TenantService {
+	s.credentials = store
+	return s
+}
+
 // KeyStatus validates a candidate API key against the control-plane tenant row.
 func (s *TenantService) KeyStatus(ctx context.Context, apiKey string) (domain.KeyStatus, error) {
 	result, err := s.ResolveAPIKeyStatus(ctx, apiKey)
@@ -92,7 +99,15 @@ func (s *TenantService) ResolveAPIKeyStatus(ctx context.Context, apiKey string) 
 		return APIKeyStatusResult{}, fmt.Errorf("tenant repository not configured")
 	}
 
-	t, err := s.tenants.GetByID(ctx, apiKey)
+	tenantID := apiKey
+	if s.credentials != nil {
+		var err error
+		tenantID, err = s.credentials.LookupTenantID(ctx, apiKey)
+		if err != nil {
+			return APIKeyStatusResult{}, err
+		}
+	}
+	t, err := s.tenants.GetByID(ctx, tenantID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return APIKeyStatusResult{}, domain.ErrNotFound
@@ -244,7 +259,11 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 	}
 
 	t0 = time.Now()
-	if err := s.tenants.Create(ctx, t); err != nil {
+	createTenant := s.tenants.Create
+	if s.credentials != nil {
+		createTenant = s.credentials.CreateTenant
+	}
+	if err := createTenant(ctx, t); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		s.logger.Error("orphaned cluster: tenants.Create failed",
 			"tenant_id", info.ID,

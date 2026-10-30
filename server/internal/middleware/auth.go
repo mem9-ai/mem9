@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/repository"
@@ -39,6 +40,7 @@ type authConfig struct {
 	spendLimitCooldown *SpendLimitCooldown
 	autoSpendLimitCfg  AutoSpendLimitConfig
 	spaceChains        repository.SpaceChainRepo
+	credentials        *credentials.Store
 }
 
 // AutoSpendLimitConfig controls auto spend-limit adjustment behavior.
@@ -61,6 +63,22 @@ func WithSpaceChainRepo(chains repository.SpaceChainRepo) authOption {
 	return func(c *authConfig) {
 		c.spaceChains = chains
 	}
+}
+
+func WithCredentials(store *credentials.Store) authOption {
+	return func(c *authConfig) { c.credentials = store }
+}
+
+func lookupCredentialTenant(ctx context.Context, repo repository.TenantRepo, key string, store *credentials.Store) (*domain.Tenant, error) {
+	tenantID := key
+	if store != nil {
+		var err error
+		tenantID, err = store.LookupTenantID(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return repo.GetByID(ctx, tenantID)
 }
 
 func isSpendLimitError(err error) bool {
@@ -220,9 +238,13 @@ func ResolveTenant(
 			}
 
 			lookupStart := time.Now()
-			t, err := tenantRepo.GetByID(r.Context(), tenantID)
+			t, err := lookupCredentialTenant(r.Context(), tenantRepo, tenantID, state.credentials)
 			lookupDuration := time.Since(lookupStart)
 			if err != nil {
+				if state.credentials != nil && !errors.Is(err, domain.ErrNotFound) {
+					writeError(w, http.StatusServiceUnavailable, "auth backend unavailable; retry request")
+					return
+				}
 				writeError(w, http.StatusNotFound, "tenant not found")
 				return
 			}
@@ -312,7 +334,7 @@ func ResolveTenant(
 				TenantID:      t.ID,
 				TenantDB:      db,
 				ClusterID:     t.ClusterID,
-				APIKeySubject: t.ID,
+				APIKeySubject: tenantID,
 			}
 			if agentID := r.Header.Get(AgentIDHeader); agentID != "" {
 				info.AgentName = agentID
@@ -398,6 +420,7 @@ func ResolveApiKey(
 					return
 				}
 				info.Chain.Nodes = nodes
+				info.APIKeySubject = apiKey
 
 				slog.InfoContext(r.Context(), "tenant auth resolved",
 					"auth_mode", "space_chain_key",
@@ -413,9 +436,13 @@ func ResolveApiKey(
 			}
 
 			lookupStart := time.Now()
-			t, err := tenantRepo.GetByID(r.Context(), apiKey)
+			t, err := lookupCredentialTenant(r.Context(), tenantRepo, apiKey, state.credentials)
 			lookupDuration := time.Since(lookupStart)
 			if err != nil {
+				if state.credentials != nil && !errors.Is(err, domain.ErrNotFound) {
+					writeError(w, http.StatusServiceUnavailable, "auth backend unavailable; retry request")
+					return
+				}
 				writeError(w, http.StatusBadRequest, "invalid API key")
 				return
 			}

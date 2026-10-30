@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/config"
+	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/handler"
@@ -45,6 +46,17 @@ func main() {
 	}
 	defer db.Close()
 	logger.Info("database connected", "backend", cfg.DBBackend)
+
+	credentialStore, err := credentials.New(db, cfg.DBBackend, os.Getenv("MNEMO_SPACE_CREDENTIAL_KEYRING_FILE"))
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err = credentialStore.CheckSchema(ctx)
+		cancel()
+	}
+	if err != nil {
+		logger.Error("credential storage preflight failed", "err", err)
+		os.Exit(1)
+	}
 
 	// Warn if encryption type is non-default — changing this later breaks existing tenants.
 	if cfg.EncryptType != "" && cfg.EncryptType != "plain" {
@@ -263,7 +275,7 @@ func main() {
 		}
 	}
 
-	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor)
+	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor).WithCredentials(credentialStore)
 	if utmRepo != nil {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}
@@ -274,11 +286,11 @@ func main() {
 	var tenantMW func(http.Handler) http.Handler
 	var apiKeyMW func(http.Handler) http.Handler
 	if spendLimitAdjuster != nil {
-		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
-		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg), middleware.WithSpaceChainRepo(spaceChainRepo))
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg), middleware.WithSpaceChainRepo(spaceChainRepo))
 	} else {
-		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist)
-		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithSpaceChainRepo(spaceChainRepo))
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpaceChainRepo(spaceChainRepo))
 	}
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst, cfg.RuntimeUsageInternalSecret)
 	defer rl.Stop()
