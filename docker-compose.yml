@@ -1,0 +1,139 @@
+# Local mem9 development stack: TiDB + auto schema bootstrap + mem9 server.
+#
+# Usage (clean checkout, only Docker required — no Go toolchain on host):
+#   cp .env.example .env   # optional — defaults are sane
+#   docker compose up --build
+#
+# Then mem9 is at http://localhost:${MEM9_PORT:-8080} and TiDB at
+# localhost:${TIDB_PORT:-4000}. The seeded API key is `${MEM9_LOCAL_API_KEY:-local-dev}`
+# (matches the tenant row that schema-init inserts). See README "Local
+# Quickstart with Docker Compose" and .env.example for the full knob list.
+#
+# Schema bootstrap: the `schema-init` service runs once per stack start, waits for
+# TiDB to accept connections, then pipes server/schema.sql through the mysql client.
+# It exits 0 on success; the `mem9` service waits for that completion via
+# `service_completed_successfully` before starting.
+
+services:
+  tidb:
+    image: pingcap/tidb:v8.5.6
+    # unistore is TiDB's embedded single-process storage backend — no separate
+    # PD/TiKV containers needed. Sufficient for local dev including the VECTOR
+    # column types in schema.sql. (Vector INDEX would still need TiFlash, but
+    # those are commented out in schema.sql.)
+    command:
+      - --store=unistore
+      - --path=
+      - --host=0.0.0.0
+      - --advertise-address=tidb
+    ports:
+      # Bound to loopback on purpose: this TiDB runs as root with no
+      # password, so exposing it on all interfaces would hand the DB to
+      # anyone on the same network if the host has a public/LAN NIC.
+      # Override TIDB_BIND if you genuinely need remote access.
+      - "${TIDB_BIND:-127.0.0.1}:${TIDB_PORT:-4000}:4000"
+    # No healthcheck on this service: the official pingcap/tidb image ships
+    # without mysqladmin / mysql client. schema-init does its own ready-poll
+    # below using the mysql client baked into the mysql:8.0 image.
+
+  schema-init:
+    # Single-shot job: poll tidb until it accepts connections, create the
+    # mem9 database, load server/schema.sql, seed a local-dev tenant row so
+    # the v1alpha2 X-API-Key path resolves on the first request, then exit.
+    # The mem9 service waits for this via `service_completed_successfully`
+    # so it never starts against an empty or half-loaded schema.
+    image: mysql:8.0
+    depends_on:
+      - tidb
+    volumes:
+      - ./server/schema.sql:/schema.sql:ro
+    environment:
+      # Expose .env-driven knobs into the entrypoint script. Compose's
+      # ${VAR:-default} substitution happens at YAML parse time, but the
+      # script's heredoc embeds them as literal values at that point.
+      DB_NAME: ${MEM9_DB_NAME:-mem9}
+      API_KEY: ${MEM9_LOCAL_API_KEY:-local-dev}
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        set -eu
+        # Poll TiDB for readiness — mysqladmin is in the mysql:8.0 image, and
+        # the official pingcap/tidb image isn't, so the wait lives here.
+        echo "schema-init: waiting for tidb:4000 to accept connections..."
+        for i in $$(seq 1 60); do
+          if mysqladmin ping -h tidb -P 4000 -u root --silent >/dev/null 2>&1; then
+            echo "schema-init: tidb is up after $${i}s"
+            break
+          fi
+          sleep 1
+        done
+        mysql -h tidb -P 4000 -u root -e "CREATE DATABASE IF NOT EXISTS \`$$DB_NAME\`;"
+        mysql -h tidb -P 4000 -u root -D "$$DB_NAME" < /schema.sql
+        # Seed a tenant row. The v1alpha2 routes resolve the X-API-Key
+        # header to a row in `tenants`; without an active tenant every API
+        # call would 401. db_password is stored encrypted in production
+        # but with default MNEMO_ENCRYPT_TYPE=plain the encryptor is a
+        # no-op, so the empty string survives the decrypt path. Both id
+        # and db_name come from .env so they stay in sync with the MNEMO_DSN
+        # that the mem9 service is configured with.
+        mysql -h tidb -P 4000 -u root -D "$$DB_NAME" -e "
+          INSERT INTO tenants (id, name, db_host, db_port, db_user, db_password,
+            db_name, db_tls, provider, cluster_id, status, schema_version)
+          VALUES ('$$API_KEY', '$$API_KEY', 'tidb', 4000, 'root', '',
+            '$$DB_NAME', 0, 'local', 'local-dev', 'active', 1)
+          ON DUPLICATE KEY UPDATE name=VALUES(name), status='active';
+        "
+        echo "schema-init: loaded server/schema.sql + seeded '$$API_KEY' tenant"
+    restart: "no"
+
+  mem9:
+    # Built in-place by `docker compose up --build` from server/Dockerfile.local
+    # (multi-stage Go build → minimal alpine runtime). No Go toolchain needed
+    # on the host. The default image tag is `mem9:local`; set MEM9_IMAGE to
+    # use a pre-built image instead and Docker will skip the build step.
+    image: ${MEM9_IMAGE:-mem9:local}
+    build:
+      context: .
+      dockerfile: server/Dockerfile.local
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+    environment:
+      # Point mem9 at the in-compose tidb container. `parseTime=true` is
+      # required by the Go MySQL driver for TIMESTAMP / DATETIME → time.Time.
+      MNEMO_DSN: "root:@tcp(tidb:4000)/${MEM9_DB_NAME:-mem9}?parseTime=true"
+      MNEMO_DB_BACKEND: ${MNEMO_DB_BACKEND:-tidb}
+      MNEMO_PORT: "8080"
+      MNEMO_FTS_ENABLED: ${MNEMO_FTS_ENABLED:-false}
+      MNEMO_DISABLE_SESSION_SAVE: ${MNEMO_DISABLE_SESSION_SAVE:-false}
+      # Disable the TiDB Zero provisioner — it's on by default and would try
+      # to call out to https://zero.tidbapi.com on startup, which is the
+      # wrong behavior for a local single-tenant compose stack (we seeded
+      # the tenant ourselves in schema-init). .env.example carries the
+      # same default with the "do not flip" caveat in case operators look
+      # there first.
+      MNEMO_TIDB_ZERO_ENABLED: ${MNEMO_TIDB_ZERO_ENABLED:-false}
+      # Default ingest mode is `raw` (store turn-by-turn, no LLM call).
+      # Override via .env to `smart` for LLM-extracted ingest; that mode
+      # additionally requires MNEMO_LLM_* below.
+      MNEMO_INGEST_MODE: ${MNEMO_INGEST_MODE:-raw}
+      # Pass through optional LLM / embedding config from .env. Empty
+      # defaults keep mem9 in its no-key code paths (config.go treats
+      # an empty MNEMO_LLM_API_KEY as "LLM unavailable" — see ingest.go's
+      # llm.New() nil-branch handling).
+      MNEMO_LLM_API_KEY: ${MNEMO_LLM_API_KEY:-}
+      MNEMO_LLM_BASE_URL: ${MNEMO_LLM_BASE_URL:-}
+      MNEMO_LLM_MODEL: ${MNEMO_LLM_MODEL:-gpt-4o-mini}
+      MNEMO_EMBED_API_KEY: ${MNEMO_EMBED_API_KEY:-}
+      MNEMO_EMBED_BASE_URL: ${MNEMO_EMBED_BASE_URL:-}
+      MNEMO_EMBED_MODEL: ${MNEMO_EMBED_MODEL:-}
+      MNEMO_EMBED_DIMS: ${MNEMO_EMBED_DIMS:-1536}
+      MNEMO_EMBED_AUTO_MODEL: ${MNEMO_EMBED_AUTO_MODEL:-}
+      MNEMO_EMBED_AUTO_DIMS: ${MNEMO_EMBED_AUTO_DIMS:-1024}
+    ports:
+      # Loopback-bound for the same reason as tidb above — the seeded
+      # local-dev API key is public knowledge (it's in this repo), so the
+      # API must not listen on non-local interfaces by default.
+      - "${MEM9_BIND:-127.0.0.1}:${MEM9_PORT:-8080}:8080"
+    restart: unless-stopped
