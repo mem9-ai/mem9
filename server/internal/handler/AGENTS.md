@@ -23,7 +23,7 @@ cd server && go test -race -count=1 -run TestFunctionName ./internal/handler/
 | Space Chain runtime routing and recall | `chain_runtime.go` |
 | Webhook CRUD (Space + Chain scoped) | `webhook.go` |
 | Webhook event enqueueing | `webhook_events.go` |
-| Space Chain read response views (masked chain keys, no Space keys) | `space_chain_view.go` |
+| Space Chain response views: read views (masked chain keys, role, no Space keys) and the create and issue-key responses, the only ones that carry a plaintext chain key | `space_chain_view.go` |
 | Space Chain create gate: the credential check on `POST /v1alpha2/space-chains` (option `WithSpaceChainCreateGate` is in `handler.go`) | `space_chain.go` |
 | Tenant endpoints | `tenant.go` |
 | Import task endpoints | `task.go` |

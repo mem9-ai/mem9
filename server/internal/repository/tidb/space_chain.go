@@ -79,7 +79,47 @@ func isDuplicateColumnError(err error) bool {
 	return strings.Contains(msg, "duplicate column") || strings.Contains(msg, "error 1060")
 }
 
-func (r *SpaceChainRepoImpl) Create(ctx context.Context, chain *domain.SpaceChain, binding *domain.SpaceChainBinding) error {
+// EnsureSpaceChainSchema adds the binding role column when it is missing. It runs
+// once at startup, before requests are served, because every chain-key request
+// reads the role. Existing rows take the column default, management. A missing
+// bindings table is left alone: there is nothing to change and chains are unused.
+func EnsureSpaceChainSchema(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx,
+		`SELECT COLUMN_NAME
+		   FROM information_schema.COLUMNS
+		  WHERE TABLE_SCHEMA = DATABASE()
+		    AND TABLE_NAME = 'space_chain_bindings'`,
+	)
+	if err != nil {
+		return fmt.Errorf("check space chain bindings schema: %w", err)
+	}
+	defer rows.Close()
+
+	tableExists, hasRole := false, false
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return fmt.Errorf("scan space chain bindings schema: %w", err)
+		}
+		tableExists = true
+		if strings.EqualFold(name, "role") {
+			hasRole = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate space chain bindings schema: %w", err)
+	}
+	if !tableExists || hasRole {
+		return nil
+	}
+	// Another instance starting at the same time may add the column first.
+	if _, err := db.ExecContext(ctx, `ALTER TABLE space_chain_bindings ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'management'`); err != nil && !isDuplicateColumnError(err) {
+		return fmt.Errorf("add space chain binding role column: %w", err)
+	}
+	return nil
+}
+
+func (r *SpaceChainRepoImpl) Create(ctx context.Context, chain *domain.SpaceChain, bindings ...*domain.SpaceChainBinding) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin create space chain: %w", err)
@@ -93,11 +133,11 @@ func (r *SpaceChainRepoImpl) Create(ctx context.Context, chain *domain.SpaceChai
 	); err != nil {
 		return fmt.Errorf("create space chain: %w", err)
 	}
-	if binding != nil {
+	for _, binding := range bindings {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO space_chain_bindings (id, chain_id, chain_api_key, created_by_user_id, created_at)
-			 VALUES (?, ?, ?, ?, NOW())`,
-			binding.ID, binding.ChainID, binding.ChainAPIKey, nullString(binding.CreatedByUserID),
+			`INSERT INTO space_chain_bindings (id, chain_id, role, chain_api_key, created_by_user_id, created_at)
+			 VALUES (?, ?, ?, ?, ?, NOW())`,
+			binding.ID, binding.ChainID, binding.Role, binding.ChainAPIKey, nullString(binding.CreatedByUserID),
 		); err != nil {
 			return fmt.Errorf("create space chain binding: %w", err)
 		}
@@ -184,9 +224,9 @@ func (r *SpaceChainRepoImpl) SoftDelete(ctx context.Context, id, deletedByUserID
 
 func (r *SpaceChainRepoImpl) CreateBinding(ctx context.Context, binding *domain.SpaceChainBinding) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO space_chain_bindings (id, chain_id, chain_api_key, created_by_user_id, created_at)
-		 VALUES (?, ?, ?, ?, NOW())`,
-		binding.ID, binding.ChainID, binding.ChainAPIKey, nullString(binding.CreatedByUserID),
+		`INSERT INTO space_chain_bindings (id, chain_id, role, chain_api_key, created_by_user_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, NOW())`,
+		binding.ID, binding.ChainID, binding.Role, binding.ChainAPIKey, nullString(binding.CreatedByUserID),
 	)
 	if err != nil {
 		var mysqlErr *mysql.MySQLError
@@ -200,7 +240,7 @@ func (r *SpaceChainRepoImpl) CreateBinding(ctx context.Context, binding *domain.
 
 func (r *SpaceChainRepoImpl) ListBindings(ctx context.Context, chainID string) ([]domain.SpaceChainBinding, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, chain_id, chain_api_key, created_by_user_id, disabled, disabled_at, disabled_by_user_id, created_at
+		`SELECT id, chain_id, role, chain_api_key, created_by_user_id, disabled, disabled_at, disabled_by_user_id, created_at
 		 FROM space_chain_bindings
 		 WHERE chain_id = ?
 		 ORDER BY created_at DESC, id DESC`,
@@ -386,7 +426,7 @@ func scanSpaceChainBindings(rows *sql.Rows) ([]domain.SpaceChainBinding, error) 
 		var binding domain.SpaceChainBinding
 		var createdByUserID, disabledByUserID sql.NullString
 		var disabledAt sql.NullTime
-		if err := rows.Scan(&binding.ID, &binding.ChainID, &binding.ChainAPIKey, &createdByUserID, &binding.Disabled, &disabledAt, &disabledByUserID, &binding.CreatedAt); err != nil {
+		if err := rows.Scan(&binding.ID, &binding.ChainID, &binding.Role, &binding.ChainAPIKey, &createdByUserID, &binding.Disabled, &disabledAt, &disabledByUserID, &binding.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan space chain binding: %w", err)
 		}
 		binding.CreatedByUserID = createdByUserID.String

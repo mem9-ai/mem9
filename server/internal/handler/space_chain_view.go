@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/service"
 )
 
 // Read models for Space Chain control-plane responses.
@@ -30,11 +31,63 @@ type spaceChainView struct {
 type spaceChainBindingView struct {
 	ID                string     `json:"id"`
 	ChainID           string     `json:"chain_id"`
+	Role              string     `json:"role"`
 	MaskedChainAPIKey string     `json:"masked_chain_api_key"`
 	Disabled          bool       `json:"disabled"`
 	DisabledAt        *time.Time `json:"disabled_at,omitempty"`
 	DisabledByUserID  string     `json:"disabled_by_user_id,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
+}
+
+// Write models: the only responses that carry a plaintext chain key. A key is
+// shown in these once, when it is issued, and never in a read view.
+
+// createSpaceChainResponse answers the creation of a chain. The chain is the
+// same masked read model GET returns; the two keys come in the named bindings.
+type createSpaceChainResponse struct {
+	Chain             spaceChainView           `json:"chain"`
+	ManagementBinding spaceChainNewBindingView `json:"management_binding"`
+	MemoryBinding     spaceChainNewBindingView `json:"memory_binding"`
+}
+
+type spaceChainNewBindingView struct {
+	ID          string `json:"id"`
+	Role        string `json:"role"`
+	ChainAPIKey string `json:"chain_api_key"`
+}
+
+// spaceChainIssuedBindingView answers the issue of one more key. The creator id
+// is accepted on the request but never returned.
+type spaceChainIssuedBindingView struct {
+	ID          string    `json:"id"`
+	ChainID     string    `json:"chain_id"`
+	Role        string    `json:"role"`
+	ChainAPIKey string    `json:"chain_api_key"`
+	Disabled    bool      `json:"disabled"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func newCreateSpaceChainResponse(result *service.CreateSpaceChainResult) createSpaceChainResponse {
+	return createSpaceChainResponse{
+		Chain:             newSpaceChainView(result.Chain),
+		ManagementBinding: newSpaceChainNewBindingView(result.ManagementBinding),
+		MemoryBinding:     newSpaceChainNewBindingView(result.MemoryBinding),
+	}
+}
+
+func newSpaceChainNewBindingView(binding *domain.SpaceChainBinding) spaceChainNewBindingView {
+	return spaceChainNewBindingView{ID: binding.ID, Role: binding.Role, ChainAPIKey: binding.ChainAPIKey}
+}
+
+func newSpaceChainIssuedBindingView(binding *domain.SpaceChainBinding) spaceChainIssuedBindingView {
+	return spaceChainIssuedBindingView{
+		ID:          binding.ID,
+		ChainID:     binding.ChainID,
+		Role:        binding.Role,
+		ChainAPIKey: binding.ChainAPIKey,
+		Disabled:    binding.Disabled,
+		CreatedAt:   binding.CreatedAt,
+	}
 }
 
 type spaceChainNodeView struct {
@@ -76,6 +129,7 @@ func newSpaceChainBindingViews(bindings []domain.SpaceChainBinding) []spaceChain
 		out[i] = spaceChainBindingView{
 			ID:                binding.ID,
 			ChainID:           binding.ChainID,
+			Role:              binding.Role,
 			MaskedChainAPIKey: visibleMask(binding.ChainAPIKey),
 			Disabled:          binding.Disabled,
 			DisabledAt:        binding.DisabledAt,

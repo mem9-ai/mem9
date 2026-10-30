@@ -53,6 +53,7 @@ CREATE INDEX IF NOT EXISTS idx_space_chains_deleted ON space_chains(deleted_at);
 CREATE TABLE IF NOT EXISTS space_chain_bindings (
     id                  VARCHAR(36)   PRIMARY KEY,
     chain_id            VARCHAR(36)   NOT NULL REFERENCES space_chains(id),
+    role                VARCHAR(32)   NOT NULL DEFAULT 'management',
     chain_api_key       VARCHAR(255)  NOT NULL UNIQUE,
     created_by_user_id  VARCHAR(255)  NULL,
     disabled            BOOLEAN       NOT NULL DEFAULT FALSE,

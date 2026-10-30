@@ -64,7 +64,8 @@ type TenantRepo interface {
 
 // SpaceChainRepo manages Space Chain control-plane records.
 type SpaceChainRepo interface {
-	Create(ctx context.Context, chain *domain.SpaceChain, binding *domain.SpaceChainBinding) error
+	// Create stores the chain and all of its first bindings in one transaction.
+	Create(ctx context.Context, chain *domain.SpaceChain, bindings ...*domain.SpaceChainBinding) error
 	GetByID(ctx context.Context, id string) (*domain.SpaceChain, error)
 	GetByKey(ctx context.Context, key string) (*domain.SpaceChain, error)
 	Update(ctx context.Context, chain *domain.SpaceChain) error

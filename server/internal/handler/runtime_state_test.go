@@ -326,7 +326,7 @@ type runtimeStateSpaceChainRepo struct {
 	getByKeyCalls int
 }
 
-func (r *runtimeStateSpaceChainRepo) Create(context.Context, *domain.SpaceChain, *domain.SpaceChainBinding) error {
+func (r *runtimeStateSpaceChainRepo) Create(context.Context, *domain.SpaceChain, ...*domain.SpaceChainBinding) error {
 	return nil
 }
 func (r *runtimeStateSpaceChainRepo) GetByID(context.Context, string) (*domain.SpaceChain, error) {

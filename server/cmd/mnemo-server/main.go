@@ -114,6 +114,13 @@ func main() {
 	}()
 	logger.Info("webhook dispatcher initialized", "allow_local_http", allowLocalWebhookHTTP)
 
+	// Every chain-key request reads the binding role, so a failed schema change
+	// must stop the start instead of breaking those requests later.
+	if err := repository.EnsureSpaceChainSchema(context.Background(), cfg.DBBackend, db); err != nil {
+		logger.Error("failed to initialize space chain schema", "err", err)
+		os.Exit(1)
+	}
+
 	// Repositories.
 	tenantRepo := repository.NewTenantRepo(cfg.DBBackend, db)
 	spaceChainRepo := repository.NewSpaceChainRepo(cfg.DBBackend, db)

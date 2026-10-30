@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS space_chains (
 CREATE TABLE IF NOT EXISTS space_chain_bindings (
   id                  VARCHAR(36)   PRIMARY KEY,
   chain_id            VARCHAR(36)   NOT NULL,
+  role                VARCHAR(32)   NOT NULL DEFAULT 'management',
   chain_api_key       VARCHAR(255)  NOT NULL,
   created_by_user_id  VARCHAR(255)  NULL,
   disabled            TINYINT(1)    NOT NULL DEFAULT 0,

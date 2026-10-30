@@ -90,7 +90,7 @@ func (s *Server) createSpaceChain(w http.ResponseWriter, r *http.Request) {
 		s.handleError(r.Context(), w, err)
 		return
 	}
-	respond(w, http.StatusCreated, result)
+	respond(w, http.StatusCreated, newCreateSpaceChainResponse(result))
 }
 
 func (s *Server) getSpaceChain(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +111,7 @@ func (s *Server) getSpaceChainByKey(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "missing or malformed X-API-Key")
 		return
 	}
-	chain, err := s.chains.GetByKey(r.Context(), apiKey)
+	chain, err := s.chains.GetByManagementKey(r.Context(), apiKey)
 	if err != nil {
 		s.handleError(r.Context(), w, err)
 		return
@@ -209,8 +209,9 @@ func (s *Server) createSpaceChainBinding(w http.ResponseWriter, r *http.Request)
 	if _, ok := s.authorizeSpaceChainManagement(w, r); !ok {
 		return
 	}
+	// The body is optional: with no body the server generates the key.
 	var req createSpaceChainBindingRequest
-	if err := decode(r, &req); err != nil {
+	if err := decodeOptional(r, &req); err != nil {
 		s.handleError(r.Context(), w, err)
 		return
 	}
@@ -219,7 +220,7 @@ func (s *Server) createSpaceChainBinding(w http.ResponseWriter, r *http.Request)
 		s.handleError(r.Context(), w, err)
 		return
 	}
-	respond(w, http.StatusCreated, binding)
+	respond(w, http.StatusCreated, newSpaceChainIssuedBindingView(binding))
 }
 
 func (s *Server) disableSpaceChainBinding(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +258,7 @@ func (s *Server) authorizeSpaceChainManagement(w http.ResponseWriter, r *http.Re
 		switch {
 		case errors.Is(err, domain.ErrNotFound):
 			respondError(w, http.StatusNotFound, "space chain not found")
-		case errors.Is(err, domain.ErrValidation):
+		case errors.Is(err, domain.ErrValidation), errors.Is(err, domain.ErrManagementKeyRequired):
 			s.handleError(r.Context(), w, err)
 		default:
 			logger := s.logger

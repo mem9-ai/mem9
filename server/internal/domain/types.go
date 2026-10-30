@@ -122,9 +122,18 @@ type SpaceChain struct {
 	Nodes    []SpaceChainNode    `json:"nodes,omitempty"`
 }
 
+// Roles of a Space Chain binding. A management key can change the chain and can
+// also read and write memory; a memory key can only read and write memory. The
+// server decides the role; a request never chooses it.
+const (
+	SpaceChainRoleManagement = "management"
+	SpaceChainRoleMemory     = "memory"
+)
+
 type SpaceChainBinding struct {
 	ID               string     `json:"id"`
 	ChainID          string     `json:"chain_id"`
+	Role             string     `json:"role"`
 	ChainAPIKey      string     `json:"chain_api_key,omitempty"`
 	CreatedByUserID  string     `json:"created_by_user_id,omitempty"`
 	Disabled         bool       `json:"disabled"`

@@ -27,9 +27,9 @@ type countingChainRepo struct {
 	creates int
 }
 
-func (r *countingChainRepo) Create(ctx context.Context, chain *domain.SpaceChain, binding *domain.SpaceChainBinding) error {
+func (r *countingChainRepo) Create(ctx context.Context, chain *domain.SpaceChain, bindings ...*domain.SpaceChainBinding) error {
 	r.creates++
-	return r.chainReadRepo.Create(ctx, chain, binding)
+	return r.chainReadRepo.Create(ctx, chain, bindings...)
 }
 
 type createGateFixture struct {
@@ -87,7 +87,7 @@ func TestCreateSpaceChainGateOnAcceptsCreateWithTheSecret(t *testing.T) {
 		t.Fatalf("status = %d, want 201: %s", rr.Code, rr.Body.String())
 	}
 	body := decodeJSONObject(t, rr.Body.Bytes())
-	assertJSONKeys(t, "POST chain", body, "chain", "chain_api_key", "binding_id", "key_prefix", "key_preview")
+	assertJSONKeys(t, "POST chain", body, "chain", "management_binding", "memory_binding")
 	if f.repo.creates != 1 {
 		t.Fatalf("repository saw %d create calls, want 1", f.repo.creates)
 	}
@@ -211,7 +211,7 @@ func TestCreateSpaceChainGateOffIgnoresTheAuthorizationHeader(t *testing.T) {
 				t.Fatalf("status = %d, want 201: %s", rr.Code, rr.Body.String())
 			}
 			assertJSONKeys(t, "POST chain", decodeJSONObject(t, rr.Body.Bytes()),
-				"chain", "chain_api_key", "binding_id", "key_prefix", "key_preview")
+				"chain", "management_binding", "memory_binding")
 			if f.repo.creates != 1 {
 				t.Fatalf("repository saw %d create calls, want 1", f.repo.creates)
 			}
@@ -302,7 +302,8 @@ func TestCreateSpaceChainGateOnLeavesEveryOtherRouteAlone(t *testing.T) {
 		t.Fatalf("create: status = %d, want 201: %s", created.Code, created.Body.String())
 	}
 	body := decodeJSONObject(t, created.Body.Bytes())
-	chainKey, _ := body["chain_api_key"].(string)
+	management, _ := body["management_binding"].(map[string]any)
+	chainKey, _ := management["chain_api_key"].(string)
 	chain, _ := body["chain"].(map[string]any)
 	chainID, _ := chain["id"].(string)
 	if chainKey == "" || chainID == "" {
