@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -99,8 +100,10 @@ func TestCredentialMappings(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := service.NewTenantService(repo, fixtureProvisioner{fresh}, realPool{db}, logger, "", 0, 0, false, encrypt.NewPlainEncryptor()).WithCredentials(store)
 	chains := repository.NewSpaceChainRepo("tidb", db)
-	tenantMW := middleware.ResolveTenant(repo, realPool{db}, encrypt.NewPlainEncryptor(), nil, middleware.WithCredentials(store))
-	apiMW := middleware.ResolveApiKey(repo, realPool{db}, encrypt.NewPlainEncryptor(), nil, middleware.WithCredentials(store), middleware.WithSpaceChainRepo(chains))
+	authPool := &observedPool{realPool: realPool{db}}
+	authEncryptor := &observedEncryptor{Encryptor: encrypt.NewPlainEncryptor()}
+	tenantMW := middleware.ResolveTenant(repo, authPool, authEncryptor, nil, middleware.WithCredentials(store))
+	apiMW := middleware.ResolveApiKey(repo, authPool, authEncryptor, nil, middleware.WithCredentials(store), middleware.WithSpaceChainRepo(chains))
 	consoleKeys := make(chan string, 10)
 	console := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		consoleKeys <- r.Header.Get("X-API-Key")
@@ -199,19 +202,50 @@ func TestCredentialMappings(t *testing.T) {
 		t.Fatal("Console did not receive the original Chain key")
 	}
 
-	for _, id := range []string{old, fresh} {
-		exec(t, ctx, db, "UPDATE tenants SET status='suspended' WHERE id=?", id)
-		request(t, api, http.MethodGet, "/", id, http.StatusBadRequest)
-		status, err := svc.KeyStatus(ctx, id)
-		must(t, err)
-		if status != domain.KeyStatusInactive {
-			t.Fatal("credential mapping bypassed tenant lifecycle")
+	for _, provider := range []string{tenant.ZeroProvisionerType, tenant.StarterProvisionerType} {
+		for _, id := range []string{old, fresh} {
+			exec(t, ctx, db, "UPDATE tenants SET provider=? WHERE id=?", provider, id)
+			assertAuth(id, id)
+			for _, state := range []struct {
+				status  domain.TenantStatus
+				deleted bool
+			}{
+				{domain.TenantProvisioning, false},
+				{domain.TenantSuspended, false},
+				{domain.TenantDeleted, false},
+				{"unknown", false},
+				{domain.TenantActive, true},
+				{domain.TenantSuspended, true},
+			} {
+				exec(t, ctx, db, "UPDATE tenants SET status=?,deleted_at=IF(?,CURRENT_TIMESTAMP,NULL) WHERE id=?", state.status, state.deleted, id)
+				decrypts, gets := authEncryptor.decrypts.Load(), authPool.gets.Load()
+				request(t, api, http.MethodGet, "/", id, http.StatusBadRequest)
+				if authEncryptor.decrypts.Load() != decrypts || authPool.gets.Load() != gets {
+					t.Fatal("header auth rejection reached credential decryption or the database pool")
+				}
+				if provider == tenant.StarterProvisionerType && !state.deleted {
+					request(t, pathAPI, http.MethodGet, "/"+id, "", http.StatusOK)
+				} else {
+					request(t, pathAPI, http.MethodGet, "/"+id, "", http.StatusForbidden)
+					if authEncryptor.decrypts.Load() != decrypts || authPool.gets.Load() != gets {
+						t.Fatal("path auth rejection reached credential decryption or the database pool")
+					}
+				}
+				status, err := svc.KeyStatus(ctx, id)
+				if state.deleted || state.status == domain.TenantDeleted {
+					if !errors.Is(err, domain.ErrNotFound) {
+						t.Fatal("key status bypassed tenant deletion")
+					}
+				} else {
+					must(t, err)
+					if status != domain.KeyStatusInactive {
+						t.Fatal("key status bypassed tenant lifecycle")
+					}
+				}
+			}
+			exec(t, ctx, db, "UPDATE tenants SET status='active',deleted_at=NULL WHERE id=?", id)
+			assertAuth(id, id)
 		}
-		exec(t, ctx, db, "UPDATE tenants SET deleted_at=CURRENT_TIMESTAMP WHERE id=?", id)
-		if _, err := svc.KeyStatus(ctx, id); !errors.Is(err, domain.ErrNotFound) {
-			t.Fatal("credential mapping bypassed soft deletion")
-		}
-		exec(t, ctx, db, "UPDATE tenants SET status='active',deleted_at=NULL WHERE id=?", id)
 	}
 
 	// Removing the mapping table must fail reads explicitly, not fall through.
@@ -235,6 +269,26 @@ type realPool struct{ db *sql.DB }
 
 func (p realPool) Get(context.Context, string, string) (*sql.DB, error) { return p.db, nil }
 func (p realPool) Backend() string                                      { return "tidb" }
+
+type observedPool struct {
+	realPool
+	gets atomic.Int64
+}
+
+func (p *observedPool) Get(ctx context.Context, id, dsn string) (*sql.DB, error) {
+	p.gets.Add(1)
+	return p.realPool.Get(ctx, id, dsn)
+}
+
+type observedEncryptor struct {
+	encrypt.Encryptor
+	decrypts atomic.Int64
+}
+
+func (e *observedEncryptor) Decrypt(ctx context.Context, ciphertext string) (string, error) {
+	e.decrypts.Add(1)
+	return e.Encryptor.Decrypt(ctx, ciphertext)
+}
 
 type fixtureProvisioner struct{ id string }
 

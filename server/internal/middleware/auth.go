@@ -250,8 +250,8 @@ func ResolveTenant(
 				return
 			}
 
-			// only zero cluster provisioner blocks non-active tenants, starter cluster provisioner allows non-active to used
-			if t.Status != domain.TenantActive && t.Provider != tenant.StarterProvisionerType {
+			// Starter tenants retain their status exemption, but never bypass soft deletion.
+			if t.DeletedAt != nil || (t.Status != domain.TenantActive && t.Provider != tenant.StarterProvisionerType) {
 				writeError(w, http.StatusForbidden, "tenant is not active")
 				return
 			}
