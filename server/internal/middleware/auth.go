@@ -250,7 +250,8 @@ func ResolveTenant(
 				return
 			}
 
-			if t.DeletedAt != nil || t.Status != domain.TenantActive {
+			// Starter tenants retain their status exemption, but never bypass soft deletion.
+			if t.DeletedAt != nil || (t.Status != domain.TenantActive && t.Provider != tenant.StarterProvisionerType) {
 				writeError(w, http.StatusForbidden, "tenant is not active")
 				return
 			}

@@ -220,9 +220,16 @@ func TestCredentialMappings(t *testing.T) {
 				exec(t, ctx, db, "UPDATE tenants SET status=?,deleted_at=IF(?,CURRENT_TIMESTAMP,NULL) WHERE id=?", state.status, state.deleted, id)
 				decrypts, gets := authEncryptor.decrypts.Load(), authPool.gets.Load()
 				request(t, api, http.MethodGet, "/", id, http.StatusBadRequest)
-				request(t, pathAPI, http.MethodGet, "/"+id, "", http.StatusForbidden)
 				if authEncryptor.decrypts.Load() != decrypts || authPool.gets.Load() != gets {
-					t.Fatal("rejected tenant reached credential decryption or the database pool")
+					t.Fatal("header auth rejection reached credential decryption or the database pool")
+				}
+				if provider == tenant.StarterProvisionerType && !state.deleted {
+					request(t, pathAPI, http.MethodGet, "/"+id, "", http.StatusOK)
+				} else {
+					request(t, pathAPI, http.MethodGet, "/"+id, "", http.StatusForbidden)
+					if authEncryptor.decrypts.Load() != decrypts || authPool.gets.Load() != gets {
+						t.Fatal("path auth rejection reached credential decryption or the database pool")
+					}
 				}
 				status, err := svc.KeyStatus(ctx, id)
 				if state.deleted || state.status == domain.TenantDeleted {
