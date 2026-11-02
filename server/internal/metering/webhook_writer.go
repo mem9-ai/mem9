@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 )
 
 type httpDoer interface {
@@ -275,8 +277,8 @@ func (w *webhookWriter) logDeliveryError(item queuedEvent, err error) {
 	w.logger.Warn("metering: webhook delivery failed, dropping event",
 		"category", item.event.Category,
 		"event_type", eventType,
-		"tenant_id", item.event.TenantID,
-		"cluster_id", item.event.ClusterID,
-		"err", err,
+		"tenant_id", logsafe.TenantID(item.event.TenantID),
+		"cluster_id", logsafe.ClusterID(item.event.ClusterID),
+		"err", logsafe.Error(err, item.event.TenantID, item.event.ClusterID, item.event.APIKeySubject),
 	)
 }

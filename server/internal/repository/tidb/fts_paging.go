@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 )
 
 const (
@@ -236,7 +237,7 @@ func runAdaptiveFTSSearch[T any](
 
 func logFTSSearchStats(ctx context.Context, message, resource, clusterID string, duration time.Duration, stats ftsSearchStats) {
 	slog.InfoContext(ctx, message,
-		"cluster_id", clusterID,
+		"cluster_id", logsafe.ClusterID(clusterID),
 		"resource", resource,
 		"requested_results", stats.requested,
 		"candidates", stats.candidates,

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/middleware"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
@@ -149,7 +150,7 @@ func (s *Server) resolveAPIKeyStatus(w http.ResponseWriter, r *http.Request) (ap
 	}
 	logger.InfoContext(r.Context(), "api key status resolved",
 		"auth_mode", "api_key",
-		"cluster_id", statusResult.ClusterID,
+		"cluster_id", logsafe.ClusterID(statusResult.ClusterID),
 		"api_key_status", statusResult.Status,
 	)
 	return apiKeyStatusResolution{Status: statusResult.Status, Auth: auth}, true

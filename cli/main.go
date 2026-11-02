@@ -161,6 +161,46 @@ func buildCurlCommand(method, url string, headers http.Header, body interface{})
 	return strings.Join(parts, " ")
 }
 
+// redactDiagnostic keeps raw and URL-encoded credentials out of stderr.
+func redactDiagnostic(message string, secrets ...string) string {
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		for _, value := range []string{url.QueryEscape(secret), url.PathEscape(secret), secret} {
+			message = strings.ReplaceAll(message, value, "[REDACTED]")
+		}
+	}
+	return message
+}
+
+func (c *Client) logf(format string, args ...any) {
+	fmt.Fprint(os.Stderr, redactDiagnostic(fmt.Sprintf(format, args...), c.tenantID))
+}
+
+func (c *Client) logResponse(status int, body []byte, provisioning bool) {
+	if !c.verbose {
+		return
+	}
+	c.logf("\n<-- %d %s\n", status, http.StatusText(status))
+	if len(body) == 0 {
+		return
+	}
+	var value any
+	diagnostic := string(body)
+	if json.Unmarshal(body, &value) == nil {
+		formatted, _ := json.MarshalIndent(value, "", "  ")
+		diagnostic = string(formatted)
+	}
+	if provisioning {
+		var result ProvisionResponse
+		if json.Unmarshal(body, &result) == nil {
+			diagnostic = redactDiagnostic(diagnostic, result.ID)
+		}
+	}
+	c.logf("%s\n", diagnostic)
+}
+
 func (c *Client) doRequest(method, path string, body interface{}) ([]byte, int, error) {
 	var bodyReader io.Reader
 	if body != nil {
@@ -173,7 +213,7 @@ func (c *Client) doRequest(method, path string, body interface{}) ([]byte, int, 
 
 	req, err := http.NewRequest(method, c.baseURL+path, bodyReader)
 	if err != nil {
-		return nil, 0, fmt.Errorf("create request: %w", err)
+		return nil, 0, fmt.Errorf("create request: %s", redactDiagnostic(err.Error(), c.tenantID))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -183,22 +223,22 @@ func (c *Client) doRequest(method, path string, body interface{}) ([]byte, int, 
 
 	// Always print curl command
 	curlCmd := buildCurlCommand(method, c.baseURL+path, req.Header, body)
-	fmt.Fprintf(os.Stderr, "%s\n", curlCmd)
+	c.logf("%s\n", curlCmd)
 
 	if c.verbose {
-		fmt.Fprintf(os.Stderr, "\n--> %s %s\n", method, c.baseURL+path)
+		c.logf("\n--> %s %s\n", method, c.baseURL+path)
 		for k, v := range req.Header {
-			fmt.Fprintf(os.Stderr, "%s: %s\n", k, strings.Join(v, ", "))
+			c.logf("%s: %s\n", k, strings.Join(v, ", "))
 		}
 		if body != nil {
 			prettyBody, _ := json.MarshalIndent(body, "", "  ")
-			fmt.Fprintf(os.Stderr, "\n%s\n", string(prettyBody))
+			c.logf("\n%s\n", string(prettyBody))
 		}
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("do request: %w", err)
+		return nil, 0, fmt.Errorf("do request: %s", redactDiagnostic(err.Error(), c.tenantID))
 	}
 	defer resp.Body.Close()
 
@@ -207,18 +247,7 @@ func (c *Client) doRequest(method, path string, body interface{}) ([]byte, int, 
 		return nil, resp.StatusCode, fmt.Errorf("read response: %w", err)
 	}
 
-	if c.verbose {
-		fmt.Fprintf(os.Stderr, "\n<-- %d %s\n", resp.StatusCode, http.StatusText(resp.StatusCode))
-		if len(respBody) > 0 {
-			var prettyResp interface{}
-			if json.Unmarshal(respBody, &prettyResp) == nil {
-				formatted, _ := json.MarshalIndent(prettyResp, "", "  ")
-				fmt.Fprintf(os.Stderr, "%s\n", string(formatted))
-			} else {
-				fmt.Fprintf(os.Stderr, "%s\n", string(respBody))
-			}
-		}
-	}
+	c.logResponse(resp.StatusCode, respBody, path == "/v1alpha1/mem9s")
 
 	return respBody, resp.StatusCode, nil
 }
@@ -256,7 +285,7 @@ func (c *Client) doMultipart(path string, fields map[string]string, filePath str
 
 	req, err := http.NewRequest("POST", c.baseURL+path, &buf)
 	if err != nil {
-		return nil, 0, fmt.Errorf("create request: %w", err)
+		return nil, 0, fmt.Errorf("create request: %s", redactDiagnostic(err.Error(), c.tenantID))
 	}
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -265,17 +294,17 @@ func (c *Client) doMultipart(path string, fields map[string]string, filePath str
 	}
 
 	if c.verbose {
-		fmt.Fprintf(os.Stderr, "\n--> POST %s (multipart)\n", c.baseURL+path)
+		c.logf("\n--> POST %s (multipart)\n", c.baseURL+path)
 		for k, v := range req.Header {
-			fmt.Fprintf(os.Stderr, "%s: %s\n", k, strings.Join(v, ", "))
+			c.logf("%s: %s\n", k, strings.Join(v, ", "))
 		}
-		fmt.Fprintf(os.Stderr, "\nForm fields: %v\n", fields)
-		fmt.Fprintf(os.Stderr, "File: %s\n", filePath)
+		c.logf("\nForm fields: %v\n", fields)
+		c.logf("File: %s\n", filePath)
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("do request: %w", err)
+		return nil, 0, fmt.Errorf("do request: %s", redactDiagnostic(err.Error(), c.tenantID))
 	}
 	defer resp.Body.Close()
 
@@ -284,18 +313,7 @@ func (c *Client) doMultipart(path string, fields map[string]string, filePath str
 		return nil, resp.StatusCode, fmt.Errorf("read response: %w", err)
 	}
 
-	if c.verbose {
-		fmt.Fprintf(os.Stderr, "\n<-- %d %s\n", resp.StatusCode, http.StatusText(resp.StatusCode))
-		if len(respBody) > 0 {
-			var prettyResp interface{}
-			if json.Unmarshal(respBody, &prettyResp) == nil {
-				formatted, _ := json.MarshalIndent(prettyResp, "", "  ")
-				fmt.Fprintf(os.Stderr, "%s\n", string(formatted))
-			} else {
-				fmt.Fprintf(os.Stderr, "%s\n", string(respBody))
-			}
-		}
-	}
+	c.logResponse(resp.StatusCode, respBody, false)
 	return respBody, resp.StatusCode, nil
 }
 
@@ -307,7 +325,7 @@ func (c *Client) Provision() (*ProvisionResponse, error) {
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var resp ProvisionResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -332,7 +350,7 @@ func (c *Client) CreateMemory(content string, tags []string, metadata map[string
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var resp any
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -381,7 +399,7 @@ func (c *Client) SearchMemories(query, tags, source, state, memoryType, agentIDF
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var resp ListResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -396,7 +414,7 @@ func (c *Client) GetMemory(id string) (*Memory, error) {
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var mem Memory
 	if err := json.Unmarshal(body, &mem); err != nil {
@@ -422,7 +440,7 @@ func (c *Client) UpdateMemory(id, content string, tags []string, metadata map[st
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var mem Memory
 	if err := json.Unmarshal(body, &mem); err != nil {
@@ -437,7 +455,7 @@ func (c *Client) DeleteMemory(id string) error {
 		return err
 	}
 	if status >= 400 {
-		return parseError(body, status)
+		return c.parseError(body, status)
 	}
 	return nil
 }
@@ -451,7 +469,7 @@ func (c *Client) BulkCreate(memories []map[string]interface{}) (*BulkResponse, e
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var resp BulkResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -478,7 +496,7 @@ func (c *Client) Ingest(messages []map[string]string, sessionID, agentIDOverride
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var resp IngestResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -497,7 +515,7 @@ func (c *Client) Bootstrap(limit int) (*BootstrapResponse, error) {
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var listResp ListResponse
 	if err := json.Unmarshal(body, &listResp); err != nil {
@@ -534,7 +552,7 @@ func (c *Client) CreateTask(filePath, agentIDOverride, sessionID, fileType strin
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var resp TaskResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -549,7 +567,7 @@ func (c *Client) ListTasks() (*TaskListResponse, error) {
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var resp TaskListResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -564,7 +582,7 @@ func (c *Client) GetTask(id string) (*TaskDetail, error) {
 		return nil, err
 	}
 	if status >= 400 {
-		return nil, parseError(body, status)
+		return nil, c.parseError(body, status)
 	}
 	var resp TaskDetail
 	if err := json.Unmarshal(body, &resp); err != nil {
@@ -573,12 +591,12 @@ func (c *Client) GetTask(id string) (*TaskDetail, error) {
 	return &resp, nil
 }
 
-func parseError(body []byte, status int) error {
+func (c *Client) parseError(body []byte, status int) error {
 	var errResp ErrorResponse
 	if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error != "" {
-		return fmt.Errorf("HTTP %d: %s", status, errResp.Error)
+		return fmt.Errorf("HTTP %d: %s", status, redactDiagnostic(errResp.Error, c.tenantID))
 	}
-	return fmt.Errorf("HTTP %d: %s", status, string(body))
+	return fmt.Errorf("HTTP %d: %s", status, redactDiagnostic(string(body), c.tenantID))
 }
 
 // --- Pretty Print ---
@@ -646,7 +664,7 @@ func provisionCmd() *cobra.Command {
 				return err
 			}
 			printJSON(resp)
-			fmt.Fprintf(os.Stderr, "\n✓ Tenant provisioned. Set MNEMO_TENANT_ID=%s\n", resp.ID)
+			fmt.Fprintln(os.Stderr, "\n✓ Tenant provisioned. Save the id from the JSON output as MNEMO_TENANT_ID.")
 			return nil
 		},
 	}

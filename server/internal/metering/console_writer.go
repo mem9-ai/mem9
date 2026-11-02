@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 )
 
@@ -133,10 +134,10 @@ func (w *consoleRuntimeWriter) Record(evt Event) {
 		if err := w.cfg.Store.UpsertMeteringPending(ctx, item.evt, item.payloadJSON, item.payloadHash); err != nil {
 			w.logger.Error("metering: runtime usage service event outbox upsert failed",
 				"operation_id", evt.OperationID,
-				"tenant_id", evt.TenantID,
-				"cluster_id", evt.ClusterID,
+				"tenant_id", logsafe.TenantID(evt.TenantID),
+				"cluster_id", logsafe.ClusterID(evt.ClusterID),
 				"payload_hash", item.payloadHash,
-				"err", err,
+				"err", logsafe.Error(err, evt.TenantID, evt.ClusterID, evt.APIKeySubject),
 			)
 			return
 		}
@@ -452,8 +453,8 @@ func (w *consoleRuntimeWriter) markTerminalFailed(item consoleQueuedEvent, reaso
 	}
 	w.logger.Error("metering: runtime usage service event terminal failed",
 		"operation_id", item.evt.OperationID,
-		"tenant_id", item.evt.TenantID,
-		"cluster_id", item.evt.ClusterID,
+		"tenant_id", logsafe.TenantID(item.evt.TenantID),
+		"cluster_id", logsafe.ClusterID(item.evt.ClusterID),
 		"payload_hash", item.payloadHash,
 		"reason", reason,
 	)
@@ -467,10 +468,10 @@ func (w *consoleRuntimeWriter) markRetryableFailure(item consoleQueuedEvent, err
 	}
 	w.logger.Warn("metering: runtime usage service delivery failed, will retry from outbox",
 		"operation_id", item.evt.OperationID,
-		"tenant_id", item.evt.TenantID,
-		"cluster_id", item.evt.ClusterID,
+		"tenant_id", logsafe.TenantID(item.evt.TenantID),
+		"cluster_id", logsafe.ClusterID(item.evt.ClusterID),
 		"payload_hash", item.payloadHash,
-		"err", err,
+		"err", logsafe.Error(err, item.evt.TenantID, item.evt.ClusterID, item.evt.APIKeySubject),
 	)
 }
 
@@ -483,9 +484,9 @@ func (w *consoleRuntimeWriter) logInvalidEvent(evt Event, err error) {
 	}
 	w.logger.Error("metering: invalid runtime usage service event",
 		"operation_id", evt.OperationID,
-		"tenant_id", evt.TenantID,
-		"cluster_id", evt.ClusterID,
-		"err", err,
+		"tenant_id", logsafe.TenantID(evt.TenantID),
+		"cluster_id", logsafe.ClusterID(evt.ClusterID),
+		"err", logsafe.Error(err, evt.TenantID, evt.ClusterID, evt.APIKeySubject),
 	)
 }
 

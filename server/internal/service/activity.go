@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 )
@@ -58,7 +59,7 @@ func (t *ActivityTracker) recordMemoryActivity(tenantID string, at time.Time, re
 	defer cancel()
 
 	if err := t.tenants.TouchActivity(ctx, tenantID, at); err != nil {
-		t.logger.Warn("record tenant activity failed", "tenant_id", tenantID, "err", err)
+		t.logger.Warn("record tenant activity failed", "tenant_id", logsafe.TenantID(tenantID), "err", logsafe.Error(err, tenantID))
 		return
 	}
 
@@ -83,7 +84,7 @@ func (t *ActivityTracker) RecordMemoryStats(_ context.Context, tenantID string, 
 	defer cancel()
 
 	if err := t.tenants.UpsertMemoryStats(callCtx, tenantID, activityAt, total, last7d, observedAt); err != nil {
-		t.logger.Warn("record tenant memory stats failed", "tenant_id", tenantID, "err", err)
+		t.logger.Warn("record tenant memory stats failed", "tenant_id", logsafe.TenantID(tenantID), "err", logsafe.Error(err, tenantID))
 		return
 	}
 

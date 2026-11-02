@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 )
 
 var searchInferenceStatusPattern = regexp.MustCompile(
@@ -58,7 +60,7 @@ func logSearchResultError(
 func searchErrorLogAttrs(resource, queryType, clusterID string, duration time.Duration, err error) []slog.Attr {
 	details := classifySearchError(err)
 	attrs := []slog.Attr{
-		slog.String("cluster_id", clusterID),
+		slog.String("cluster_id", logsafe.ClusterID(clusterID)),
 		slog.String("resource", resource),
 		slog.String("query_type", queryType),
 		slog.String("error_role", "dependency_attempt"),
@@ -73,7 +75,7 @@ func searchErrorLogAttrs(resource, queryType, clusterID string, duration time.Du
 	if details.upstreamStatus != 0 {
 		attrs = append(attrs, slog.Int("upstream_status", details.upstreamStatus))
 	}
-	return append(attrs, slog.Any("err", err))
+	return append(attrs, slog.Any("err", logsafe.Error(err, clusterID)))
 }
 
 func classifySearchError(err error) searchErrorDetails {

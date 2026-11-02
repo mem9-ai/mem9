@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metering"
 )
 
@@ -53,9 +54,9 @@ func (s *Server) recordIngestMetering(auth *domain.AuthInfo, svc resolvedSvc) {
 			logger = slog.Default()
 		}
 		logger.Warn("ingest metering skipped: count stats failed",
-			"tenant_id", auth.TenantID,
-			"cluster_id", auth.ClusterID,
-			"err", err,
+			"tenant_id", logsafe.TenantID(auth.TenantID),
+			"cluster_id", logsafe.ClusterID(auth.ClusterID),
+			"err", logsafe.Error(err, auth.TenantID, auth.ClusterID),
 		)
 		return
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 )
@@ -136,8 +137,8 @@ func resolveSpaceChainAuthNodes(
 				slog.ErrorContext(groupCtx, "space chain node tenant unavailable",
 					"chain_id", chainID,
 					"node_position", node.Position,
-					"tenant_id", node.TenantID,
-					"err", err)
+					"tenant_id", logsafe.TenantID(node.TenantID),
+					"err", logsafe.Error(err, node.TenantID))
 				return &authResolutionError{
 					status:  http.StatusServiceUnavailable,
 					message: "chain node tenant unavailable",
@@ -163,11 +164,11 @@ func resolveSpaceChainAuthNodes(
 				slog.ErrorContext(groupCtx, "cannot connect to space chain node database",
 					"chain_id", chainID,
 					"node_position", node.Position,
-					"tenant_id", t.ID,
-					"cluster_id", t.ClusterID,
+					"tenant_id", logsafe.TenantID(t.ID),
+					"cluster_id", logsafe.ClusterID(t.ClusterID),
 					"duration_ms", poolDuration.Milliseconds(),
 					"classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err),
-					"err", err)
+					"err", logsafe.Error(err, t.ID, t.ClusterID))
 				switch {
 				case errors.Is(err, domain.ErrSchemaIncompatible):
 					return &authResolutionError{
@@ -288,28 +289,28 @@ func ResolveTenant(
 							currentLimit, err := adjuster.GetSpendLimit(ctx, cid)
 							if err != nil {
 								slog.ErrorContext(ctx, "auto spend limit: get current limit failed",
-									"cluster_id", cid, "err", err)
+									"cluster_id", logsafe.ClusterID(cid), "err", logsafe.Error(err, cid))
 								return
 							}
 							newLimit := min(currentLimit+cfg.Increment, cfg.Max)
 							if newLimit <= currentLimit {
 								slog.InfoContext(ctx, "auto spend limit: already at max cap",
-									"cluster_id", cid, "current", currentLimit, "max", cfg.Max)
+									"cluster_id", logsafe.ClusterID(cid), "current", currentLimit, "max", cfg.Max)
 								return
 							}
 							if err := adjuster.IncreaseSpendLimit(ctx, cid, newLimit); err != nil {
 								slog.ErrorContext(ctx, "auto spend limit: PATCH failed",
-									"cluster_id", cid, "from_amount", currentLimit, "to_amount", newLimit, "err", err)
+									"cluster_id", logsafe.ClusterID(cid), "from_amount", currentLimit, "to_amount", newLimit, "err", logsafe.Error(err, cid))
 								return
 							}
 							succeeded = true
 							cool.RecordSuccess(cid)
 							slog.InfoContext(ctx, "auto spend limit: increased",
-								"cluster_id", cid, "from_amount", currentLimit, "to_amount", newLimit)
+								"cluster_id", logsafe.ClusterID(cid), "from_amount", currentLimit, "to_amount", newLimit)
 						}()
 					}
 				}
-				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", logsafe.ClusterID(t.ClusterID), "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", logsafe.Error(err, t.ClusterID))
 				if errors.Is(err, domain.ErrSchemaIncompatible) {
 					writeError(w, http.StatusConflict, err.Error())
 					return
@@ -323,7 +324,7 @@ func ResolveTenant(
 			}
 			slog.InfoContext(r.Context(), "tenant auth resolved",
 				"auth_mode", "path_tenant",
-				"cluster_id", t.ClusterID,
+				"cluster_id", logsafe.ClusterID(t.ClusterID),
 				"tenant_lookup_ms", lookupDuration.Milliseconds(),
 				"decrypt_ms", decryptDuration.Milliseconds(),
 				"pool_get_ms", poolDuration.Milliseconds(),
@@ -484,28 +485,28 @@ func ResolveApiKey(
 							currentLimit, err := adjuster.GetSpendLimit(ctx, cid)
 							if err != nil {
 								slog.ErrorContext(ctx, "auto spend limit: get current limit failed",
-									"cluster_id", cid, "err", err)
+									"cluster_id", logsafe.ClusterID(cid), "err", logsafe.Error(err, cid))
 								return
 							}
 							newLimit := min(currentLimit+cfg.Increment, cfg.Max)
 							if newLimit <= currentLimit {
 								slog.InfoContext(ctx, "auto spend limit: already at max cap",
-									"cluster_id", cid, "current", currentLimit, "max", cfg.Max)
+									"cluster_id", logsafe.ClusterID(cid), "current", currentLimit, "max", cfg.Max)
 								return
 							}
 							if err := adjuster.IncreaseSpendLimit(ctx, cid, newLimit); err != nil {
 								slog.ErrorContext(ctx, "auto spend limit: PATCH failed",
-									"cluster_id", cid, "from_amount", currentLimit, "to_amount", newLimit, "err", err)
+									"cluster_id", logsafe.ClusterID(cid), "from_amount", currentLimit, "to_amount", newLimit, "err", logsafe.Error(err, cid))
 								return
 							}
 							succeeded = true
 							cool.RecordSuccess(cid)
 							slog.InfoContext(ctx, "auto spend limit: increased",
-								"cluster_id", cid, "from_amount", currentLimit, "to_amount", newLimit)
+								"cluster_id", logsafe.ClusterID(cid), "from_amount", currentLimit, "to_amount", newLimit)
 						}()
 					}
 				}
-				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", t.ClusterID, "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", err)
+				slog.ErrorContext(r.Context(), "cannot connect to tenant database", "cluster_id", logsafe.ClusterID(t.ClusterID), "duration_ms", poolDuration.Milliseconds(), "classified_reason", classifyConnError(clusterBlacklist, t.ClusterID, err), "err", logsafe.Error(err, t.ClusterID))
 				if errors.Is(err, domain.ErrSchemaIncompatible) {
 					writeError(w, http.StatusConflict, err.Error())
 					return
@@ -519,7 +520,7 @@ func ResolveApiKey(
 			}
 			slog.InfoContext(r.Context(), "tenant auth resolved",
 				"auth_mode", "api_key",
-				"cluster_id", t.ClusterID,
+				"cluster_id", logsafe.ClusterID(t.ClusterID),
 				"tenant_lookup_ms", lookupDuration.Milliseconds(),
 				"decrypt_ms", decryptDuration.Milliseconds(),
 				"pool_get_ms", poolDuration.Milliseconds(),
