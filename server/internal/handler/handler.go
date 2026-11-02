@@ -21,6 +21,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/middleware"
@@ -212,9 +213,9 @@ func (s *Server) ensureTenantRuntimeSchema(auth *domain.AuthInfo) bool {
 			logger = slog.Default()
 		}
 		logger.Warn("runtime schema ensure failed",
-			"cluster_id", auth.ClusterID,
-			"tenant", auth.TenantID,
-			"err", err)
+			"cluster_id", logsafe.ClusterID(auth.ClusterID),
+			"tenant", logsafe.TenantID(auth.TenantID),
+			"err", logsafe.Error(err, auth.TenantID, auth.ClusterID, auth.APIKeySubject))
 		return false
 	}
 	return true
@@ -354,6 +355,10 @@ func respondError(w http.ResponseWriter, status int, msg string) error {
 
 // handleError maps domain errors to HTTP status codes.
 func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err error) error {
+	var diagnosticError any = err
+	if auth := middleware.AuthFromContext(ctx); auth != nil {
+		diagnosticError = logsafe.Error(err, auth.TenantID, auth.ClusterID, auth.APIKeySubject)
+	}
 	var budgetErr *memoryListBudgetExceededError
 	var sizeErr *http.MaxBytesError
 	switch {
@@ -366,10 +371,10 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 			"error_source", "server_budget",
 			"retryable", true,
 			"http_status", http.StatusGatewayTimeout,
-			"err", err,
+			"err", diagnosticError,
 		}
 		if auth := middleware.AuthFromContext(ctx); auth != nil && auth.ClusterID != "" {
-			attrs = append(attrs, "cluster_id", auth.ClusterID)
+			attrs = append(attrs, "cluster_id", logsafe.ClusterID(auth.ClusterID))
 		}
 		s.logger.ErrorContext(ctx, "request deadline exceeded", attrs...)
 		return respond(w, http.StatusGatewayTimeout, recallServerDeadlinePayload())
@@ -414,7 +419,7 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 			slog.String("error_class", classification.class),
 			slog.String("error_source", classification.source),
 			slog.Bool("retryable", classification.retryable),
-			slog.Any("err", err),
+			slog.Any("err", diagnosticError),
 		}
 		if classification.dbErrorCode != 0 {
 			attrs = append(attrs, slog.Uint64("db_error_code", uint64(classification.dbErrorCode)))
@@ -426,7 +431,7 @@ func (s *Server) handleError(ctx context.Context, w http.ResponseWriter, err err
 			attrs = append(attrs, slog.Int("http_status", statusClientClosedRequest))
 		}
 		if auth := middleware.AuthFromContext(ctx); auth != nil && auth.ClusterID != "" {
-			attrs = append(attrs, slog.String("cluster_id", auth.ClusterID))
+			attrs = append(attrs, slog.String("cluster_id", logsafe.ClusterID(auth.ClusterID)))
 		}
 		s.logger.LogAttrs(ctx, logLevel, logMessage, attrs...)
 		return respondError(w, status, responseMessage)
@@ -490,7 +495,7 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 			// Use route pattern to avoid exposing sensitive path params (e.g. tenantID).
 			routeCtx := chi.RouteContext(r.Context())
-			path := r.URL.Path
+			path := "unmatched"
 			if routeCtx != nil {
 				if pattern := routeCtx.RoutePattern(); pattern != "" {
 					path = pattern

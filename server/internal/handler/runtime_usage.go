@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
 
@@ -248,10 +249,10 @@ func (s *Server) logRuntimeUsageError(ctx context.Context, err error, details ru
 		"stage", details.stage,
 		statusField, status,
 		"retryable", retryable,
-		"err", err,
+		"err", logsafe.Error(err, details.clusterID),
 	}
 	if details.clusterID != "" {
-		attrs = append(attrs, "cluster_id", details.clusterID)
+		attrs = append(attrs, "cluster_id", logsafe.ClusterID(details.clusterID))
 	}
 	if details.meter != "" {
 		attrs = append(attrs, "meter", details.meter)

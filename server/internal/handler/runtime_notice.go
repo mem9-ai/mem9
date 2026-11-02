@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 )
 
@@ -51,9 +52,9 @@ func (s *Server) runtimeResponseNotice(ctx context.Context, auth *domain.AuthInf
 			logger = slog.Default()
 		}
 		logger.WarnContext(ctx, "runtime state response notice omitted",
-			"tenant_id", authTenantID(auth),
-			"cluster_id", authClusterID(auth),
-			"err", err,
+			"tenant_id", logsafe.TenantID(authTenantID(auth)),
+			"cluster_id", logsafe.ClusterID(authClusterID(auth)),
+			"err", logsafe.Error(err, authTenantID(auth), authClusterID(auth)),
 		)
 		return runtimeResponseNotice{}
 	}

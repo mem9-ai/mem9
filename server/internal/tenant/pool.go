@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
+
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 )
 
 var sqlOpen = sql.Open
@@ -108,9 +110,9 @@ func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql
 			return conn.db, nil
 		} else {
 			slog.ErrorContext(ctx, "tenant pool cached ping failed",
-				"tenant_id", tenantID,
+				"tenant_id", logsafe.TenantID(tenantID),
 				"duration_ms", time.Since(pingStart).Milliseconds(),
-				"err", err,
+				"err", logsafe.Error(err, tenantID),
 			)
 			p.removeIfMatch(tenantID, conn)
 		}
@@ -122,9 +124,9 @@ func (p *TenantPool) Get(ctx context.Context, tenantID string, dsn string) (*sql
 		db, err := p.openTenantDB(tenantID, dsn)
 		if err != nil {
 			slog.ErrorContext(ctx, "tenant pool open failed",
-				"tenant_id", tenantID,
+				"tenant_id", logsafe.TenantID(tenantID),
 				"duration_ms", time.Since(openStart).Milliseconds(),
-				"err", err,
+				"err", logsafe.Error(err, tenantID),
 			)
 		}
 		return db, err

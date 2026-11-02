@@ -507,8 +507,8 @@ func TestProvision_LogsUTMOnSuccess(t *testing.T) {
 	if complete["request_id"] != "req-success" {
 		t.Fatalf("complete request_id = %v, want req-success", complete["request_id"])
 	}
-	if complete["tenant_id"] != "tenant-utm-success" {
-		t.Fatalf("complete tenant_id = %v, want tenant-utm-success", complete["tenant_id"])
+	if complete["tenant_id"] != "sha256:21573f2d76a54c41f7f8aa97" {
+		t.Fatalf("complete tenant_id = %v, want redacted tenant fingerprint", complete["tenant_id"])
 	}
 	completeUTM, ok := complete["utm"].(map[string]any)
 	if !ok {
@@ -561,8 +561,8 @@ func TestProvision_LogsUTMOnFailure(t *testing.T) {
 	if failure["request_id"] != "req-failure" {
 		t.Fatalf("failure request_id = %v, want req-failure", failure["request_id"])
 	}
-	if failure["tenant_id"] != "tenant-utm-failure" {
-		t.Fatalf("failure tenant_id = %v, want tenant-utm-failure", failure["tenant_id"])
+	if failure["tenant_id"] != "sha256:6d113338d7291d907c1cfd00" {
+		t.Fatalf("failure tenant_id = %v, want redacted tenant fingerprint", failure["tenant_id"])
 	}
 	failureUTM, ok := failure["utm"].(map[string]any)
 	if !ok {

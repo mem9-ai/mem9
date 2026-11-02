@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 )
@@ -116,9 +118,9 @@ func (m *manager) RuntimeState(ctx context.Context, subject Subject) (RuntimeSta
 	state, err := m.runtimeStateProvider(ctx, subject)
 	if err != nil {
 		m.logger.WarnContext(ctx, "runtime usage state provider unavailable",
-			"tenant_id", subject.TenantID,
-			"cluster_id", subject.ClusterID,
-			"err", err,
+			"tenant_id", logsafe.TenantID(subject.TenantID),
+			"cluster_id", logsafe.ClusterID(subject.ClusterID),
+			"err", logsafe.Error(err, subject.TenantID, subject.ClusterID, subject.APIKeySubject),
 		)
 		return RuntimeStateProviderUnavailable(subject.APIKeyStatus), nil
 	}
@@ -316,10 +318,10 @@ func (m *manager) reserve(ctx context.Context, subject Subject, meter string, un
 	if m.cfg.FailOpen {
 		m.logger.WarnContext(ctx, "runtime usage reserve failed open",
 			"operation_id", operationID,
-			"tenant_id", subject.TenantID,
-			"cluster_id", subject.ClusterID,
+			"tenant_id", logsafe.TenantID(subject.TenantID),
+			"cluster_id", logsafe.ClusterID(subject.ClusterID),
 			"meter", meter,
-			"err", err,
+			"err", logsafe.Error(err, subject.TenantID, subject.ClusterID, subject.APIKeySubject),
 		)
 		lease.Reserved = false
 		return lease, nil
@@ -367,9 +369,9 @@ func (m *manager) release(ctx context.Context, lease *OperationLease, reason str
 		if err := m.outbox.StoreReleasePending(ctx, lease, reason); err != nil {
 			m.logger.WarnContext(ctx, "runtime usage release pending outbox failed",
 				"operation_id", lease.OperationID,
-				"tenant_id", lease.Subject.TenantID,
-				"cluster_id", lease.Subject.ClusterID,
-				"err", err,
+				"tenant_id", logsafe.TenantID(lease.Subject.TenantID),
+				"cluster_id", logsafe.ClusterID(lease.Subject.ClusterID),
+				"err", logsafe.Error(err, lease.Subject.TenantID, lease.Subject.ClusterID, lease.Subject.APIKeySubject),
 			)
 		}
 		if detail != "" && detail != reason {
@@ -380,9 +382,9 @@ func (m *manager) release(ctx context.Context, lease *OperationLease, reason str
 		m.markRetryable(ctx, lease.OperationID, err)
 		m.logger.WarnContext(ctx, "runtime usage release failed",
 			"operation_id", lease.OperationID,
-			"tenant_id", lease.Subject.TenantID,
-			"cluster_id", lease.Subject.ClusterID,
-			"err", err,
+			"tenant_id", logsafe.TenantID(lease.Subject.TenantID),
+			"cluster_id", logsafe.ClusterID(lease.Subject.ClusterID),
+			"err", logsafe.Error(err, lease.Subject.TenantID, lease.Subject.ClusterID, lease.Subject.APIKeySubject),
 		)
 		return
 	}
@@ -390,9 +392,9 @@ func (m *manager) release(ctx context.Context, lease *OperationLease, reason str
 		if err := m.outbox.MarkOperationDone(ctx, lease.OperationID, "reservationReleased"); err != nil {
 			m.logger.WarnContext(ctx, "runtime usage release done outbox failed",
 				"operation_id", lease.OperationID,
-				"tenant_id", lease.Subject.TenantID,
-				"cluster_id", lease.Subject.ClusterID,
-				"err", err,
+				"tenant_id", logsafe.TenantID(lease.Subject.TenantID),
+				"cluster_id", logsafe.ClusterID(lease.Subject.ClusterID),
+				"err", logsafe.Error(err, lease.Subject.TenantID, lease.Subject.ClusterID, lease.Subject.APIKeySubject),
 			)
 		}
 	}
@@ -436,10 +438,10 @@ func (m *manager) commitReservationWithoutOutbox(ctx context.Context, lease *Ope
 		metrics.RuntimeUsageManualReconciliationTotal.WithLabelValues("commit_after_outbox_failed").Inc()
 		m.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage commit failed after outbox failure",
 			"operation_id", lease.OperationID,
-			"tenant_id", lease.Subject.TenantID,
-			"cluster_id", lease.Subject.ClusterID,
-			"outbox_err", outboxErr,
-			"err", err,
+			"tenant_id", logsafe.TenantID(lease.Subject.TenantID),
+			"cluster_id", logsafe.ClusterID(lease.Subject.ClusterID),
+			"outbox_err", logsafe.Error(outboxErr, lease.Subject.TenantID, lease.Subject.ClusterID, lease.Subject.APIKeySubject),
+			"err", logsafe.Error(err, lease.Subject.TenantID, lease.Subject.ClusterID, lease.Subject.APIKeySubject),
 		)
 		return fmt.Errorf("runtime usage commit not durable: outbox: %v; finalize: %w", outboxErr, err)
 	}
@@ -455,9 +457,9 @@ func (m *manager) markDoneBestEffort(ctx context.Context, lease *OperationLease,
 	if err := m.outbox.MarkOperationDone(ctx, lease.OperationID, reason); err != nil {
 		m.logger.WarnContext(ctx, "runtime usage outbox done update failed after direct finalization",
 			"operation_id", lease.OperationID,
-			"tenant_id", lease.Subject.TenantID,
-			"cluster_id", lease.Subject.ClusterID,
-			"err", err,
+			"tenant_id", logsafe.TenantID(lease.Subject.TenantID),
+			"cluster_id", logsafe.ClusterID(lease.Subject.ClusterID),
+			"err", logsafe.Error(err, lease.Subject.TenantID, lease.Subject.ClusterID, lease.Subject.APIKeySubject),
 		)
 	}
 }
@@ -470,9 +472,9 @@ func (m *manager) storeCommitPending(ctx context.Context, lease *OperationLease,
 		metrics.RuntimeUsageManualReconciliationTotal.WithLabelValues("commit_pending_outbox_failed").Inc()
 		m.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage commit pending outbox failed",
 			"operation_id", lease.OperationID,
-			"tenant_id", lease.Subject.TenantID,
-			"cluster_id", lease.Subject.ClusterID,
-			"err", err,
+			"tenant_id", logsafe.TenantID(lease.Subject.TenantID),
+			"cluster_id", logsafe.ClusterID(lease.Subject.ClusterID),
+			"err", logsafe.Error(err, lease.Subject.TenantID, lease.Subject.ClusterID, lease.Subject.APIKeySubject),
 		)
 		return err
 	}

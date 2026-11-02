@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	internaltenant "github.com/qiffang/mnemos/server/internal/tenant"
 )
 
@@ -56,7 +58,7 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 	stmt, err := tx.PrepareContext(ctx, stmtSQL)
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
-			slog.Debug("sessions table not yet ready, skipping raw save", "cluster_id", r.clusterID)
+			slog.Debug("sessions table not yet ready, skipping raw save", "cluster_id", logsafe.ClusterID(r.clusterID))
 			return nil
 		}
 		return fmt.Errorf("sessions bulk create prepare: %w", err)
@@ -81,7 +83,7 @@ func (r *SessionRepo) BulkCreate(ctx context.Context, sessions []*domain.Session
 		if execErr != nil {
 			var mysqlErr *mysql.MySQLError
 			if errors.As(execErr, &mysqlErr) && mysqlErr.Number == 1146 {
-				slog.Debug("sessions table not yet ready, skipping raw save", "cluster_id", r.clusterID)
+				slog.Debug("sessions table not yet ready, skipping raw save", "cluster_id", logsafe.ClusterID(r.clusterID))
 				return nil
 			}
 			return fmt.Errorf("sessions bulk insert: %w", execErr)
@@ -264,7 +266,7 @@ func (r *SessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, 0, nil
 		}
-		slog.ErrorContext(ctx, "list session memories: count failed", "cluster_id", r.clusterID, "err", err)
+		slog.ErrorContext(ctx, "list session memories: count failed", "cluster_id", logsafe.ClusterID(r.clusterID), "err", logsafe.Error(err, r.clusterID))
 		return nil, 0, fmt.Errorf("count session memories: %w", err)
 	}
 
@@ -288,7 +290,7 @@ func (r *SessionRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, 0, nil
 		}
-		slog.ErrorContext(ctx, "list session memories: query failed", "cluster_id", r.clusterID, "err", err)
+		slog.ErrorContext(ctx, "list session memories: query failed", "cluster_id", logsafe.ClusterID(r.clusterID), "err", logsafe.Error(err, r.clusterID))
 		return nil, 0, fmt.Errorf("list session memories: %w", err)
 	}
 	defer rows.Close()
@@ -343,7 +345,7 @@ func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f doma
 			return nil, domain.ErrAutoVectorSearchSkipped
 		}
 		logSearchError(ctx, "sessions auto vector search failed", "session", "auto_vector", r.clusterID, time.Since(start), err)
-		return nil, fmt.Errorf("sessions auto vector search: cluster_id=%s: %w", r.clusterID, err)
+		return nil, fmt.Errorf("sessions auto vector search: cluster_id=%s: %w", logsafe.ClusterID(r.clusterID), err)
 	}
 	defer rows.Close()
 	defer logSearchResultError(ctx, "sessions auto vector search failed", "session", "auto_vector", r.clusterID, start, &resultErr)
@@ -351,7 +353,7 @@ func (r *SessionRepo) AutoVectorSearch(ctx context.Context, query string, f doma
 	if err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "sessions auto vector search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	slog.DebugContext(ctx, "sessions auto vector search done", "cluster_id", logsafe.ClusterID(r.clusterID), "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
 	return memories, nil
 }
 
@@ -392,7 +394,7 @@ func (r *SessionRepo) VectorSearch(ctx context.Context, queryVec []float32, f do
 	if err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "sessions vector search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	slog.DebugContext(ctx, "sessions vector search done", "cluster_id", logsafe.ClusterID(r.clusterID), "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
 	return memories, nil
 }
 
@@ -404,14 +406,14 @@ func (r *SessionRepo) FTSSearch(ctx context.Context, query string, f domain.Memo
 	}
 	logFTSSearchStats(ctx, "sessions fts search done", "session", r.clusterID, time.Since(start), stats)
 	if errors.Is(err, domain.ErrFTSSearchTruncated) {
-		return memories, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
+		return memories, fmt.Errorf("sessions fts search: cluster_id=%s: %w", logsafe.ClusterID(r.clusterID), err)
 	}
 	if err != nil {
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
 		logSearchError(ctx, "sessions fts search failed", "session", "fts", r.clusterID, time.Since(start), err)
-		return nil, fmt.Errorf("sessions fts search: cluster_id=%s: %w", r.clusterID, err)
+		return nil, fmt.Errorf("sessions fts search: cluster_id=%s: %w", logsafe.ClusterID(r.clusterID), err)
 	}
 	return memories, nil
 }
@@ -549,7 +551,7 @@ func (r *SessionRepo) KeywordSearch(ctx context.Context, query string, f domain.
 	if err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "sessions keyword search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	slog.DebugContext(ctx, "sessions keyword search done", "cluster_id", logsafe.ClusterID(r.clusterID), "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
 	return memories, nil
 }
 
@@ -669,7 +671,7 @@ func (r *SessionRepo) ListBySessionIDs(ctx context.Context, sessionIDs []string,
 		if internaltenant.IsTableNotFoundError(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("sessions list by session ids: cluster_id=%s: %w", r.clusterID, err)
+		return nil, fmt.Errorf("sessions list by session ids: cluster_id=%s: %w", logsafe.ClusterID(r.clusterID), err)
 	}
 	defer rows.Close()
 	return scanSessionDomainRows(rows)

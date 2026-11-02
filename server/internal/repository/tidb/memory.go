@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	internaltenant "github.com/qiffang/mnemos/server/internal/tenant"
 )
 
@@ -300,7 +302,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 	var total int
 	countQuery := "SELECT COUNT(*) FROM memories WHERE " + where
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		slog.ErrorContext(ctx, "list memories: count failed", "cluster_id", r.clusterID, "err", err)
+		slog.ErrorContext(ctx, "list memories: count failed", "cluster_id", logsafe.ClusterID(r.clusterID), "err", logsafe.Error(err, r.clusterID))
 		return nil, 0, fmt.Errorf("count memories: %w", err)
 	}
 
@@ -323,7 +325,7 @@ func (r *MemoryRepo) List(ctx context.Context, f domain.MemoryFilter) ([]domain.
 
 	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
 	if err != nil {
-		slog.ErrorContext(ctx, "list memories: query failed", "cluster_id", r.clusterID, "err", err)
+		slog.ErrorContext(ctx, "list memories: query failed", "cluster_id", logsafe.ClusterID(r.clusterID), "err", logsafe.Error(err, r.clusterID))
 		return nil, 0, fmt.Errorf("list memories: %w", err)
 	}
 	defer rows.Close()
@@ -351,7 +353,7 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 			return
 		}
 		slog.InfoContext(ctx, "all-types memory list phases",
-			"cluster_id", r.clusterID,
+			"cluster_id", logsafe.ClusterID(r.clusterID),
 			"count_ms", countDuration.Milliseconds(),
 			"page_ms", pageDuration.Milliseconds(),
 			"memory_page_ms", memoryPageDuration.Milliseconds(),
@@ -385,7 +387,7 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 		if internaltenant.IsTableNotFoundError(err) {
 			fallback = true
 			slog.InfoContext(ctx, "all-types memory list using durable fallback",
-				"cluster_id", r.clusterID,
+				"cluster_id", logsafe.ClusterID(r.clusterID),
 				"phase", "count",
 			)
 			fallbackStartedAt := time.Now()
@@ -396,9 +398,9 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 			return memories, fallbackTotal, fallbackErr
 		}
 		slog.ErrorContext(ctx, "list all-types memories: count failed",
-			"cluster_id", r.clusterID,
+			"cluster_id", logsafe.ClusterID(r.clusterID),
 			"duration_ms", countDuration.Milliseconds(),
-			"err", err,
+			"err", logsafe.Error(err, r.clusterID),
 		)
 		return nil, 0, fmt.Errorf("count all-types memories: %w", err)
 	}
@@ -448,7 +450,7 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 		if internaltenant.IsTableNotFoundError(err) {
 			fallback = true
 			slog.InfoContext(ctx, "all-types memory list using durable fallback",
-				"cluster_id", r.clusterID,
+				"cluster_id", logsafe.ClusterID(r.clusterID),
 				"phase", "page",
 			)
 			fallbackStartedAt := time.Now()
@@ -459,9 +461,9 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 			return memories, fallbackTotal, fallbackErr
 		}
 		slog.ErrorContext(ctx, "list all-types memories: page query failed",
-			"cluster_id", r.clusterID,
+			"cluster_id", logsafe.ClusterID(r.clusterID),
 			"duration_ms", pageDuration.Milliseconds(),
-			"err", err,
+			"err", logsafe.Error(err, r.clusterID),
 		)
 		return nil, 0, fmt.Errorf("list all-types memory page: %w", err)
 	}
@@ -474,7 +476,7 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 		if internaltenant.IsTableNotFoundError(err) {
 			fallback = true
 			slog.InfoContext(ctx, "all-types memory list using durable fallback",
-				"cluster_id", r.clusterID,
+				"cluster_id", logsafe.ClusterID(r.clusterID),
 				"phase", "page",
 			)
 			fallbackStartedAt := time.Now()
@@ -485,9 +487,9 @@ func (r *MemoryRepo) ListAllTypes(ctx context.Context, f domain.MemoryFilter) ([
 			return memories, fallbackTotal, fallbackErr
 		}
 		slog.ErrorContext(ctx, "list all-types memories: session page query failed",
-			"cluster_id", r.clusterID,
+			"cluster_id", logsafe.ClusterID(r.clusterID),
 			"duration_ms", pageDuration.Milliseconds(),
-			"err", err,
+			"err", logsafe.Error(err, r.clusterID),
 		)
 		return nil, 0, fmt.Errorf("list all-types session page: %w", err)
 	}
@@ -575,7 +577,7 @@ func (r *MemoryRepo) Count(ctx context.Context) (int, error) {
 		`SELECT COUNT(*) FROM memories WHERE state = 'active'`,
 	).Scan(&count)
 	if err != nil {
-		slog.Error("count memories failed", "cluster_id", r.clusterID, "err", err)
+		slog.Error("count memories failed", "cluster_id", logsafe.ClusterID(r.clusterID), "err", logsafe.Error(err, r.clusterID))
 		return 0, fmt.Errorf("count memories: %w", err)
 	}
 	return count, nil
@@ -590,7 +592,7 @@ func (r *MemoryRepo) ListBootstrap(ctx context.Context, limit int) ([]domain.Mem
 		limit,
 	)
 	if err != nil {
-		slog.Error("list bootstrap failed", "cluster_id", r.clusterID, "err", err)
+		slog.Error("list bootstrap failed", "cluster_id", logsafe.ClusterID(r.clusterID), "err", logsafe.Error(err, r.clusterID))
 		return nil, fmt.Errorf("list bootstrap: %w", err)
 	}
 	defer rows.Close()
@@ -704,7 +706,7 @@ func (r *MemoryRepo) VectorSearch(ctx context.Context, queryVec []float32, f dom
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "vector search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	slog.DebugContext(ctx, "vector search done", "cluster_id", logsafe.ClusterID(r.clusterID), "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
 	return memories, nil
 }
 
@@ -729,7 +731,7 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 	rows, err := r.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
 		logSearchError(ctx, "auto vector search failed", "memory", "auto_vector", r.clusterID, time.Since(start), err)
-		return nil, fmt.Errorf("auto vector search: cluster_id=%s: %w", r.clusterID, err)
+		return nil, fmt.Errorf("auto vector search: cluster_id=%s: %w", logsafe.ClusterID(r.clusterID), err)
 	}
 	defer rows.Close()
 	defer logSearchResultError(ctx, "auto vector search failed", "memory", "auto_vector", r.clusterID, start, &resultErr)
@@ -745,7 +747,7 @@ func (r *MemoryRepo) AutoVectorSearch(ctx context.Context, queryText string, f d
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "auto vector search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	slog.DebugContext(ctx, "auto vector search done", "cluster_id", logsafe.ClusterID(r.clusterID), "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
 	return memories, nil
 }
 
@@ -781,7 +783,7 @@ func (r *MemoryRepo) KeywordSearch(ctx context.Context, query string, f domain.M
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	slog.DebugContext(ctx, "keyword search done", "cluster_id", r.clusterID, "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
+	slog.DebugContext(ctx, "keyword search done", "cluster_id", logsafe.ClusterID(r.clusterID), "duration_ms", time.Since(start).Milliseconds(), "count", len(memories))
 	return memories, nil
 }
 
@@ -810,11 +812,11 @@ func (r *MemoryRepo) FTSSearch(ctx context.Context, query string, f domain.Memor
 	}
 	logFTSSearchStats(ctx, "fts search done", "memory", r.clusterID, time.Since(start), stats)
 	if errors.Is(err, domain.ErrFTSSearchTruncated) {
-		return memories, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
+		return memories, fmt.Errorf("fts search: cluster_id=%s: %w", logsafe.ClusterID(r.clusterID), err)
 	}
 	if err != nil {
 		logSearchError(ctx, "fts search failed", "memory", "fts", r.clusterID, time.Since(start), err)
-		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", r.clusterID, err)
+		return nil, fmt.Errorf("fts search: cluster_id=%s: %w", logsafe.ClusterID(r.clusterID), err)
 	}
 	return memories, nil
 }

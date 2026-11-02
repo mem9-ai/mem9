@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/service"
@@ -536,7 +538,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 		bulkCreateStart := time.Now()
 		if err := svc.session.BulkCreate(ctx, auth.AgentName, req); err != nil {
 			slog.Error("session raw save failed",
-				"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+				"cluster_id", logsafe.ClusterID(auth.ClusterID), "session", req.SessionID, "err", logsafe.Error(err, auth.ClusterID))
 		}
 		bulkCreateDuration = time.Since(bulkCreateStart)
 	}
@@ -571,7 +573,7 @@ func (s *Server) ingestMessages(ctx context.Context, auth *domain.AuthInfo, svc 
 				hash := service.SessionContentHash(req.SessionID, msg.Role, msg.Content, msg.Seq)
 				if err := svc.session.PatchTags(ctx, req.AppID, req.SessionID, hash, tags); err != nil {
 					slog.Warn("session tag patch failed",
-						"cluster_id", auth.ClusterID, "session", req.SessionID, "err", err)
+						"cluster_id", logsafe.ClusterID(auth.ClusterID), "session", req.SessionID, "err", logsafe.Error(err, auth.ClusterID))
 				}
 			}
 		}()
@@ -1991,7 +1993,7 @@ func (s *Server) refreshWriteMetrics(auth *domain.AuthInfo, svc resolvedSvc, wri
 		if logger == nil {
 			logger = slog.Default()
 		}
-		logger.Warn("refreshWriteMetrics: activity tracker unavailable", "tenant_id", auth.TenantID, "cluster_id", clusterID)
+		logger.Warn("refreshWriteMetrics: activity tracker unavailable", "tenant_id", logsafe.TenantID(auth.TenantID), "cluster_id", logsafe.ClusterID(clusterID))
 		return
 	}
 
@@ -2002,7 +2004,7 @@ func (s *Server) refreshWriteMetrics(auth *domain.AuthInfo, svc resolvedSvc, wri
 		if logger == nil {
 			logger = slog.Default()
 		}
-		logger.Warn("refreshWriteMetrics: count stats failed", "tenant_id", auth.TenantID, "cluster_id", clusterID, "err", err)
+		logger.Warn("refreshWriteMetrics: count stats failed", "tenant_id", logsafe.TenantID(auth.TenantID), "cluster_id", logsafe.ClusterID(clusterID), "err", logsafe.Error(err, auth.TenantID, clusterID))
 		s.activity.RecordMemoryActivity(auth.TenantID, observedAt)
 		return
 	}

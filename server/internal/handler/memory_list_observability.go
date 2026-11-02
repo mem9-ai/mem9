@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
@@ -279,7 +280,7 @@ func (o *memoryListObservation) finish(ctx context.Context, err error, returned,
 		cancelCause = "server_budget_exhausted"
 	}
 	attrs := []slog.Attr{
-		slog.String("cluster_id", o.clusterID),
+		slog.String("cluster_id", logsafe.ClusterID(o.clusterID)),
 		slog.String("mode", o.mode),
 		slog.String("memory_type", o.memoryType),
 		slog.Bool("scan_all", o.scanAll),

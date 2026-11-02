@@ -12,6 +12,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/reqid"
@@ -173,7 +174,7 @@ func (s *TenantService) logProvisionComplete(ctx context.Context, tenantID strin
 
 	s.logger.Info("tenant provision complete",
 		"request_id", reqid.FromContext(ctx),
-		"tenant_id", tenantID,
+		"tenant_id", logsafe.TenantID(tenantID),
 		"utm", req.UTM,
 	)
 }
@@ -186,10 +187,10 @@ func (s *TenantService) logProvisionFailure(ctx context.Context, tenantID string
 	attrs := []any{
 		"request_id", reqid.FromContext(ctx),
 		"utm", req.UTM,
-		"err", err,
+		"err", logsafe.Error(err, tenantID),
 	}
 	if tenantID != "" {
-		attrs = append(attrs, "tenant_id", tenantID)
+		attrs = append(attrs, "tenant_id", logsafe.TenantID(tenantID))
 	}
 
 	s.logger.Error("tenant provision failed", attrs...)
@@ -266,10 +267,10 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 	if err := createTenant(ctx, t); err != nil {
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		s.logger.Error("orphaned cluster: tenants.Create failed",
-			"tenant_id", info.ID,
-			"cluster_id", info.ClusterID,
+			"tenant_id", logsafe.TenantID(info.ID),
+			"cluster_id", logsafe.ClusterID(info.ClusterID),
 			"provider", providerType,
-			"err", err)
+			"err", logsafe.Error(err, info.ID, info.ClusterID))
 		s.logProvisionFailure(ctx, tenantID, req, err)
 		return nil, fmt.Errorf("create tenant record: %w", err)
 	}
@@ -291,7 +292,7 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 	t0 = time.Now()
 	if err := s.provisioner.InitSchema(ctx, db); err != nil {
 		if s.logger != nil {
-			s.logger.Error("tenant schema init failed", "tenant_id", info.ID, "err", err)
+			s.logger.Error("tenant schema init failed", "tenant_id", logsafe.TenantID(info.ID), "err", logsafe.Error(err, info.ID))
 		}
 		metrics.ProvisionTotal.WithLabelValues("error").Inc()
 		s.logProvisionFailure(ctx, tenantID, req, err)
@@ -322,7 +323,7 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 	metrics.ProvisionStepDuration.WithLabelValues("update_status").Observe(elapsed.Seconds())
 
 	totalElapsed := time.Since(total)
-	s.logger.Info("provision step", "step", "total", "duration_ms", totalElapsed.Milliseconds(), "tenant_id", info.ID)
+	s.logger.Info("provision step", "step", "total", "duration_ms", totalElapsed.Milliseconds(), "tenant_id", logsafe.TenantID(info.ID))
 	metrics.ProvisionStepDuration.WithLabelValues("total").Observe(totalElapsed.Seconds())
 	metrics.ProvisionTotal.WithLabelValues("success").Inc()
 	s.logProvisionComplete(ctx, info.ID, req)
@@ -330,7 +331,7 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 	if len(req.UTM) > 0 && s.utms != nil {
 		utm := utmFromRequest(info.ID, req.UTM)
 		if err := s.utms.Create(ctx, utm); err != nil {
-			s.logger.Warn("utm save failed (non-fatal)", "tenant_id", info.ID, "err", err)
+			s.logger.Warn("utm save failed (non-fatal)", "tenant_id", logsafe.TenantID(info.ID), "err", logsafe.Error(err, info.ID))
 		}
 	}
 
@@ -349,7 +350,7 @@ func (s *TenantService) GetInfo(ctx context.Context, tenantID string) (*domain.T
 	// Decrypt password before using
 	decryptedPassword, err := s.encryptor.Decrypt(ctx, t.DBPassword)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt tenant password for %s: %w", tenantID, err)
+		return nil, fmt.Errorf("decrypt tenant password: %w", err)
 	}
 	t.DBPassword = decryptedPassword
 

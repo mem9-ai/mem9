@@ -17,6 +17,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 
 	"github.com/qiffang/mnemos/server/internal/domain"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/service"
 )
 
@@ -295,7 +296,7 @@ func (s *Server) defaultConfidenceRecallSearch(
 		level = slog.LevelWarn
 	}
 	attrs := []any{
-		"cluster_id", auth.ClusterID,
+		"cluster_id", logsafe.ClusterID(auth.ClusterID),
 		"query_len", len(filter.Query),
 		"shape", recallQueryShapeLabel(profile.shape),
 		"selection_mode", stats.mode,
@@ -435,7 +436,7 @@ func (s *Server) logConfidenceRecallFailure(
 	}
 	attrs := []slog.Attr{
 		slog.String("error_role", "recall_summary"),
-		slog.String("cluster_id", clusterID),
+		slog.String("cluster_id", logsafe.ClusterID(clusterID)),
 		slog.String("primary_branch", primaryBranch),
 		slog.String("primary_error_class", classification.class),
 		slog.String("primary_error_source", classification.source),
@@ -450,7 +451,7 @@ func (s *Server) logConfidenceRecallFailure(
 		slog.String("session_outcome", recallBranchOutcome(branches[2].err)),
 		slog.Int64("session_ms", branches[2].duration.Milliseconds()),
 		slog.Int64("total_ms", time.Since(start).Milliseconds()),
-		slog.Any("err", primaryErr),
+		slog.Any("err", logsafe.Error(primaryErr, clusterID)),
 	}
 	if classification.upstreamStatus != 0 {
 		attrs = append(attrs, slog.Int("primary_upstream_status", classification.upstreamStatus))
@@ -661,7 +662,7 @@ func (s *Server) singlePoolConfidenceRecallSearch(
 		pinnedSelected = len(memories)
 	}
 	slog.InfoContext(ctx, "single-pool confidence recall",
-		"cluster_id", auth.ClusterID,
+		"cluster_id", logsafe.ClusterID(auth.ClusterID),
 		"query_len", len(filter.Query),
 		"shape", recallQueryShapeLabel(profile.shape),
 		"selection_mode", stats.mode,

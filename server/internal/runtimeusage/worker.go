@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metering"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 )
@@ -168,8 +169,8 @@ func (w *Worker) markUnknown(ctx context.Context, row outboxRow, reason string) 
 	metrics.RuntimeUsageReservationUnknownTotal.WithLabelValues(row.Phase).Inc()
 	w.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage outbox unknown",
 		"operation_id", row.OperationID,
-		"tenant_id", row.TenantID,
-		"cluster_id", row.ClusterID,
+		"tenant_id", logsafe.TenantID(row.TenantID),
+		"cluster_id", logsafe.ClusterID(row.ClusterID),
 		"phase", row.Phase,
 		"reason", reason,
 	)
@@ -197,11 +198,11 @@ func (w *Worker) markTerminal(ctx context.Context, row outboxRow, err error) {
 	metrics.RuntimeUsageManualReconciliationTotal.WithLabelValues("quota_conflict").Inc()
 	w.logger.ErrorContext(ctx, "manual_reconciliation_required: runtime usage outbox terminal failed",
 		"operation_id", row.OperationID,
-		"tenant_id", row.TenantID,
-		"cluster_id", row.ClusterID,
+		"tenant_id", logsafe.TenantID(row.TenantID),
+		"cluster_id", logsafe.ClusterID(row.ClusterID),
 		"step", row.Step,
 		"phase", row.Phase,
-		"err", err,
+		"err", logsafe.Error(err, row.TenantID, row.ClusterID),
 	)
 }
 

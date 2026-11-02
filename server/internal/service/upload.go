@@ -18,6 +18,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/embed"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/llm"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/metrics"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/tenant"
@@ -495,7 +496,7 @@ func (w *UploadWorker) recordMemoryStats(ctx context.Context, tenantID string, m
 		if logger == nil {
 			logger = slog.Default()
 		}
-		logger.Warn("upload memory stats skipped: count stats failed", "tenant_id", tenantID, "err", err)
+		logger.Warn("upload memory stats skipped: count stats failed", "tenant_id", logsafe.TenantID(tenantID), "err", logsafe.Error(err, tenantID))
 		w.recordActivity(tenantID)
 		return
 	}

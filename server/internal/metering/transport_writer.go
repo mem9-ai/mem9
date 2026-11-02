@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 )
 
 type batchTransport interface {
@@ -289,11 +291,11 @@ func (w *transportWriter) flushAll(ctx context.Context) {
 		if err := w.transport.Write(ctx, payload); err != nil {
 			w.logger.Warn("metering: flush failed, dropping batch",
 				"category", key.Category,
-				"tenant_id", key.TenantID,
-				"cluster_id", key.ClusterID,
+				"tenant_id", logsafe.TenantID(key.TenantID),
+				"cluster_id", logsafe.ClusterID(key.ClusterID),
 				"ts_minute", key.TsMinute,
 				"records", len(records),
-				"err", err,
+				"err", logsafe.Error(err, key.TenantID, key.ClusterID),
 			)
 			if ctx.Err() != nil {
 				w.pruneStaleParts(minuteAlign(w.now().Unix()))
