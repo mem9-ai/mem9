@@ -23,6 +23,7 @@ type Worker struct {
 
 type workerStore interface {
 	PendingRows(ctx context.Context, limit int) ([]outboxRow, error)
+	DecryptAPIKeySubjects(ctx context.Context, payload *outboxPayload) error
 	MarkOperationDone(ctx context.Context, operationID string, reason string) error
 	MarkOperationRetryableFailure(ctx context.Context, operationID string, reason string) error
 	MarkOperationTerminalFailed(ctx context.Context, operationID string, reason string) error
@@ -89,6 +90,10 @@ func (w *Worker) processRow(ctx context.Context, row outboxRow) {
 	var payload outboxPayload
 	if err := json.Unmarshal(row.PayloadJSON, &payload); err != nil {
 		w.markUnknown(ctx, row, "invalid outbox payload")
+		return
+	}
+	if err := w.store.DecryptAPIKeySubjects(ctx, &payload); err != nil {
+		w.markRetryable(ctx, row, errString("decrypt api key subject failed"))
 		return
 	}
 

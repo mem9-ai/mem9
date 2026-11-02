@@ -42,6 +42,41 @@ func TestLoad_ChainRecallStopScoreDefaultsToHighConfidence(t *testing.T) {
 	}
 }
 
+func TestLoad_EncryptWriteFormat(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    string
+		wantErr bool
+	}{
+		{name: "default", want: "legacy"},
+		{name: "legacy", value: "legacy", want: "legacy"},
+		{name: "enc v1", value: "enc_v1", want: "enc_v1"},
+		{name: "invalid", value: "future", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MNEMO_DSN", "test-dsn")
+			if tt.value != "" {
+				t.Setenv("MNEMO_ENCRYPT_WRITE_FORMAT", tt.value)
+			}
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("Load error = nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.EncryptWriteFormat != tt.want {
+				t.Fatalf("EncryptWriteFormat = %q, want %q", cfg.EncryptWriteFormat, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoad_RecallRequestBudgetDefaults(t *testing.T) {
 	t.Setenv("MNEMO_DSN", "test-dsn")
 

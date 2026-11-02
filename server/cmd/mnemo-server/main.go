@@ -21,6 +21,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
+	"github.com/qiffang/mnemos/server/internal/secrets"
 	"github.com/qiffang/mnemos/server/internal/service"
 	"github.com/qiffang/mnemos/server/internal/tenant"
 	"github.com/qiffang/mnemos/server/internal/webhook"
@@ -107,7 +108,15 @@ func main() {
 		logger.Error("failed to create encryptor", "err", err)
 		os.Exit(1)
 	}
-	logger.Info("encryption configured", "type", cfg.EncryptType)
+	secretProtector, err := secrets.New(credentialStore.Keyring(), encryptor, cfg.EncryptWriteFormat)
+	if err != nil {
+		logger.Error("failed to create secret protector", "err", err)
+		os.Exit(1)
+	}
+	tenantPasswordEncryptor := secretProtector.For(secrets.FieldTenantDBPassword)
+	webhookSecretEncryptor := secretProtector.For(secrets.FieldWebhookSecret)
+	outboxSubjectEncryptor := secretProtector.For(secrets.FieldOutboxAPIKeySubject)
+	logger.Info("encryption configured", "type", cfg.EncryptType, "write_format", cfg.EncryptWriteFormat)
 
 	webhookStore := webhook.NewSQLStore(db, cfg.DBBackend)
 	if err := webhookStore.EnsureSchema(context.Background()); err != nil {
@@ -115,7 +124,7 @@ func main() {
 		os.Exit(1)
 	}
 	allowLocalWebhookHTTP := cfg.Env != "prod" && cfg.Env != "production"
-	webhookSvc := webhook.NewService(webhookStore, encryptor, allowLocalWebhookHTTP)
+	webhookSvc := webhook.NewService(webhookStore, webhookSecretEncryptor, allowLocalWebhookHTTP)
 	webhookWorkerCtx, webhookWorkerCancel := context.WithCancel(context.Background())
 	defer webhookWorkerCancel()
 	go func() {
@@ -182,7 +191,7 @@ func main() {
 	var runtimeUsageStore *runtimeusage.SQLStore
 	if cfg.RuntimeUsageEnabled {
 		if cfg.RuntimeUsageOutboxEnabled {
-			runtimeUsageStore = runtimeusage.NewSQLStore(db, cfg.DBBackend)
+			runtimeUsageStore = runtimeusage.NewSQLStore(db, cfg.DBBackend, outboxSubjectEncryptor)
 			if err := runtimeUsageStore.EnsureSchema(context.Background()); err != nil {
 				logger.Error("failed to initialize runtime usage outbox", "err", err)
 				os.Exit(1)
@@ -275,7 +284,7 @@ func main() {
 		}
 	}
 
-	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, encryptor).WithCredentials(credentialStore)
+	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, tenantPasswordEncryptor).WithCredentials(credentialStore)
 	if utmRepo != nil {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}
@@ -286,11 +295,11 @@ func main() {
 	var tenantMW func(http.Handler) http.Handler
 	var apiKeyMW func(http.Handler) http.Handler
 	if spendLimitAdjuster != nil {
-		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
-		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg), middleware.WithSpaceChainRepo(spaceChainRepo))
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, tenantPasswordEncryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, tenantPasswordEncryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpendLimitAdjuster(spendLimitAdjuster, spendLimitCooldown, autoSpendLimitCfg), middleware.WithSpaceChainRepo(spaceChainRepo))
 	} else {
-		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore))
-		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, encryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpaceChainRepo(spaceChainRepo))
+		tenantMW = middleware.ResolveTenant(tenantRepo, tenantPool, tenantPasswordEncryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore))
+		apiKeyMW = middleware.ResolveApiKey(tenantRepo, tenantPool, tenantPasswordEncryptor, cfg.ClusterBlacklist, middleware.WithCredentials(credentialStore), middleware.WithSpaceChainRepo(spaceChainRepo))
 	}
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst, cfg.RuntimeUsageInternalSecret)
 	defer rl.Stop()
@@ -343,7 +352,7 @@ func main() {
 		service.IngestMode(cfg.IngestMode),
 		logger,
 		cfg.WorkerConcurrency,
-		encryptor,
+		tenantPasswordEncryptor,
 		activityTracker,
 		service.WithAssistantFactExtraction(cfg.FactExtractionIncludeAssistant),
 	)

@@ -2,7 +2,12 @@ package runtimeusage
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/qiffang/mnemos/server/internal/encrypt"
+	"github.com/qiffang/mnemos/server/internal/secrets"
 )
 
 type fakeWorkerStore struct {
@@ -40,6 +45,10 @@ func (s *fakeWorkerStore) MarkUnknownAfterCrash(_ context.Context, operationID s
 
 func (s *fakeWorkerStore) DeferPending(_ context.Context, operationID string, _ string) error {
 	s.deferred = append(s.deferred, operationID)
+	return nil
+}
+
+func (s *fakeWorkerStore) DecryptAPIKeySubjects(context.Context, *outboxPayload) error {
 	return nil
 }
 
@@ -151,5 +160,97 @@ func TestWorkerCommitConflictMarksTerminalFailed(t *testing.T) {
 	}
 	if len(store.retryable) != 0 {
 		t.Fatalf("retryable = %+v, want none", store.retryable)
+	}
+}
+
+func TestWorkerDecryptsPendingSubjectsBeforeSending(t *testing.T) {
+	protector, err := secrets.New(runtimeUsageTestKeyring(t), encrypt.NewPlainEncryptor(), secrets.WriteFormatEncV1)
+	if err != nil {
+		t.Fatalf("New protector: %v", err)
+	}
+	subjectEncryptor := protector.For(secrets.FieldOutboxAPIKeySubject)
+	stored, err := subjectEncryptor.Encrypt(context.Background(), "api-key-subject")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	payloadJSON, err := json.Marshal(outboxPayload{
+		APIKeySubject: stored,
+		Reason:        reservationCommitReason,
+		Event: &outboxMeteringPayload{
+			APIKeySubject: stored,
+			EventType:     EventTypeMemoryRecall,
+			Meter:         MeterMemoryRecallRequests,
+			Units:         1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	rec := &recordingStore{}
+	store := NewSQLStore(newRecordingDB(t, rec), "tidb", subjectEncryptor)
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	worker := NewWorker(store, quota, writer, nil)
+	worker.processRow(context.Background(), outboxRow{
+		OperationID:    "op-decrypt",
+		TenantID:       "tenant-a",
+		SubjectVersion: subjectVersionTenantIDV1,
+		Step:           outboxStepCommitReservation,
+		Phase:          outboxPhaseCommitPending,
+		PayloadJSON:    payloadJSON,
+	})
+
+	if len(quota.finalizeSubjects) != 1 || quota.finalizeSubjects[0].APIKeySubject != "api-key-subject" {
+		t.Fatalf("finalize subjects = %+v", quota.finalizeSubjects)
+	}
+	if len(writer.events) != 1 || writer.events[0].APIKeySubject != "api-key-subject" {
+		t.Fatalf("events = %+v", writer.events)
+	}
+}
+
+func TestWorkerDecryptFailureDoesNotSendStoredValue(t *testing.T) {
+	protector, err := secrets.New(runtimeUsageTestKeyring(t), encrypt.NewPlainEncryptor(), secrets.WriteFormatEncV1)
+	if err != nil {
+		t.Fatalf("New protector: %v", err)
+	}
+	subjectEncryptor := protector.For(secrets.FieldOutboxAPIKeySubject)
+	stored, err := subjectEncryptor.Encrypt(context.Background(), "api-key-subject")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	replacement := "A"
+	if strings.HasSuffix(stored, replacement) {
+		replacement = "B"
+	}
+	stored = stored[:len(stored)-1] + replacement
+	payloadJSON, err := json.Marshal(outboxPayload{APIKeySubject: stored})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	rec := &recordingStore{}
+	store := NewSQLStore(newRecordingDB(t, rec), "tidb", subjectEncryptor)
+	quota := &fakeQuotaClient{}
+	writer := &captureWriter{}
+	worker := NewWorker(store, quota, writer, nil)
+	worker.processRow(context.Background(), outboxRow{
+		OperationID:    "op-decrypt-failure",
+		TenantID:       "tenant-a",
+		SubjectVersion: subjectVersionTenantIDV1,
+		Step:           outboxStepReleaseReservation,
+		Phase:          outboxPhaseReleasePending,
+		PayloadJSON:    payloadJSON,
+	})
+
+	if len(quota.finalizeSubjects) != 0 || len(writer.events) != 0 {
+		t.Fatalf("decrypt failure sent quota=%+v events=%+v", quota.finalizeSubjects, writer.events)
+	}
+	if len(rec.execs) != 1 {
+		t.Fatalf("retry exec count = %d, want 1", len(rec.execs))
+	}
+	if got := rec.execs[0].args[1].Value; got != "decrypt api key subject failed" {
+		t.Fatalf("retry reason = %v", got)
+	}
+	if strings.Contains(rec.execs[0].query, stored) {
+		t.Fatal("retry query leaked stored value")
 	}
 }

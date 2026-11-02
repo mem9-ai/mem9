@@ -44,7 +44,7 @@ func LoadKeyring(path string) (*Keyring, error) {
 	}
 	for kid, encoded := range k.EncryptionKeys {
 		key, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil || len(key) != 32 || kid == "" {
+		if err != nil || len(key) != 32 || kid == "" || strings.Contains(kid, ":") {
 			return nil, errors.New("AES keys must be named 32-byte base64 values")
 		}
 		for _, hashKey := range k.hashes {
@@ -65,6 +65,51 @@ func LoadKeyring(path string) (*Keyring, error) {
 		return nil, errors.New("active HMAC version or encryption kid is missing")
 	}
 	return &k, nil
+}
+
+// SealWithAAD encrypts plaintext with the active encryption key and binds the
+// result to aad. The returned bytes contain nonce || ciphertext.
+func (k *Keyring) SealWithAAD(aad, plaintext []byte) (kid string, sealed []byte, err error) {
+	if k == nil {
+		return "", nil, errors.New("keyring is unavailable")
+	}
+	aead := k.ciphers[k.EncryptionKID]
+	if aead == nil {
+		return "", nil, errors.New("active encryption key is unavailable")
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if len(nonce) != 12 {
+		return "", nil, errors.New("invalid AES-GCM nonce size")
+	}
+	if _, err := rand.Read(nonce); err != nil {
+		return "", nil, errors.New("secret nonce generation failed")
+	}
+	ciphertext := aead.Seal(nil, nonce, plaintext, aad)
+	sealed = make([]byte, 0, len(nonce)+len(ciphertext))
+	sealed = append(sealed, nonce...)
+	sealed = append(sealed, ciphertext...)
+	return k.EncryptionKID, sealed, nil
+}
+
+// OpenWithAAD decrypts nonce || ciphertext with the named encryption key and
+// verifies that it is bound to aad.
+func (k *Keyring) OpenWithAAD(kid string, aad, sealed []byte) ([]byte, error) {
+	if k == nil {
+		return nil, errors.New("keyring is unavailable")
+	}
+	aead := k.ciphers[kid]
+	if aead == nil {
+		return nil, errors.New("unknown encryption kid")
+	}
+	nonceSize := aead.NonceSize()
+	if len(sealed) < nonceSize+aead.Overhead() {
+		return nil, errors.New("sealed secret is too short")
+	}
+	plaintext, err := aead.Open(nil, sealed[:nonceSize], sealed[nonceSize:], aad)
+	if err != nil {
+		return nil, errors.New("secret authentication failed")
+	}
+	return plaintext, nil
 }
 
 func (k *Keyring) digest(version, key string) []byte {
