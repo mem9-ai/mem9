@@ -376,9 +376,34 @@ Reservation retries require one of these exact responses with `details.retryable
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `MNEMO_ENCRYPT_TYPE` | No | `plain` | Encryption type for tenant DB passwords: `plain`, `md5`, or `kms`. One-time deployment decision. |
-| `MNEMO_ENCRYPT_WRITE_FORMAT` | No | `legacy` | Write format for control-plane secrets: `legacy` preserves current `MNEMO_ENCRYPT_TYPE` behavior; `enc_v1` encrypts new values with the Space credential keyring mounted at `MNEMO_SPACE_CREDENTIAL_KEYRING_FILE`. Existing values remain readable in either mode, and switching back to `legacy` after enabling `enc_v1` is safe for reads because readers understand both formats. Enable `enc_v1` only after every instance runs a version that reads it; once `enc_v1` values exist, do not roll back to a binary that predates this setting. |
+| `MNEMO_ENCRYPT_WRITE_FORMAT` | No | `legacy` | Write format for control-plane secrets: `legacy` preserves current `MNEMO_ENCRYPT_TYPE` behavior; `enc_v1` encrypts new values with the keyring mounted at `MNEMO_SPACE_CREDENTIAL_KEYRING_FILE` and requires `secret_field_kids` to map every protected field to one distinct non-Space encryption key. Existing values remain readable in either mode, and switching back to `legacy` after enabling `enc_v1` is safe for reads because readers understand both formats. Enable `enc_v1` only after every instance runs a version that reads it; once `enc_v1` values exist, do not roll back to a binary that predates this setting. |
 | `MNEMO_ENCRYPT_KEY` | No | — | Encryption key for `md5` or KMS key ID for `kms`. Required when `MNEMO_ENCRYPT_TYPE` is not `plain` |
 | `MNEMO_DEBUG_LLM` | No | `false` | Log raw LLM responses for debugging parse errors. Use only in dev/test because responses may contain user data |
+
+##### Secret Field Keyring Slots
+
+`enc_v1` gives each protected control-plane field its own AES key so a lost or rotated field key does not affect Space credentials or other fields. The keyring still uses one active Space credential key (`encryption_kid`), plus distinct field keys:
+
+```json
+{
+  "hash_version": "v1",
+  "hmac_keys": {"v1": "<base64 32 bytes>"},
+  "encryption_kid": "space-k1",
+  "encryption_keys": {
+    "space-k1": "<base64 32 bytes>",
+    "db-k1": "<base64 32 bytes>",
+    "wh-k1": "<base64 32 bytes>",
+    "ob-k1": "<base64 32 bytes>"
+  },
+  "secret_field_kids": {
+    "tenants.db_password": "db-k1",
+    "webhook_endpoints.secret_ciphertext": "wh-k1",
+    "runtime_usage_outbox.api_key_subject": "ob-k1"
+  }
+}
+```
+
+To rotate one field, add a new kid with distinct key material, change only that field's `secret_field_kids` entry, and keep the old kid in `encryption_keys` until no stored value references it. Decryptors use the kid embedded in each stored value, so old and new values remain readable during rotation.
 
 #### AWS KMS Environment
 

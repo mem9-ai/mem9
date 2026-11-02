@@ -32,6 +32,7 @@ var storedValueLimits = map[string]int{
 // Protector creates field-bound encryptors for control-plane secrets.
 type Protector struct {
 	keyring     *credentials.Keyring
+	fieldKID    map[string]string
 	legacy      encrypt.Encryptor
 	writeFormat string
 }
@@ -53,7 +54,22 @@ func New(keyring *credentials.Keyring, legacy encrypt.Encryptor, writeFormat str
 	if legacy == nil {
 		return nil, errors.New("legacy secret encryptor is required")
 	}
-	return &Protector{keyring: keyring, legacy: legacy, writeFormat: writeFormat}, nil
+	fieldKID := make(map[string]string, len(protectedFields))
+	missing := make([]string, 0, len(protectedFields))
+	for _, field := range protectedFields {
+		kid, ok := keyring.SecretFieldKID(field)
+		if !ok {
+			if writeFormat == WriteFormatEncV1 {
+				missing = append(missing, field)
+			}
+			continue
+		}
+		fieldKID[field] = kid
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("secret fields missing encryption kids: %s", strings.Join(missing, ", "))
+	}
+	return &Protector{keyring: keyring, fieldKID: fieldKID, legacy: legacy, writeFormat: writeFormat}, nil
 }
 
 // For returns an encryptor whose ciphertext is bound to field.
@@ -80,7 +96,8 @@ func (e *fieldEncryptor) Encrypt(ctx context.Context, plaintext string) (string,
 		}
 		return stored, nil
 	}
-	kid, sealed, err := e.protector.keyring.SealWithAAD(e.aad(), []byte(plaintext))
+	kid := e.protector.fieldKID[e.field]
+	sealed, err := e.protector.keyring.SealWithKID(kid, e.aad(), []byte(plaintext))
 	if err != nil {
 		return "", errors.New("encrypt secret failed")
 	}
@@ -116,10 +133,19 @@ func (e *fieldEncryptor) Decrypt(ctx context.Context, stored string) (string, er
 	return plaintext, nil
 }
 
+var protectedFields = []string{
+	FieldTenantDBPassword,
+	FieldWebhookSecret,
+	FieldOutboxAPIKeySubject,
+}
+
 func (e *fieldEncryptor) decryptV1(stored string) (string, error) {
 	parts := strings.Split(stored, ":")
 	if len(parts) != 4 || parts[0] != "enc" || parts[1] != "v1" || parts[2] == "" || parts[3] == "" {
 		return "", errors.New("invalid encrypted secret format")
+	}
+	if parts[2] == e.protector.keyring.EncryptionKID {
+		return "", errors.New("protected secret uses the Space credential key")
 	}
 	sealed, err := base64.RawURLEncoding.DecodeString(parts[3])
 	if err != nil {
