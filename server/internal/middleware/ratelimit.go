@@ -93,6 +93,23 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 	}
 }
 
+// ProvisionMiddleware applies an independent source-IP bucket to tenant creation.
+func (rl *RateLimiter) ProvisionMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+			if ip == "" {
+				ip = r.RemoteAddr
+			}
+			if allowed, retryDelay := allowRateLimit(rl.getLimiter("ip:" + ip)); !allowed {
+				rl.deny(w, r, "provision_ip", "", retryDelay)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // TenantMiddleware runs after chi has resolved the legacy {tenantID} parameter.
 func (rl *RateLimiter) TenantMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -229,7 +246,8 @@ func (rl *RateLimiter) cleanup() {
 		case <-ticker.C:
 			rl.mu.Lock()
 			for key, v := range rl.visitors {
-				if time.Since(v.lastSeen) > 5*time.Minute {
+				// Eviction must not refill a slow bucket before its allowance recovers.
+				if time.Since(v.lastSeen) > 5*time.Minute && v.limiter.Tokens() >= float64(rl.burst) {
 					delete(rl.visitors, key)
 				}
 			}

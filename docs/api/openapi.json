@@ -141,7 +141,7 @@
         ],
         "operationId": "provisionMem9s",
         "summary": "Provision a mem9 tenant",
-        "description": "Creates a new tenant. The endpoint has no request body. Optional UTM query parameters are captured when present.",
+        "description": "Creates a new tenant without an account. The endpoint has no request body. Optional UTM query parameters are captured when present. A separate per-source-IP token bucket defaults to three requests per minute with burst two, independently per server process. Requests, including failed provisioning attempts, consume this allowance; rejected attempts return 429 with Retry-After before provisioning starts. Other routes retain their existing limits.",
         "parameters": [
           {
             "$ref": "#/components/parameters/UtmSource"
@@ -172,6 +172,9 @@
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
@@ -18,6 +19,9 @@ type Config struct {
 	RateLimit float64
 	RateBurst int
 	Env       string
+
+	ProvisionRatePerMinute float64
+	ProvisionRateBurst     int
 
 	// DBBackend selects the database driver: "tidb" (default), "postgres", or "db9".
 	DBBackend string
@@ -218,6 +222,8 @@ func Load() (*Config, error) {
 		DBBackend:                        envOr("MNEMO_DB_BACKEND", "tidb"),
 		RateLimit:                        envFloat("MNEMO_RATE_LIMIT", 100),
 		RateBurst:                        envInt("MNEMO_RATE_BURST", 200),
+		ProvisionRatePerMinute:           envFloat("MNEMO_PROVISION_RATE_PER_MINUTE", 3),
+		ProvisionRateBurst:               envInt("MNEMO_PROVISION_RATE_BURST", 2),
 		EmbedAutoModel:                   os.Getenv("MNEMO_EMBED_AUTO_MODEL"),
 		EmbedAutoDims:                    envInt("MNEMO_EMBED_AUTO_DIMS", 1024),
 		EmbedAPIKey:                      os.Getenv("MNEMO_EMBED_API_KEY"),
@@ -301,6 +307,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("Cohere Embed v3 requires MNEMO_EMBED_AUTO_DIMS=1024")
 	}
 
+	if !(cfg.ProvisionRatePerMinute > 0) || math.IsInf(cfg.ProvisionRatePerMinute, 0) {
+		return nil, fmt.Errorf("MNEMO_PROVISION_RATE_PER_MINUTE must be positive and finite")
+	}
+	if cfg.ProvisionRateBurst <= 0 {
+		return nil, fmt.Errorf("MNEMO_PROVISION_RATE_BURST must be positive")
+	}
 	if cfg.AutoSpendLimitIncrement <= 0 {
 		return nil, fmt.Errorf("MNEMO_AUTO_SPEND_LIMIT_INCREMENT must be positive")
 	}

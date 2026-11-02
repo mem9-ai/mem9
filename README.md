@@ -219,6 +219,8 @@ Minimal runtime config is `MNEMO_DSN`. Everything else is optional or only appli
 | `MNEMO_DB_BACKEND` | No | `tidb` | Database backend: `tidb`, `postgres`, or `db9` |
 | `MNEMO_RATE_LIMIT` | No | `100` | Requests/sec per IP and API key (header or legacy path) |
 | `MNEMO_RATE_BURST` | No | `200` | Burst size |
+| `MNEMO_PROVISION_RATE_PER_MINUTE` | No | `3` | Tenant creation requests/minute per source IP, independently per server process; positive and finite |
+| `MNEMO_PROVISION_RATE_BURST` | No | `2` | Tenant creation burst size; positive |
 | `MNEMO_UPLOAD_DIR` | No | `./uploads` | Directory used for uploaded file storage |
 | `MNEMO_WORKER_CONCURRENCY` | No | `5` | Parallelism for async upload ingest workers |
 | `MNEMO_UTM_ENABLED` | No | `false` | Enable UTM campaign tracking. When enabled, `utm_*` query params on provisioning requests are stored in the control-plane DB. Requires the `tenant_utm` table to exist |

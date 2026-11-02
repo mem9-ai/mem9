@@ -56,6 +56,7 @@ type Server struct {
 	includeAssistantFacts bool
 	recallRequestTimeout  time.Duration
 	recallResponseReserve time.Duration
+	provisionRateLimit    func(http.Handler) http.Handler
 	// chainCreateGateRequired is the create gate switch for POST /v1alpha2/space-chains.
 	// Only a digest of the create secret is kept.
 	chainCreateGateRequired bool
@@ -110,6 +111,11 @@ func (s *Server) WithSpaceChainService(chains *service.SpaceChainService, stopSc
 func (s *Server) WithSpaceChainCreateGate(required bool, secret string) *Server {
 	s.chainCreateGateRequired = required
 	s.chainCreateSecretDigest = sha256.Sum256([]byte(strings.TrimSpace(secret)))
+	return s
+}
+
+func (s *Server) WithProvisionRateLimit(mw func(http.Handler) http.Handler) *Server {
+	s.provisionRateLimit = mw
 	return s
 }
 
@@ -253,7 +259,11 @@ func (s *Server) Router(
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	// Provision a new tenant — no auth, no body.
-	r.Post("/v1alpha1/mem9s", s.provisionMem9s)
+	var provision http.Handler = http.HandlerFunc(s.provisionMem9s)
+	if s.provisionRateLimit != nil {
+		provision = s.provisionRateLimit(provision)
+	}
+	r.Method(http.MethodPost, "/v1alpha1/mem9s", provision)
 
 	// Key status validates X-API-Key against control-plane state only.
 	r.Get("/v1alpha2/status", s.getKeyStatus)

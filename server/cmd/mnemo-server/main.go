@@ -294,6 +294,8 @@ func main() {
 	}
 	rl := middleware.NewRateLimiter(cfg.RateLimit, cfg.RateBurst, cfg.RuntimeUsageInternalSecret)
 	defer rl.Stop()
+	provisionRL := middleware.NewRateLimiter(cfg.ProvisionRatePerMinute/60, cfg.ProvisionRateBurst, cfg.RuntimeUsageInternalSecret)
+	defer provisionRL.Stop()
 	rateMW := rl.Middleware()
 	tenantAuthMW := tenantMW
 	tenantMW = func(next http.Handler) http.Handler {
@@ -304,6 +306,7 @@ func main() {
 
 	// Handler.
 	srv := handler.NewServer(tenantSvc, uploadTaskRepo, cfg.UploadDir, embedder, llmClient, cfg.EmbedAutoModel, cfg.FTSEnabled, service.IngestMode(cfg.IngestMode), cfg.DBBackend, logger).
+		WithProvisionRateLimit(provisionRL.ProvisionMiddleware()).
 		WithSpaceChainService(spaceChainSvc, cfg.ChainRecallStopScore).
 		WithSpaceChainCreateGate(cfg.SpaceChainCreateSecretRequired, cfg.SpaceChainCreateSecret).
 		WithMetering(meteringWriter).
