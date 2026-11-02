@@ -382,7 +382,7 @@ Reservation retries require one of these exact responses with `details.retryable
 
 ##### Secret Field Keyring Slots
 
-`enc_v1` gives each protected control-plane field its own AES key so a lost or rotated field key does not affect Space credentials or other fields. The keyring still uses one active Space credential key (`encryption_kid`), plus distinct field keys:
+`enc_v1` gives each of the four protected control-plane fields its own AES key so a lost or rotated field key does not affect Space credentials or other fields. The keyring still uses one active Space credential key (`encryption_kid`), plus distinct field keys:
 
 ```json
 {
@@ -392,11 +392,13 @@ Reservation retries require one of these exact responses with `details.retryable
   "encryption_keys": {
     "space-k1": "<base64 32 bytes>",
     "db-k1": "<base64 32 bytes>",
+    "cu-k1": "<base64 32 bytes>",
     "wh-k1": "<base64 32 bytes>",
     "ob-k1": "<base64 32 bytes>"
   },
   "secret_field_kids": {
     "tenants.db_password": "db-k1",
+    "tenants.claim_url": "cu-k1",
     "webhook_endpoints.secret_ciphertext": "wh-k1",
     "runtime_usage_outbox.api_key_subject": "ob-k1"
   }

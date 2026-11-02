@@ -317,21 +317,23 @@ func runtimeUsageTestKeyring(t *testing.T) *credentials.Keyring {
 	dbKey := make([]byte, 32)
 	whKey := make([]byte, 32)
 	obKey := make([]byte, 32)
+	cuKey := make([]byte, 32)
 	hmacKey := make([]byte, 32)
 	for i := range key {
 		key[i] = 0x22
 		dbKey[i] = 0x33
 		whKey[i] = 0x34
 		obKey[i] = 0x35
+		cuKey[i] = 0x36
 		hmacKey[i] = 0x11
 	}
 	contents := fmt.Sprintf(`{
   "hash_version":"h1",
   "hmac_keys":{"h1":%q},
   "encryption_kid":"enc-current",
-  "encryption_keys":{"enc-current":%q,"db-k1":%q,"wh-k1":%q,"ob-k1":%q},
-  "secret_field_kids":{"%s":"db-k1","%s":"wh-k1","%s":"ob-k1"}
-}`, base64.StdEncoding.EncodeToString(hmacKey), base64.StdEncoding.EncodeToString(key), base64.StdEncoding.EncodeToString(dbKey), base64.StdEncoding.EncodeToString(whKey), base64.StdEncoding.EncodeToString(obKey), secrets.FieldTenantDBPassword, secrets.FieldWebhookSecret, secrets.FieldOutboxAPIKeySubject)
+  "encryption_keys":{"enc-current":%q,"db-k1":%q,"wh-k1":%q,"ob-k1":%q,"cu-k1":%q},
+  "secret_field_kids":{"%s":"db-k1","%s":"wh-k1","%s":"ob-k1","%s":"cu-k1"}
+}`, base64.StdEncoding.EncodeToString(hmacKey), base64.StdEncoding.EncodeToString(key), base64.StdEncoding.EncodeToString(dbKey), base64.StdEncoding.EncodeToString(whKey), base64.StdEncoding.EncodeToString(obKey), base64.StdEncoding.EncodeToString(cuKey), secrets.FieldTenantDBPassword, secrets.FieldWebhookSecret, secrets.FieldOutboxAPIKeySubject, secrets.FieldTenantClaimURL)
 	path := filepath.Join(t.TempDir(), "keyring.json")
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)

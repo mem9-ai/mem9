@@ -2,6 +2,7 @@ package runtimeusage
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -218,11 +219,17 @@ func TestWorkerDecryptFailureDoesNotSendStoredValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	replacement := "A"
-	if strings.HasSuffix(stored, replacement) {
-		replacement = "B"
+	parts := strings.Split(stored, ":")
+	if len(parts) != 4 {
+		t.Fatalf("stored parts = %d", len(parts))
 	}
-	stored = stored[:len(stored)-1] + replacement
+	sealed, err := base64.RawURLEncoding.DecodeString(parts[3])
+	if err != nil {
+		t.Fatalf("decode stored: %v", err)
+	}
+	sealed[len(sealed)/2] ^= 0xff
+	parts[3] = base64.RawURLEncoding.EncodeToString(sealed)
+	stored = strings.Join(parts, ":")
 	payloadJSON, err := json.Marshal(outboxPayload{APIKeySubject: stored})
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)

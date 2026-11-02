@@ -17,6 +17,7 @@ import (
 
 const (
 	FieldTenantDBPassword    = "tenants.db_password"
+	FieldTenantClaimURL      = "tenants.claim_url"
 	FieldWebhookSecret       = "webhook_endpoints.secret_ciphertext"
 	FieldOutboxAPIKeySubject = "runtime_usage_outbox.api_key_subject"
 	WriteFormatLegacy        = "legacy"
@@ -135,6 +136,7 @@ func (e *fieldEncryptor) Decrypt(ctx context.Context, stored string) (string, er
 
 var protectedFields = []string{
 	FieldTenantDBPassword,
+	FieldTenantClaimURL,
 	FieldWebhookSecret,
 	FieldOutboxAPIKeySubject,
 }
@@ -147,7 +149,7 @@ func (e *fieldEncryptor) decryptV1(stored string) (string, error) {
 	if parts[2] == e.protector.keyring.EncryptionKID {
 		return "", errors.New("protected secret uses the Space credential key")
 	}
-	sealed, err := base64.RawURLEncoding.DecodeString(parts[3])
+	sealed, err := base64.RawURLEncoding.Strict().DecodeString(parts[3])
 	if err != nil {
 		return "", errors.New("invalid encrypted secret payload")
 	}
@@ -183,7 +185,7 @@ func (e *fieldEncryptor) incrementDecryptError() {
 
 func isKnownField(field string) bool {
 	switch field {
-	case FieldTenantDBPassword, FieldWebhookSecret, FieldOutboxAPIKeySubject:
+	case FieldTenantDBPassword, FieldTenantClaimURL, FieldWebhookSecret, FieldOutboxAPIKeySubject:
 		return true
 	default:
 		return false

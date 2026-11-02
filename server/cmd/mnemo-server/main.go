@@ -114,6 +114,7 @@ func main() {
 		os.Exit(1)
 	}
 	tenantPasswordEncryptor := secretProtector.For(secrets.FieldTenantDBPassword)
+	tenantClaimURLEncryptor := secretProtector.For(secrets.FieldTenantClaimURL)
 	webhookSecretEncryptor := secretProtector.For(secrets.FieldWebhookSecret)
 	outboxSubjectEncryptor := secretProtector.For(secrets.FieldOutboxAPIKeySubject)
 	logger.Info("encryption configured", "type", cfg.EncryptType, "write_format", cfg.EncryptWriteFormat)
@@ -284,7 +285,7 @@ func main() {
 		}
 	}
 
-	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, tenantPasswordEncryptor).WithCredentials(credentialStore)
+	tenantSvc := service.NewTenantService(tenantRepo, provisioner, tenantPool, logger, cfg.EmbedAutoModel, cfg.EmbedAutoDims, cfg.EmbedDims, cfg.FTSEnabled, tenantPasswordEncryptor).WithCredentials(credentialStore).WithClaimURLEncryptor(tenantClaimURLEncryptor)
 	if utmRepo != nil {
 		tenantSvc.WithUTMRepo(utmRepo)
 	}

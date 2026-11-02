@@ -29,17 +29,18 @@ type tenantDBPool interface {
 }
 
 type TenantService struct {
-	credentials *credentials.Store
-	tenants     repository.TenantRepo
-	utms        utmRepo
-	provisioner tenant.Provisioner
-	pool        tenantDBPool
-	logger      *slog.Logger
-	autoModel   string
-	autoDims    int
-	clientDims  int
-	ftsEnabled  bool
-	encryptor   encrypt.Encryptor
+	credentials       *credentials.Store
+	tenants           repository.TenantRepo
+	utms              utmRepo
+	provisioner       tenant.Provisioner
+	pool              tenantDBPool
+	logger            *slog.Logger
+	autoModel         string
+	autoDims          int
+	clientDims        int
+	ftsEnabled        bool
+	encryptor         encrypt.Encryptor
+	claimURLEncryptor encrypt.Encryptor
 }
 
 type APIKeyStatusResult struct {
@@ -79,6 +80,11 @@ func (s *TenantService) WithUTMRepo(r utmRepo) *TenantService {
 
 func (s *TenantService) WithCredentials(store *credentials.Store) *TenantService {
 	s.credentials = store
+	return s
+}
+
+func (s *TenantService) WithClaimURLEncryptor(enc encrypt.Encryptor) *TenantService {
+	s.claimURLEncryptor = enc
 	return s
 }
 
@@ -241,6 +247,17 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 		return nil, fmt.Errorf("encrypt tenant password: %w", err)
 	}
 
+	claimURL := info.ClaimURL
+	if claimURL != "" && s.claimURLEncryptor != nil {
+		encryptedClaimURL, err := s.claimURLEncryptor.Encrypt(ctx, claimURL)
+		if err != nil {
+			metrics.ProvisionTotal.WithLabelValues("error").Inc()
+			s.logProvisionFailure(ctx, tenantID, req, err)
+			return nil, fmt.Errorf("encrypt tenant claim URL: %w", err)
+		}
+		claimURL = encryptedClaimURL
+	}
+
 	// Build tenant record
 	t := &domain.Tenant{
 		ID:             info.ID,
@@ -253,7 +270,7 @@ func (s *TenantService) Provision(ctx context.Context, req ProvisionRequest) (*P
 		DBTLS:          true,
 		Provider:       providerType,
 		ClusterID:      info.ClusterID,
-		ClaimURL:       info.ClaimURL,
+		ClaimURL:       claimURL,
 		ClaimExpiresAt: info.ClaimExpiresAt,
 		Status:         domain.TenantProvisioning,
 		SchemaVersion:  0,

@@ -22,9 +22,10 @@ func TestProtectorEncV1RoundTripAndFailures(t *testing.T) {
 	keyring := loadProtectorKeyring(t, "space-k1", map[string][]byte{
 		"space-k1": keyBytes(0x22),
 		"db-k1":    keyBytes(0x33),
+		"cu-k1":    keyBytes(0x36),
 		"wh-k1":    keyBytes(0x34),
 		"ob-k1":    keyBytes(0x35),
-	}, defaultFieldKIDs("db-k1", "wh-k1", "ob-k1"))
+	}, defaultFieldKIDs("db-k1", "cu-k1", "wh-k1", "ob-k1"))
 	protector, err := New(keyring, encrypt.NewPlainEncryptor(), WriteFormatEncV1)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -76,9 +77,10 @@ func TestProtectorUsesDistinctFieldKIDs(t *testing.T) {
 	keyring := loadProtectorKeyring(t, "space-k1", map[string][]byte{
 		"space-k1": keyBytes(0x22),
 		"db-k1":    keyBytes(0x33),
+		"cu-k1":    keyBytes(0x36),
 		"wh-k1":    keyBytes(0x34),
 		"ob-k1":    keyBytes(0x35),
-	}, defaultFieldKIDs("db-k1", "wh-k1", "ob-k1"))
+	}, defaultFieldKIDs("db-k1", "cu-k1", "wh-k1", "ob-k1"))
 	protector, err := New(keyring, encrypt.NewPlainEncryptor(), WriteFormatEncV1)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -86,6 +88,7 @@ func TestProtectorUsesDistinctFieldKIDs(t *testing.T) {
 
 	for field, wantKID := range map[string]string{
 		FieldTenantDBPassword:    "enc:v1:db-k1:",
+		FieldTenantClaimURL:      "enc:v1:cu-k1:",
 		FieldWebhookSecret:       "enc:v1:wh-k1:",
 		FieldOutboxAPIKeySubject: "enc:v1:ob-k1:",
 	} {
@@ -107,11 +110,12 @@ func TestNewEncV1RequiresAllProtectedFieldKIDs(t *testing.T) {
 	keys := map[string][]byte{
 		"space-k1": keyBytes(0x22),
 		"db-k1":    keyBytes(0x33),
+		"cu-k1":    keyBytes(0x36),
 		"wh-k1":    keyBytes(0x34),
 		"ob-k1":    keyBytes(0x35),
 	}
-	for _, missing := range []string{FieldTenantDBPassword, FieldWebhookSecret, FieldOutboxAPIKeySubject} {
-		kids := defaultFieldKIDs("db-k1", "wh-k1", "ob-k1")
+	for _, missing := range []string{FieldTenantDBPassword, FieldTenantClaimURL, FieldWebhookSecret, FieldOutboxAPIKeySubject} {
+		kids := defaultFieldKIDs("db-k1", "cu-k1", "wh-k1", "ob-k1")
 		delete(kids, missing)
 		keyring := loadProtectorKeyring(t, "space-k1", keys, kids)
 		_, err := New(keyring, encrypt.NewPlainEncryptor(), WriteFormatEncV1)
@@ -158,10 +162,11 @@ func TestProtectorFieldRotationKeepsOtherFieldsUnchanged(t *testing.T) {
 		"space-k1": keyBytes(0x22),
 		"db-k1":    keyBytes(0x33),
 		"db-k2":    keyBytes(0x36),
+		"cu-k1":    keyBytes(0x37),
 		"wh-k1":    keyBytes(0x34),
 		"ob-k1":    keyBytes(0x35),
 	}
-	oldProtector, err := New(loadProtectorKeyring(t, "space-k1", keys, defaultFieldKIDs("db-k1", "wh-k1", "ob-k1")), encrypt.NewPlainEncryptor(), WriteFormatEncV1)
+	oldProtector, err := New(loadProtectorKeyring(t, "space-k1", keys, defaultFieldKIDs("db-k1", "cu-k1", "wh-k1", "ob-k1")), encrypt.NewPlainEncryptor(), WriteFormatEncV1)
 	if err != nil {
 		t.Fatalf("New old protector: %v", err)
 	}
@@ -170,7 +175,7 @@ func TestProtectorFieldRotationKeepsOtherFieldsUnchanged(t *testing.T) {
 		t.Fatalf("Encrypt old DB: %v", err)
 	}
 
-	newProtector, err := New(loadProtectorKeyring(t, "space-k1", keys, defaultFieldKIDs("db-k2", "wh-k1", "ob-k1")), encrypt.NewPlainEncryptor(), WriteFormatEncV1)
+	newProtector, err := New(loadProtectorKeyring(t, "space-k1", keys, defaultFieldKIDs("db-k2", "cu-k1", "wh-k1", "ob-k1")), encrypt.NewPlainEncryptor(), WriteFormatEncV1)
 	if err != nil {
 		t.Fatalf("New new protector: %v", err)
 	}
@@ -208,7 +213,8 @@ func TestProtectorRejectsSpaceCredentialKID(t *testing.T) {
 		"wh-k1":    keyBytes(0x34),
 		"ob-k1":    keyBytes(0x35),
 		"db-k1":    keyBytes(0x33),
-	}, defaultFieldKIDs("db-k1", "wh-k1", "ob-k1"))
+		"cu-k1":    keyBytes(0x36),
+	}, defaultFieldKIDs("db-k1", "cu-k1", "wh-k1", "ob-k1"))
 	sealed, err := keyring.SealWithKID("space-k1", []byte(secretAADPrefix+FieldTenantDBPassword), []byte("space-secret"))
 	if err != nil {
 		t.Fatalf("SealWithKID: %v", err)
@@ -232,9 +238,10 @@ func TestProtectorEmptyValuesAndDBPasswordLimit(t *testing.T) {
 	keyring := loadProtectorKeyring(t, "space-k1", map[string][]byte{
 		"space-k1": keyBytes(0x22),
 		"db-k1":    keyBytes(0x33),
+		"cu-k1":    keyBytes(0x36),
 		"wh-k1":    keyBytes(0x34),
 		"ob-k1":    keyBytes(0x35),
-	}, defaultFieldKIDs("db-k1", "wh-k1", "ob-k1"))
+	}, defaultFieldKIDs("db-k1", "cu-k1", "wh-k1", "ob-k1"))
 	protector, err := New(keyring, encrypt.NewPlainEncryptor(), WriteFormatEncV1)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -321,9 +328,10 @@ func loadProtectorKeyring(t *testing.T, activeKID string, keys map[string][]byte
 	return keyring
 }
 
-func defaultFieldKIDs(dbKID, whKID, obKID string) map[string]string {
+func defaultFieldKIDs(dbKID, cuKID, whKID, obKID string) map[string]string {
 	return map[string]string{
 		FieldTenantDBPassword:    dbKID,
+		FieldTenantClaimURL:      cuKID,
 		FieldWebhookSecret:       whKID,
 		FieldOutboxAPIKeySubject: obKID,
 	}
@@ -352,4 +360,39 @@ func counterValue(t *testing.T, counter prometheus.Counter) float64 {
 		t.Fatalf("counter.Write: %v", err)
 	}
 	return metric.GetCounter().GetValue()
+}
+
+func TestProtectorRejectsNonCanonicalEncoding(t *testing.T) {
+	keyring := loadProtectorKeyring(t, "space-k1", map[string][]byte{
+		"space-k1": keyBytes(0x22),
+		"db-k1":    keyBytes(0x33),
+		"cu-k1":    keyBytes(0x36),
+		"wh-k1":    keyBytes(0x34),
+		"ob-k1":    keyBytes(0x35),
+	}, defaultFieldKIDs("db-k1", "cu-k1", "wh-k1", "ob-k1"))
+	protector, err := New(keyring, encrypt.NewPlainEncryptor(), WriteFormatEncV1)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	tenant := protector.For(FieldTenantDBPassword)
+
+	// 12-byte nonce + 16-byte tag + 18-byte plaintext = 46 bytes, so the last
+	// base64url character carries unused low bits that a lenient decoder ignores.
+	stored, err := tenant.Encrypt(context.Background(), "sensitive-password")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	last := strings.IndexByte(alphabet, stored[len(stored)-1])
+	if last < 0 || last&0x0f != 0 {
+		t.Fatalf("unexpected canonical trailing character %q", stored[len(stored)-1])
+	}
+	nonCanonical := stored[:len(stored)-1] + string(alphabet[last|0x01])
+
+	if _, err := tenant.Decrypt(context.Background(), nonCanonical); err == nil {
+		t.Fatal("Decrypt accepted a non-canonical base64url payload")
+	}
+	if got, err := tenant.Decrypt(context.Background(), stored); err != nil || got != "sensitive-password" {
+		t.Fatalf("Decrypt canonical = %q, %v", got, err)
+	}
 }
