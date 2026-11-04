@@ -453,20 +453,11 @@ func (s *SQLStore) updateStatus(ctx context.Context, operationID, status, phase,
 	if status == outboxStatusDone {
 		lastError = sql.NullString{}
 	}
+	// Done rows keep their (encrypted) API key subjects for troubleshooting;
+	// see migrate-secrets inspect-outbox.
 	query := `UPDATE runtime_usage_outbox
 SET status = ?, phase = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
 WHERE operation_id = ?`
-	if status == outboxStatusDone {
-		if s.backend == "postgres" || s.backend == "db9" {
-			query = `UPDATE runtime_usage_outbox
-SET status = ?, phase = ?, last_error = ?, payload_json = payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}', updated_at = CURRENT_TIMESTAMP
-WHERE operation_id = ?`
-		} else {
-			query = `UPDATE runtime_usage_outbox
-SET status = ?, phase = ?, last_error = ?, payload_json = JSON_REMOVE(payload_json, '$.apiKeySubject', '$.event.apiKeySubject'), updated_at = CURRENT_TIMESTAMP
-WHERE operation_id = ?`
-		}
-	}
 	_, err := s.db.ExecContext(ctx, s.placeholder(query), status, phase, lastError, operationID)
 	if err != nil {
 		return fmt.Errorf("update runtime usage outbox status: %w", err)

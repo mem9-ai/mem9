@@ -21,6 +21,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/domain"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
 	"github.com/qiffang/mnemos/server/internal/secretmigrate"
@@ -125,7 +126,6 @@ VALUES (?, ?, 'submit_metering_event', 'metering_pending', ?, 'hash-pending', 'p
 	}
 	must(t, run(secretmigrate.ModeBackfill, secrets.WriteFormatEncV1, protector))
 	must(t, run(secretmigrate.ModeBackfill, secrets.WriteFormatEncV1, protector))
-	must(t, run(secretmigrate.ModeScrub, secrets.WriteFormatEncV1, nil))
 	must(t, run(secretmigrate.ModeVerify, secrets.WriteFormatEncV1, protector))
 
 	check := func(field, stored, want string) {
@@ -161,7 +161,7 @@ VALUES (?, ?, 'submit_metering_event', 'metering_pending', ?, 'hash-pending', 'p
 		t.Fatal("webhook updated_at changed")
 	}
 
-	var stored, hash string
+	var stored, hash, before string
 	must(t, db.QueryRowContext(ctx, "SELECT payload_json, payload_hash FROM runtime_usage_outbox WHERE operation_id = ?", pending).Scan(&stored, &hash))
 	if hash != "hash-pending" {
 		t.Fatal("payload_hash changed")
@@ -180,18 +180,53 @@ VALUES (?, ?, 'submit_metering_event', 'metering_pending', ?, 'hash-pending', 'p
 	if got.Meter != "memory_write" || got.Event.EventType != "write" {
 		t.Fatal("outbox backfill changed other payload fields")
 	}
+	// Done rows are kept and backfilled too, so they stay usable for troubleshooting.
 	must(t, db.QueryRowContext(ctx, "SELECT payload_json FROM runtime_usage_outbox WHERE operation_id = ?", done).Scan(&stored))
-	if strings.Contains(stored, "apiKeySubject") {
-		t.Fatal("scrub left a subject on a done row")
+	got = struct {
+		APIKeySubject string `json:"apiKeySubject"`
+		Meter         string `json:"meter"`
+		Event         struct {
+			APIKeySubject string `json:"apiKeySubject"`
+			EventType     string `json:"eventType"`
+		} `json:"event"`
+	}{}
+	must(t, json.Unmarshal([]byte(stored), &got))
+	check(secrets.FieldOutboxAPIKeySubject, got.APIKeySubject, "done-subject")
+	check(secrets.FieldOutboxAPIKeySubject, got.Event.APIKeySubject, "done-event-subject")
+
+	// The worker's done transition leaves the encrypted subjects in place.
+	must(t, db.QueryRowContext(ctx, "SELECT payload_json FROM runtime_usage_outbox WHERE operation_id = ?", pending).Scan(&before))
+	must(t, runtimeusage.NewSQLStore(db, "tidb").MarkOperationDone(ctx, pending, ""))
+	var status string
+	must(t, db.QueryRowContext(ctx, "SELECT payload_json, payload_hash, status FROM runtime_usage_outbox WHERE operation_id = ?", pending).Scan(&stored, &hash, &status))
+	if status != "done" || stored != before || hash != "hash-pending" {
+		t.Fatal("done transition changed the payload")
 	}
 
-	// The worker's done transition removes both subject paths on its own.
-	must(t, runtimeusage.NewSQLStore(db, "tidb").MarkOperationDone(ctx, pending, ""))
-	must(t, db.QueryRowContext(ctx, "SELECT payload_json, payload_hash FROM runtime_usage_outbox WHERE operation_id = ?", pending).Scan(&stored, &hash))
-	got.Event.EventType = ""
-	must(t, json.Unmarshal([]byte(stored), &got))
-	if strings.Contains(stored, "apiKeySubject") || got.Event.EventType != "write" || hash != "hash-pending" {
-		t.Fatal("done transition did not scrub only the subjects")
+	// inspect-outbox finds rows by the log fingerprint of the tenant and
+	// prints only fingerprints of the decrypted subjects.
+	var inspectLogs bytes.Buffer
+	inspect := func(opts secretmigrate.Options) {
+		t.Helper()
+		opts.Mode, opts.Limit = secretmigrate.ModeInspectOutbox, 20
+		must(t, secretmigrate.Run(ctx, secretmigrate.Deps{DB: db, Backend: "tidb", Protector: protector}, opts, slog.New(slog.NewJSONHandler(&inspectLogs, nil))))
+	}
+	inspect(secretmigrate.Options{TenantFingerprint: logsafe.TenantID(active)})
+	inspect(secretmigrate.Options{OperationID: done})
+	for _, want := range []string{
+		`"rows":2`, `"rows":1`, `"operation_id":"` + pending + `"`, `"operation_id":"` + done + `"`,
+		`"tenant":"` + logsafe.TenantID(active) + `"`,
+		`"subject":"` + logsafe.TenantID("pending-subject") + `"`, `"event_subject":"` + logsafe.TenantID("done-event-subject") + `"`,
+		`"subject_format":"enc_v1"`, `"undecryptable":0`,
+	} {
+		if !strings.Contains(inspectLogs.String(), want) {
+			t.Fatalf("inspect output misses %s", want)
+		}
+	}
+	for _, needle := range []string{active, "pending-subject", "done-subject", "enc:v1:"} {
+		if strings.Contains(inspectLogs.String(), `"`+needle) {
+			t.Fatalf("inspect output leaked %q", needle)
+		}
 	}
 
 	for _, needle := range []string{active, deleted, endpoint, pending, done, "active-password", "deleted-password", "claim.example.test", "webhook-secret", "pending-subject", "pending-event-subject", "done-subject", "enc:v1:"} {

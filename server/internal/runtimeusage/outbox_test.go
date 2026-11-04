@@ -229,19 +229,11 @@ func TestSQLStoreUpsertMeteringPendingEncryptsSubjectWithoutChangingHash(t *test
 	}
 }
 
-func TestSQLStoreDoneStatusClearsLastError(t *testing.T) {
-	tests := []struct {
-		backend   string
-		wantScrub string
-	}{
-		{backend: "tidb", wantScrub: "JSON_REMOVE(payload_json, '$.apiKeySubject', '$.event.apiKeySubject')"},
-		{backend: "postgres", wantScrub: "payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}'"},
-		{backend: "db9", wantScrub: "payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}'"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.backend, func(t *testing.T) {
+func TestSQLStoreDoneStatusClearsLastErrorAndKeepsPayload(t *testing.T) {
+	for _, backend := range []string{"tidb", "postgres", "db9"} {
+		t.Run(backend, func(t *testing.T) {
 			rec := &recordingStore{}
-			store := NewSQLStore(newRecordingDB(t, rec), tt.backend)
+			store := NewSQLStore(newRecordingDB(t, rec), backend)
 
 			if err := store.MarkOperationDone(context.Background(), "op-1", "reservationReleased"); err != nil {
 				t.Fatalf("MarkOperationDone: %v", err)
@@ -249,8 +241,8 @@ func TestSQLStoreDoneStatusClearsLastError(t *testing.T) {
 			if len(rec.execs) != 1 {
 				t.Fatalf("exec count = %d, want 1", len(rec.execs))
 			}
-			if !strings.Contains(rec.execs[0].query, tt.wantScrub) {
-				t.Fatalf("query does not scrub subjects:\n%s", rec.execs[0].query)
+			if strings.Contains(rec.execs[0].query, "payload_json") {
+				t.Fatalf("done transition rewrites the payload:\n%s", rec.execs[0].query)
 			}
 			if len(rec.execs[0].args) < 3 {
 				t.Fatalf("args = %+v, want last_error arg", rec.execs[0].args)

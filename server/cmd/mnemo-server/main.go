@@ -439,8 +439,11 @@ func runMigrateSecrets(args []string) int {
 	}
 	writeFormat := secrets.WriteFormatLegacy
 	protector := (*secrets.Protector)(nil)
-	if opts.Mode == secretmigrate.ModeBackfill || opts.Mode == secretmigrate.ModeVerify {
-		writeFormat = secrets.WriteFormatEncV1
+	if opts.Mode == secretmigrate.ModeBackfill || opts.Mode == secretmigrate.ModeVerify || opts.Mode == secretmigrate.ModeInspectOutbox {
+		// inspect-outbox only reads, so it works before the field kids are configured.
+		if opts.Mode != secretmigrate.ModeInspectOutbox {
+			writeFormat = secrets.WriteFormatEncV1
+		}
 		protector, err = secrets.New(credentialStore.Keyring(), legacyEncryptor, writeFormat)
 		if err != nil {
 			logger.Error("failed to create secret protector", "err", err)
