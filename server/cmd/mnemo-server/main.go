@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -21,6 +22,7 @@ import (
 	"github.com/qiffang/mnemos/server/internal/repository"
 	"github.com/qiffang/mnemos/server/internal/reqid"
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
+	"github.com/qiffang/mnemos/server/internal/secretmigrate"
 	"github.com/qiffang/mnemos/server/internal/secrets"
 	"github.com/qiffang/mnemos/server/internal/service"
 	"github.com/qiffang/mnemos/server/internal/tenant"
@@ -28,6 +30,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "migrate-secrets" {
+		os.Exit(runMigrateSecrets(os.Args[2:]))
+	}
+
 	logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level:     slog.LevelInfo,
 		AddSource: true,
@@ -389,6 +395,69 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
+}
+
+func runMigrateSecrets(args []string) int {
+	opts, err := secretmigrate.Parse(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+
+	logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("failed to load config", "err", err)
+		return 1
+	}
+	db, err := repository.NewDB(cfg.DBBackend, cfg.DSN)
+	if err != nil {
+		logger.Error("failed to connect database", "err", err)
+		return 1
+	}
+	defer db.Close()
+
+	credentialStore, err := credentials.New(db, cfg.DBBackend, os.Getenv("MNEMO_SPACE_CREDENTIAL_KEYRING_FILE"))
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		err = credentialStore.CheckSchema(ctx)
+		cancel()
+	}
+	if err != nil {
+		logger.Error("credential storage preflight failed", "err", err)
+		return 1
+	}
+	legacyEncryptor, err := encrypt.New(encrypt.Config{
+		Type: encrypt.Type(cfg.EncryptType),
+		Key:  cfg.EncryptKey,
+	})
+	if err != nil {
+		logger.Error("failed to create legacy encryptor", "err", err)
+		return 1
+	}
+	writeFormat := secrets.WriteFormatLegacy
+	protector := (*secrets.Protector)(nil)
+	if opts.Mode == secretmigrate.ModeBackfill || opts.Mode == secretmigrate.ModeVerify {
+		writeFormat = secrets.WriteFormatEncV1
+		protector, err = secrets.New(credentialStore.Keyring(), legacyEncryptor, writeFormat)
+		if err != nil {
+			logger.Error("failed to create secret protector", "err", err)
+			return 1
+		}
+	}
+	err = secretmigrate.Run(context.Background(), secretmigrate.Deps{
+		DB:          db,
+		Backend:     cfg.DBBackend,
+		Protector:   protector,
+		WriteFormat: cfg.EncryptWriteFormat,
+	}, opts, logger)
+	if err != nil {
+		logger.Error("secret migration failed", "err", err)
+		return 1
+	}
+	return 0
 }
 
 func newRuntimeUsageConfig(cfg *config.Config, outbox runtimeusage.OutboxStore) runtimeusage.Config {

@@ -407,6 +407,54 @@ Reservation retries require one of these exact responses with `details.retryable
 
 To rotate one field, add a new kid with distinct key material, change only that field's `secret_field_kids` entry, and keep the old kid in `encryption_keys` until no stored value references it. Decryptors use the kid embedded in each stored value, so old and new values remain readable during rotation.
 
+##### Backfilling Protected Secrets
+
+Existing tenant DB passwords, tenant claim URLs, webhook secrets, and runtime-usage outbox subjects can be moved from the legacy encryption format to `enc_v1` without changing the schema:
+
+```bash
+mnemo-server migrate-secrets --mode=dry-run
+mnemo-server migrate-secrets --mode=backfill --max-rows=10
+mnemo-server migrate-secrets --mode=backfill
+mnemo-server migrate-secrets --mode=verify
+```
+
+`--fields` limits the run to the exact field constants, `--batch-size` controls keyset page size, `--pause` adds a delay between batches, and `--max-rows` caps rows updated per field for a trial run. Recommended order is `dry-run` → `backfill --max-rows=10` → `backfill` → `verify`. Run `--mode=scrub` to remove `apiKeySubject` paths from completed runtime-usage outbox rows; this can be used after the server version that understands `enc_v1` is deployed.
+
+`backfill` is refused unless the shared configuration already sets `MNEMO_ENCRYPT_WRITE_FORMAT=enc_v1`; switch the servers first, so every instance reads `enc_v1` before rows are rewritten. Each row is decrypted, re-encrypted with its field's kid and checked before a compare-and-swap update, so a concurrent server write wins and re-runs only touch rows still in the legacy format. `verify` exits non-zero while legacy values, undecryptable `enc:` values or subjects on completed outbox rows remain. The migration needs the same database environment and the keyring mounted through `MNEMO_SPACE_CREDENTIAL_KEYRING_FILE`; it never starts the HTTP server or background workers. It only reports aggregate integer counters, not row IDs or secret values.
+
+For Kubernetes, run the existing server image as a Job with the server's `envFrom` reference and keyring mount. Replace every placeholder before use:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: <migration-job-name>
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate-secrets
+          image: <mnemo-server-image>
+          args: ["migrate-secrets", "--mode=dry-run"]
+          envFrom:
+            - configMapRef:
+                name: <server-config-map>
+            - secretRef:
+                name: <server-secret>
+          volumeMounts:
+            - name: keyring
+              mountPath: <keyring-mount-path>
+              readOnly: true
+      volumes:
+        - name: keyring
+          secret:
+            secretName: <keyring-secret-name>
+```
+
+Set `MNEMO_SPACE_CREDENTIAL_KEYRING_FILE` to `<keyring-mount-path>/keys.json`, matching the mounted Secret.
+
 #### AWS KMS Environment
 
 These are only relevant when `MNEMO_ENCRYPT_TYPE=kms`. The server uses the AWS SDK default config chain; the common environment-based inputs referenced in code are:
