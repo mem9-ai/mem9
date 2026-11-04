@@ -185,7 +185,16 @@ VALUES (?, ?, 'submit_metering_event', 'metering_pending', ?, 'hash-pending', 'p
 		t.Fatal("scrub left a subject on a done row")
 	}
 
-	for _, needle := range []string{active, deleted, endpoint, pending, done, "password", "claim.example.test", "webhook-secret", "subject", "enc:v1:"} {
+	// The worker's done transition removes both subject paths on its own.
+	must(t, runtimeusage.NewSQLStore(db, "tidb").MarkOperationDone(ctx, pending, ""))
+	must(t, db.QueryRowContext(ctx, "SELECT payload_json, payload_hash FROM runtime_usage_outbox WHERE operation_id = ?", pending).Scan(&stored, &hash))
+	got.Event.EventType = ""
+	must(t, json.Unmarshal([]byte(stored), &got))
+	if strings.Contains(stored, "apiKeySubject") || got.Event.EventType != "write" || hash != "hash-pending" {
+		t.Fatal("done transition did not scrub only the subjects")
+	}
+
+	for _, needle := range []string{active, deleted, endpoint, pending, done, "active-password", "deleted-password", "claim.example.test", "webhook-secret", "pending-subject", "pending-event-subject", "done-subject", "enc:v1:"} {
 		if strings.Contains(logs.String(), needle) {
 			t.Fatalf("migration logs leaked %q", needle)
 		}
