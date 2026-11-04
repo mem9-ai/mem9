@@ -1,5 +1,7 @@
 // Package secretmigrate backfills legacy control-plane secret values into the
 // field-bound enc:v1 format without exposing row identifiers or secret data.
+// inspect-outbox is the one read-only exception for troubleshooting: it prints
+// outbox operation ids and SHA-256 fingerprints, never keys or ciphertext.
 package secretmigrate
 
 import (
@@ -9,10 +11,15 @@ import (
 	"flag"
 	"io"
 	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/qiffang/mnemos/server/internal/encrypt"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/secrets"
 )
 
@@ -20,8 +27,11 @@ const (
 	ModeDryRun   = "dry-run"
 	ModeBackfill = "backfill"
 	ModeVerify   = "verify"
-	ModeScrub    = "scrub"
+	// ModeInspectOutbox prints subject fingerprints for selected outbox rows.
+	ModeInspectOutbox = "inspect-outbox"
 )
+
+var tenantFingerprintPattern = regexp.MustCompile(`^sha256:[0-9a-f]{24}$`)
 
 var allFields = []string{
 	secrets.FieldTenantDBPassword,
@@ -37,6 +47,10 @@ type Options struct {
 	BatchSize int
 	Pause     time.Duration
 	MaxRows   int
+	// OperationID and TenantFingerprint select rows for inspect-outbox.
+	OperationID       string
+	TenantFingerprint string
+	Limit             int
 }
 
 // Deps carries the database and protector wiring built by the server command.
@@ -49,20 +63,19 @@ type Deps struct {
 
 // Result contains only aggregate integer counters for one field.
 type Result struct {
-	Field               string
-	Scanned             int64
-	Updated             int64
-	SkippedEmpty        int64
-	CASConflicts        int64
-	Errors              int64
-	Remaining           int64
-	DecryptFailures     int64
-	DoneRowsWithSubject int64
+	Field           string
+	Scanned         int64
+	Updated         int64
+	SkippedEmpty    int64
+	CASConflicts    int64
+	Errors          int64
+	Remaining       int64
+	DecryptFailures int64
 }
 
 // Parse parses and validates migrate-secrets arguments.
 func Parse(args []string) (Options, error) {
-	opts := Options{BatchSize: 100, Pause: 200 * time.Millisecond}
+	opts := Options{BatchSize: 100, Pause: 200 * time.Millisecond, Limit: 20}
 	fs := flag.NewFlagSet("migrate-secrets", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	mode := fs.String("mode", "", "migration mode")
@@ -70,6 +83,9 @@ func Parse(args []string) (Options, error) {
 	batchSize := fs.Int("batch-size", 100, "rows per batch")
 	pause := fs.Duration("pause", 200*time.Millisecond, "pause between batches")
 	maxRows := fs.Int("max-rows", 0, "maximum rows updated per field")
+	operationID := fs.String("operation-id", "", "inspect-outbox: one outbox operation id")
+	tenantFingerprint := fs.String("tenant-fingerprint", "", "inspect-outbox: sha256: tenant fingerprint from server logs")
+	limit := fs.Int("limit", 20, "inspect-outbox: newest rows to show for a tenant fingerprint")
 	if err := fs.Parse(args); err != nil {
 		return Options{}, errors.New("invalid migrate-secrets arguments")
 	}
@@ -78,7 +94,7 @@ func Parse(args []string) (Options, error) {
 	}
 	opts.Mode = strings.TrimSpace(*mode)
 	switch opts.Mode {
-	case ModeDryRun, ModeBackfill, ModeVerify, ModeScrub:
+	case ModeDryRun, ModeBackfill, ModeVerify, ModeInspectOutbox:
 	default:
 		return Options{}, errors.New("unsupported migrate-secrets mode")
 	}
@@ -106,6 +122,27 @@ func Parse(args []string) (Options, error) {
 		return Options{}, errors.New("max rows must not be negative")
 	}
 	opts.MaxRows = *maxRows
+	opts.OperationID = strings.TrimSpace(*operationID)
+	opts.TenantFingerprint = strings.TrimSpace(*tenantFingerprint)
+	if opts.Mode != ModeInspectOutbox {
+		if opts.OperationID != "" || opts.TenantFingerprint != "" {
+			return Options{}, errors.New("operation-id and tenant-fingerprint are only valid with inspect-outbox")
+		}
+		return opts, nil
+	}
+	if (opts.OperationID == "") == (opts.TenantFingerprint == "") {
+		return Options{}, errors.New("inspect-outbox needs exactly one of operation-id or tenant-fingerprint")
+	}
+	if opts.OperationID != "" && uuid.Validate(opts.OperationID) != nil {
+		return Options{}, errors.New("operation-id must be a UUID")
+	}
+	if opts.TenantFingerprint != "" && !tenantFingerprintPattern.MatchString(opts.TenantFingerprint) {
+		return Options{}, errors.New("tenant-fingerprint must look like sha256:<24 hex characters>")
+	}
+	if *limit < 1 || *limit > 200 {
+		return Options{}, errors.New("limit must be between 1 and 200")
+	}
+	opts.Limit = *limit
 	return opts, nil
 }
 
@@ -120,23 +157,15 @@ func Run(ctx context.Context, deps Deps, opts Options, logger *slog.Logger) erro
 	if !validBackend(deps.Backend) {
 		return errors.New("migrate-secrets requires a supported database backend")
 	}
+	if (opts.Mode == ModeBackfill || opts.Mode == ModeVerify || opts.Mode == ModeInspectOutbox) && deps.Protector == nil {
+		return errors.New("migrate-secrets mode requires a secret protector")
+	}
+	if opts.Mode == ModeInspectOutbox {
+		return inspectOutbox(ctx, deps, opts, logger)
+	}
 	fields := opts.Fields
 	if len(fields) == 0 {
-		if opts.Mode == ModeScrub {
-			fields = []string{secrets.FieldOutboxAPIKeySubject}
-		} else {
-			fields = allFields
-		}
-	}
-	if opts.Mode == ModeScrub {
-		for _, field := range fields {
-			if field != secrets.FieldOutboxAPIKeySubject {
-				return errors.New("scrub only supports the outbox secret field")
-			}
-		}
-	}
-	if (opts.Mode == ModeBackfill || opts.Mode == ModeVerify) && deps.Protector == nil {
-		return errors.New("migrate-secrets mode requires a secret protector")
+		fields = allFields
 	}
 
 	fieldsLabel := strings.Join(fields, ",")
@@ -153,8 +182,6 @@ func Run(ctx context.Context, deps Deps, opts Options, logger *slog.Logger) erro
 			result, err = backfill(ctx, deps, opts, field, logger)
 		case ModeVerify:
 			result, err = verify(ctx, deps, opts, field)
-		case ModeScrub:
-			result, err = scrub(ctx, deps, opts, field)
 		}
 		result.Field = field
 		logger.Info("secret migration field summary",
@@ -166,7 +193,6 @@ func Run(ctx context.Context, deps Deps, opts Options, logger *slog.Logger) erro
 			"errors", result.Errors,
 			"remaining", result.Remaining,
 			"decrypt_failures", result.DecryptFailures,
-			"done_rows_with_subject", result.DoneRowsWithSubject,
 		)
 		if err != nil {
 			runErr = err
@@ -265,49 +291,8 @@ func verify(ctx context.Context, deps Deps, opts Options, field string) (Result,
 			}
 		}
 	}
-	if field == secrets.FieldOutboxAPIKeySubject {
-		done, err := countDoneOutboxRows(ctx, deps)
-		if err != nil {
-			return result, errors.New("count done outbox rows failed")
-		}
-		result.DoneRowsWithSubject = done
-	}
-	if result.Remaining > 0 || result.DecryptFailures > 0 || result.DoneRowsWithSubject > 0 {
+	if result.Remaining > 0 || result.DecryptFailures > 0 {
 		return result, errors.New("secret migration verification failed")
-	}
-	return result, nil
-}
-
-func scrub(ctx context.Context, deps Deps, opts Options, field string) (Result, error) {
-	result := Result{}
-	query := scrubSQL(deps)
-	for {
-		if opts.MaxRows > 0 && result.Updated >= int64(opts.MaxRows) {
-			break
-		}
-		affected, err := execAffected(ctx, deps, query, opts.BatchSize)
-		if err != nil {
-			return result, errors.New("scrub done outbox rows failed")
-		}
-		if affected == 0 {
-			break
-		}
-		result.Updated += affected
-		if opts.Pause > 0 {
-			select {
-			case <-ctx.Done():
-				return result, errors.New("secret migration canceled")
-			case <-time.After(opts.Pause):
-			}
-		}
-	}
-	done, err := countDoneOutboxRows(ctx, deps)
-	if err != nil {
-		return result, errors.New("count done outbox rows failed")
-	}
-	result.DoneRowsWithSubject = done
-	if done > 0 && opts.MaxRows == 0 {
-		return result, errors.New("secret scrub left done outbox rows")
 	}
 	return result, nil
 }
@@ -393,15 +378,7 @@ func countLegacy(ctx context.Context, deps Deps, field string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	result := Result{Remaining: remaining, Scanned: remaining}
-	if field == secrets.FieldOutboxAPIKeySubject {
-		done, err := countDoneOutboxRows(ctx, deps)
-		if err != nil {
-			return Result{}, err
-		}
-		result.DoneRowsWithSubject = done
-	}
-	return result, nil
+	return Result{Remaining: remaining, Scanned: remaining}, nil
 }
 
 func countRemaining(ctx context.Context, deps Deps, field string) (int64, error) {
@@ -409,15 +386,6 @@ func countRemaining(ctx context.Context, deps Deps, field string) (int64, error)
 	var count int64
 	if err := deps.DB.QueryRowContext(ctx, query).Scan(&count); err != nil {
 		return 0, errors.New("count remaining secret rows failed")
-	}
-	return count, nil
-}
-
-func countDoneOutboxRows(ctx context.Context, deps Deps) (int64, error) {
-	query := doneOutboxCountSQL(deps)
-	var count int64
-	if err := deps.DB.QueryRowContext(ctx, query).Scan(&count); err != nil {
-		return 0, errors.New("count done outbox rows failed")
 	}
 	return count, nil
 }
@@ -480,17 +448,10 @@ func fieldColumn(field string) (table, column, pk string, err error) {
 
 func remainingSQL(deps Deps, field string) string {
 	if field == secrets.FieldOutboxAPIKeySubject {
-		return "SELECT COUNT(*) FROM runtime_usage_outbox WHERE status <> 'done' AND (" + outboxLegacyCondition(deps) + ")"
+		return "SELECT COUNT(*) FROM runtime_usage_outbox WHERE " + outboxLegacyCondition(deps)
 	}
 	table, column, _, _ := fieldColumn(field)
 	return "SELECT COUNT(*) FROM " + table + " WHERE " + column + " IS NOT NULL AND " + column + " <> '' AND " + column + " NOT LIKE 'enc:%'"
-}
-
-func doneOutboxCountSQL(deps Deps) string {
-	if postgresBackend(deps.Backend) {
-		return "SELECT COUNT(*) FROM runtime_usage_outbox WHERE status = 'done' AND (jsonb_exists(payload_json, 'apiKeySubject') OR payload_json #> '{event,apiKeySubject}' IS NOT NULL)"
-	}
-	return "SELECT COUNT(*) FROM runtime_usage_outbox WHERE status = 'done' AND (JSON_CONTAINS_PATH(payload_json, 'one', '$.apiKeySubject', '$.event.apiKeySubject'))"
 }
 
 func queryLegacyRows(ctx context.Context, deps Deps, field, cursor string, limit int) ([]legacyRow, error) {
@@ -580,21 +541,14 @@ func simpleUpdateSQL(deps Deps, field string) string {
 func outboxUpdateSQL(deps Deps, pathIndex int) string {
 	if postgresBackend(deps.Backend) {
 		if pathIndex == 0 {
-			return placeholder(deps, "UPDATE runtime_usage_outbox SET payload_json = jsonb_set(payload_json, '{apiKeySubject}', to_jsonb(?::text)) WHERE operation_id = ? AND status <> 'done' AND payload_json->>'apiKeySubject' = ?")
+			return placeholder(deps, "UPDATE runtime_usage_outbox SET payload_json = jsonb_set(payload_json, '{apiKeySubject}', to_jsonb(?::text)) WHERE operation_id = ? AND payload_json->>'apiKeySubject' = ?")
 		}
-		return placeholder(deps, "UPDATE runtime_usage_outbox SET payload_json = jsonb_set(payload_json, '{event,apiKeySubject}', to_jsonb(?::text)) WHERE operation_id = ? AND status <> 'done' AND payload_json #>> '{event,apiKeySubject}' = ?")
+		return placeholder(deps, "UPDATE runtime_usage_outbox SET payload_json = jsonb_set(payload_json, '{event,apiKeySubject}', to_jsonb(?::text)) WHERE operation_id = ? AND payload_json #>> '{event,apiKeySubject}' = ?")
 	}
 	if pathIndex == 0 {
-		return "UPDATE runtime_usage_outbox SET payload_json = JSON_SET(payload_json, '$.apiKeySubject', ?) WHERE operation_id = ? AND status <> 'done' AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.apiKeySubject')) = ?"
+		return "UPDATE runtime_usage_outbox SET payload_json = JSON_SET(payload_json, '$.apiKeySubject', ?) WHERE operation_id = ? AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.apiKeySubject')) = ?"
 	}
-	return "UPDATE runtime_usage_outbox SET payload_json = JSON_SET(payload_json, '$.event.apiKeySubject', ?) WHERE operation_id = ? AND status <> 'done' AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.event.apiKeySubject')) = ?"
-}
-
-func scrubSQL(deps Deps) string {
-	if postgresBackend(deps.Backend) {
-		return placeholder(deps, "UPDATE runtime_usage_outbox SET payload_json = payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}' WHERE operation_id IN (SELECT operation_id FROM runtime_usage_outbox WHERE status = 'done' AND (payload_json->'apiKeySubject' IS NOT NULL OR payload_json #> '{event,apiKeySubject}' IS NOT NULL) LIMIT ?)")
-	}
-	return "UPDATE runtime_usage_outbox SET payload_json = JSON_REMOVE(payload_json, '$.apiKeySubject', '$.event.apiKeySubject') WHERE status = 'done' AND JSON_CONTAINS_PATH(payload_json, 'one', '$.apiKeySubject', '$.event.apiKeySubject') LIMIT ?"
+	return "UPDATE runtime_usage_outbox SET payload_json = JSON_SET(payload_json, '$.event.apiKeySubject', ?) WHERE operation_id = ? AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.event.apiKeySubject')) = ?"
 }
 
 func outboxExtracts(deps Deps) []string {
@@ -609,9 +563,9 @@ func outboxExtracts(deps Deps) []string {
 
 func outboxSelectPrefix(deps Deps) string {
 	if postgresBackend(deps.Backend) {
-		return "SELECT operation_id, apiKeySubject, event_api_key_subject FROM (SELECT operation_id, payload_json->>'apiKeySubject' AS apiKeySubject, payload_json #>> '{event,apiKeySubject}' AS event_api_key_subject FROM runtime_usage_outbox WHERE operation_id > ? AND status <> 'done' AND "
+		return "SELECT operation_id, apiKeySubject, event_api_key_subject FROM (SELECT operation_id, payload_json->>'apiKeySubject' AS apiKeySubject, payload_json #>> '{event,apiKeySubject}' AS event_api_key_subject FROM runtime_usage_outbox WHERE operation_id > ? AND "
 	}
-	return "SELECT operation_id, apiKeySubject, event_api_key_subject FROM (SELECT operation_id, JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.apiKeySubject')) AS apiKeySubject, JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.event.apiKeySubject')) AS event_api_key_subject FROM runtime_usage_outbox WHERE operation_id > ? AND status <> 'done' AND "
+	return "SELECT operation_id, apiKeySubject, event_api_key_subject FROM (SELECT operation_id, JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.apiKeySubject')) AS apiKeySubject, JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.event.apiKeySubject')) AS event_api_key_subject FROM runtime_usage_outbox WHERE operation_id > ? AND "
 }
 
 func outboxEncV1SelectSQL(deps Deps) string {
@@ -636,4 +590,88 @@ func placeholder(deps Deps, query string) string {
 		}
 	}
 	return out.String()
+}
+
+// inspectOutbox decrypts the API key subjects of the selected outbox rows in
+// memory and logs only their SHA-256 fingerprints, in the same format the
+// server uses for tenant ids in its logs.
+func inspectOutbox(ctx context.Context, deps Deps, opts Options, logger *slog.Logger) error {
+	query, args := inspectOutboxSQL(deps, opts)
+	rows, err := deps.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return errors.New("query outbox rows failed")
+	}
+	defer rows.Close()
+	encryptor := deps.Protector.For(secrets.FieldOutboxAPIKeySubject)
+	var found, undecryptable int
+	for rows.Next() {
+		var operationID, tenantID, status, step, phase string
+		var createdAt, subject, eventSubject sql.NullString
+		if err := rows.Scan(&operationID, &tenantID, &status, &step, &phase, &createdAt, &subject, &eventSubject); err != nil {
+			return errors.New("read outbox row failed")
+		}
+		found++
+		subjectFingerprint, subjectFormat := inspectSubject(ctx, encryptor, nullStringValue(subject))
+		eventFingerprint, eventFormat := inspectSubject(ctx, encryptor, nullStringValue(eventSubject))
+		for _, format := range []string{subjectFormat, eventFormat} {
+			if format == "undecryptable" {
+				undecryptable++
+			}
+		}
+		logger.Info("outbox subject inspection",
+			"operation_id", operationID,
+			"tenant", logsafe.TenantID(tenantID),
+			"status", status,
+			"step", step,
+			"phase", phase,
+			"created_at", nullStringValue(createdAt),
+			"subject", subjectFingerprint,
+			"subject_format", subjectFormat,
+			"event_subject", eventFingerprint,
+			"event_subject_format", eventFormat,
+		)
+	}
+	if err := rows.Err(); err != nil {
+		return errors.New("read outbox rows failed")
+	}
+	logger.Info("outbox subject inspection summary", "rows", found, "undecryptable", undecryptable)
+	if undecryptable > 0 {
+		return errors.New("some outbox subjects could not be decrypted")
+	}
+	return nil
+}
+
+// inspectSubject returns the subject's fingerprint and its stored format:
+// absent, legacy, enc_v1 or undecryptable.
+func inspectSubject(ctx context.Context, encryptor encrypt.Encryptor, stored string) (string, string) {
+	if stored == "" {
+		return "", "absent"
+	}
+	plain, err := encryptor.Decrypt(ctx, stored)
+	if err != nil {
+		return "", "undecryptable"
+	}
+	format := "legacy"
+	if strings.HasPrefix(stored, "enc:v1:") {
+		format = "enc_v1"
+	}
+	return logsafe.TenantID(plain), format
+}
+
+func inspectOutboxSQL(deps Deps, opts Options) (string, []any) {
+	extracts := outboxExtracts(deps)
+	inner := "SELECT operation_id, tenant_id, status, step, phase, created_at, " + extracts[0] + " AS apiKeySubject, " + extracts[1] + " AS event_api_key_subject FROM runtime_usage_outbox WHERE "
+	if opts.OperationID != "" {
+		inner += "operation_id = ?"
+	} else if postgresBackend(deps.Backend) {
+		inner += "left(encode(sha256(convert_to(tenant_id, 'UTF8')), 'hex'), 24) = ?"
+	} else {
+		inner += "LEFT(SHA2(tenant_id, 256), 24) = ?"
+	}
+	query := "SELECT operation_id, tenant_id, status, step, phase, created_at, apiKeySubject, event_api_key_subject FROM (" + inner + ") AS extracted ORDER BY created_at DESC LIMIT ?"
+	selector := opts.OperationID
+	if selector == "" {
+		selector = strings.TrimPrefix(opts.TenantFingerprint, "sha256:")
+	}
+	return placeholder(deps, query), []any{selector, opts.Limit}
 }

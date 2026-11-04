@@ -15,11 +15,14 @@ import (
 
 	"github.com/qiffang/mnemos/server/internal/credentials"
 	"github.com/qiffang/mnemos/server/internal/encrypt"
+	"github.com/qiffang/mnemos/server/internal/logsafe"
 	"github.com/qiffang/mnemos/server/internal/repository/sqltest"
 	"github.com/qiffang/mnemos/server/internal/secrets"
 )
 
 var zeroResult driver.Result = driver.RowsAffected(0)
+
+const testOperationID = "6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f60"
 
 func TestParseValidatesFlags(t *testing.T) {
 	tests := []struct {
@@ -35,6 +38,12 @@ func TestParseValidatesFlags(t *testing.T) {
 		{name: "negative pause", args: []string{"--mode=dry-run", "--pause=-1s"}},
 		{name: "negative max", args: []string{"--mode=dry-run", "--max-rows=-1"}},
 		{name: "positional argument", args: []string{"--mode=dry-run", "extra"}},
+		{name: "inspect without selector", args: []string{"--mode=inspect-outbox"}},
+		{name: "inspect with both selectors", args: []string{"--mode=inspect-outbox", "--operation-id=" + testOperationID, "--tenant-fingerprint=sha256:0123456789abcdef01234567"}},
+		{name: "inspect bad operation id", args: []string{"--mode=inspect-outbox", "--operation-id=not-a-uuid"}},
+		{name: "inspect bad fingerprint", args: []string{"--mode=inspect-outbox", "--tenant-fingerprint=sha256:XYZ"}},
+		{name: "inspect limit too large", args: []string{"--mode=inspect-outbox", "--tenant-fingerprint=sha256:0123456789abcdef01234567", "--limit=201"}},
+		{name: "selector outside inspect", args: []string{"--mode=dry-run", "--operation-id=" + testOperationID}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -49,6 +58,10 @@ func TestParseValidatesFlags(t *testing.T) {
 	}
 	if len(opts.Fields) != 1 || opts.Fields[0] != secrets.FieldTenantDBPassword || opts.BatchSize != 10 || opts.Pause != time.Millisecond || opts.MaxRows != 2 {
 		t.Fatalf("Parse options = %+v", opts)
+	}
+	opts, err = Parse([]string{"--mode=inspect-outbox", "--tenant-fingerprint=sha256:0123456789abcdef01234567", "--limit=5"})
+	if err != nil || opts.TenantFingerprint != "sha256:0123456789abcdef01234567" || opts.Limit != 5 {
+		t.Fatalf("Parse inspect = %+v, %v", opts, err)
 	}
 }
 
@@ -138,13 +151,13 @@ func TestBackfillOutboxUsesPathUpdates(t *testing.T) {
 	}{
 		{
 			backend: "tidb",
-			top:     "UPDATE runtime_usage_outbox SET payload_json = JSON_SET(payload_json, '$.apiKeySubject', ?) WHERE operation_id = ? AND status <> 'done' AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.apiKeySubject')) = ?",
-			event:   "UPDATE runtime_usage_outbox SET payload_json = JSON_SET(payload_json, '$.event.apiKeySubject', ?) WHERE operation_id = ? AND status <> 'done' AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.event.apiKeySubject')) = ?",
+			top:     "UPDATE runtime_usage_outbox SET payload_json = JSON_SET(payload_json, '$.apiKeySubject', ?) WHERE operation_id = ? AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.apiKeySubject')) = ?",
+			event:   "UPDATE runtime_usage_outbox SET payload_json = JSON_SET(payload_json, '$.event.apiKeySubject', ?) WHERE operation_id = ? AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.event.apiKeySubject')) = ?",
 		},
 		{
 			backend: "db9",
-			top:     "UPDATE runtime_usage_outbox SET payload_json = jsonb_set(payload_json, '{apiKeySubject}', to_jsonb($1::text)) WHERE operation_id = $2 AND status <> 'done' AND payload_json->>'apiKeySubject' = $3",
-			event:   "UPDATE runtime_usage_outbox SET payload_json = jsonb_set(payload_json, '{event,apiKeySubject}', to_jsonb($1::text)) WHERE operation_id = $2 AND status <> 'done' AND payload_json #>> '{event,apiKeySubject}' = $3",
+			top:     "UPDATE runtime_usage_outbox SET payload_json = jsonb_set(payload_json, '{apiKeySubject}', to_jsonb($1::text)) WHERE operation_id = $2 AND payload_json->>'apiKeySubject' = $3",
+			event:   "UPDATE runtime_usage_outbox SET payload_json = jsonb_set(payload_json, '{event,apiKeySubject}', to_jsonb($1::text)) WHERE operation_id = $2 AND payload_json #>> '{event,apiKeySubject}' = $3",
 		},
 	} {
 		t.Run(tt.backend, func(t *testing.T) {
@@ -163,8 +176,11 @@ func TestBackfillOutboxUsesPathUpdates(t *testing.T) {
 			if len(selects) != 2 {
 				t.Fatalf("selects = %d, want 2", len(selects))
 			}
-			if !strings.Contains(selects[0].Query, "status <> 'done' AND ((") {
-				t.Fatalf("legacy subject condition is not grouped behind the cursor and status filters: %s", selects[0].Query)
+			if !strings.Contains(selects[0].Query, "operation_id > ? AND ((") && !strings.Contains(selects[0].Query, "operation_id > $1 AND ((") {
+				t.Fatalf("legacy subject condition is not grouped behind the cursor: %s", selects[0].Query)
+			}
+			if strings.Contains(selects[0].Query, "status") {
+				t.Fatalf("outbox backfill skips some statuses: %s", selects[0].Query)
 			}
 			updates := statementsWithPrefix(rec, "UPDATE")
 			if len(updates) != 2 || updates[0].Query != tt.top || updates[1].Query != tt.event {
@@ -279,8 +295,8 @@ func TestDryRunIsReadOnlyAndNeedsNoProtector(t *testing.T) {
 	if got := strings.Count(logs.String(), "secret migration field summary"); got != 4 {
 		t.Fatalf("field summaries = %d, want 4", got)
 	}
-	if !strings.Contains(logs.String(), `"done_rows_with_subject":3`) {
-		t.Fatalf("dry-run did not report done outbox rows: %s", logs.String())
+	if !strings.Contains(logs.String(), `"remaining":3`) {
+		t.Fatalf("dry-run did not report remaining rows: %s", logs.String())
 	}
 }
 
@@ -322,56 +338,6 @@ func TestVerifyReportsRemainingAndDecryptFailures(t *testing.T) {
 	}
 }
 
-func TestVerifyFailsOnDoneOutboxRowsWithSubject(t *testing.T) {
-	db, _ := sqltest.New(t,
-		sqltest.Rule{Match: "WHERE status = 'done'", Rows: []map[string]driver.Value{{"COUNT(*)": int64(1)}}},
-		sqltest.Rule{Match: "SELECT COUNT(*)", Rows: []map[string]driver.Value{{"COUNT(*)": int64(0)}}},
-	)
-	err := Run(context.Background(), Deps{DB: db, Backend: "tidb", Protector: testProtector(t)}, Options{Mode: ModeVerify, Fields: []string{secrets.FieldOutboxAPIKeySubject}, BatchSize: 10}, testLogger())
-	if err == nil || !strings.Contains(err.Error(), "verification failed") {
-		t.Fatalf("Run error = %v, want verification failure", err)
-	}
-}
-
-func TestScrubStatementsLoopUntilZero(t *testing.T) {
-	for _, tt := range []struct {
-		backend string
-		want    string
-	}{
-		{backend: "tidb", want: "UPDATE runtime_usage_outbox SET payload_json = JSON_REMOVE(payload_json, '$.apiKeySubject', '$.event.apiKeySubject') WHERE status = 'done' AND JSON_CONTAINS_PATH(payload_json, 'one', '$.apiKeySubject', '$.event.apiKeySubject') LIMIT ?"},
-		{backend: "postgres", want: "UPDATE runtime_usage_outbox SET payload_json = payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}' WHERE operation_id IN (SELECT operation_id FROM runtime_usage_outbox WHERE status = 'done' AND (payload_json->'apiKeySubject' IS NOT NULL OR payload_json #> '{event,apiKeySubject}' IS NOT NULL) LIMIT $1)"},
-		{backend: "db9", want: "UPDATE runtime_usage_outbox SET payload_json = payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}' WHERE operation_id IN (SELECT operation_id FROM runtime_usage_outbox WHERE status = 'done' AND (payload_json->'apiKeySubject' IS NOT NULL OR payload_json #> '{event,apiKeySubject}' IS NOT NULL) LIMIT $1)"},
-	} {
-		t.Run(tt.backend, func(t *testing.T) {
-			db, rec := sqltest.New(t,
-				sqltest.Rule{Match: "UPDATE runtime_usage_outbox", Nth: 3, Result: zeroResult},
-				sqltest.Rule{Match: "SELECT COUNT(*)", Rows: []map[string]driver.Value{{"COUNT(*)": int64(0)}}},
-			)
-			err := Run(context.Background(), Deps{DB: db, Backend: tt.backend}, Options{Mode: ModeScrub, BatchSize: 1, Pause: time.Millisecond}, testLogger())
-			if err != nil {
-				t.Fatalf("Run: %v", err)
-			}
-			updates := statementsWithPrefix(rec, "UPDATE")
-			if len(updates) != 3 {
-				t.Fatalf("scrub attempts = %d, want 3", len(updates))
-			}
-			for _, stmt := range updates {
-				if stmt.Query != tt.want {
-					t.Fatalf("scrub query = %s", stmt.Query)
-				}
-			}
-		})
-	}
-}
-
-func TestScrubRejectsOtherFields(t *testing.T) {
-	db, _ := sqltest.New(t)
-	err := Run(context.Background(), Deps{DB: db, Backend: "tidb"}, Options{Mode: ModeScrub, Fields: []string{secrets.FieldTenantDBPassword}, BatchSize: 10}, testLogger())
-	if err == nil {
-		t.Fatal("scrub accepted a non-outbox field")
-	}
-}
-
 func TestLogsAndErrorsDoNotLeakValues(t *testing.T) {
 	protector := testProtector(t)
 	const (
@@ -401,6 +367,88 @@ func TestLogsAndErrorsDoNotLeakValues(t *testing.T) {
 		if strings.Contains(logs.String(), needle) || strings.Contains(err.Error(), needle) {
 			t.Fatalf("logs or error leaked a value: %q", needle)
 		}
+	}
+}
+
+func TestInspectOutboxPrintsFingerprintsOnly(t *testing.T) {
+	protector := testProtector(t)
+	const (
+		tenantID = "tenant-raw-id-3c9e"
+		subject  = "space-key-raw-7d21"
+		legacy   = "chain_legacy-raw-5b10"
+	)
+	sealed, err := protector.For(secrets.FieldOutboxAPIKeySubject).Encrypt(context.Background(), subject)
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	db, rec := sqltest.New(t, sqltest.Rule{Match: "SELECT operation_id, tenant_id", Rows: []map[string]driver.Value{{
+		"operation_id": testOperationID, "tenant_id": tenantID, "status": "done", "step": "submit_metering_event",
+		"phase": "done", "created_at": "2026-11-04 08:00:00", "apiKeySubject": sealed, "event_api_key_subject": legacy,
+	}}})
+	var logs bytes.Buffer
+	err = Run(context.Background(), Deps{DB: db, Backend: "tidb", Protector: protector}, Options{Mode: ModeInspectOutbox, OperationID: testOperationID, Limit: 20}, slog.New(slog.NewJSONHandler(&logs, nil)))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	stmts := rec.Statements()
+	if len(stmts) != 1 || !strings.Contains(stmts[0].Query, "WHERE operation_id = ?) AS extracted ORDER BY created_at DESC LIMIT ?") ||
+		stmts[0].Args[0] != testOperationID || stmts[0].Args[1] != int64(20) {
+		t.Fatalf("inspect statements = %+v", stmts)
+	}
+	for _, want := range []string{
+		`"operation_id":"` + testOperationID + `"`,
+		`"tenant":"` + logsafe.TenantID(tenantID) + `"`,
+		`"subject":"` + logsafe.TenantID(subject) + `"`, `"subject_format":"enc_v1"`,
+		`"event_subject":"` + logsafe.TenantID(legacy) + `"`, `"event_subject_format":"legacy"`,
+		`"rows":1`, `"undecryptable":0`,
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("logs miss %s: %s", want, logs.String())
+		}
+	}
+	for _, leaked := range []string{tenantID, subject, legacy, sealed, "enc:v1:"} {
+		if strings.Contains(logs.String(), leaked) {
+			t.Fatalf("inspect leaked %q", leaked)
+		}
+	}
+}
+
+func TestInspectOutboxByTenantFingerprint(t *testing.T) {
+	for _, tt := range []struct {
+		backend, where, limit string
+	}{
+		{"tidb", "WHERE LEFT(SHA2(tenant_id, 256), 24) = ?)", "LIMIT ?"},
+		{"postgres", "WHERE left(encode(sha256(convert_to(tenant_id, 'UTF8')), 'hex'), 24) = $1)", "LIMIT $2"},
+	} {
+		t.Run(tt.backend, func(t *testing.T) {
+			db, rec := sqltest.New(t)
+			err := Run(context.Background(), Deps{DB: db, Backend: tt.backend, Protector: testProtector(t)}, Options{Mode: ModeInspectOutbox, TenantFingerprint: "sha256:0123456789abcdef01234567", Limit: 7}, testLogger())
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			stmts := rec.Statements()
+			if len(stmts) != 1 || !strings.Contains(stmts[0].Query, tt.where) || !strings.HasSuffix(stmts[0].Query, tt.limit) {
+				t.Fatalf("inspect statements = %+v", stmts)
+			}
+			if stmts[0].Args[0] != "0123456789abcdef01234567" || stmts[0].Args[1] != int64(7) {
+				t.Fatalf("inspect args = %+v", stmts[0].Args)
+			}
+		})
+	}
+}
+
+func TestInspectOutboxReportsUndecryptableSubjects(t *testing.T) {
+	db, _ := sqltest.New(t, sqltest.Rule{Match: "SELECT operation_id, tenant_id", Rows: []map[string]driver.Value{{
+		"operation_id": testOperationID, "tenant_id": "t", "status": "pending", "step": "commit_reservation",
+		"phase": "commit_pending", "created_at": nil, "apiKeySubject": "enc:v9:unknown", "event_api_key_subject": nil,
+	}}})
+	var logs bytes.Buffer
+	err := Run(context.Background(), Deps{DB: db, Backend: "tidb", Protector: testProtector(t)}, Options{Mode: ModeInspectOutbox, OperationID: testOperationID, Limit: 20}, slog.New(slog.NewJSONHandler(&logs, nil)))
+	if err == nil || !strings.Contains(logs.String(), `"subject_format":"undecryptable"`) || !strings.Contains(logs.String(), `"event_subject_format":"absent"`) {
+		t.Fatalf("Run error = %v, logs = %s", err, logs.String())
+	}
+	if err := Run(context.Background(), Deps{DB: db, Backend: "tidb"}, Options{Mode: ModeInspectOutbox, OperationID: testOperationID, Limit: 20}, testLogger()); err == nil {
+		t.Fatal("inspect ran without a protector")
 	}
 }
 

@@ -418,9 +418,16 @@ mnemo-server migrate-secrets --mode=backfill
 mnemo-server migrate-secrets --mode=verify
 ```
 
-`--fields` limits the run to the exact field constants, `--batch-size` controls keyset page size, `--pause` adds a delay between batches, and `--max-rows` caps rows updated per field for a trial run. Recommended order is `dry-run` → `backfill --max-rows=10` → `backfill` → `verify`. Run `--mode=scrub` to remove `apiKeySubject` paths from completed runtime-usage outbox rows; this can be used after the server version that understands `enc_v1` is deployed.
+`--fields` limits the run to the exact field constants, `--batch-size` controls keyset page size, `--pause` adds a delay between batches, and `--max-rows` caps rows updated per field for a trial run. Recommended order is `dry-run` → `backfill --max-rows=10` → `backfill` → `verify`. Runtime-usage outbox rows keep their `apiKeySubject` values in every status, including `done`, for troubleshooting; `backfill` encrypts them like the other fields.
 
-`backfill` is refused unless the shared configuration already sets `MNEMO_ENCRYPT_WRITE_FORMAT=enc_v1`; switch the servers first, so every instance reads `enc_v1` before rows are rewritten. Each row is decrypted, re-encrypted with its field's kid and checked before a compare-and-swap update, so a concurrent server write wins and re-runs only touch rows still in the legacy format. `verify` exits non-zero while legacy values, undecryptable `enc:` values or subjects on completed outbox rows remain. The migration needs the same database environment and the keyring mounted through `MNEMO_SPACE_CREDENTIAL_KEYRING_FILE`; it never starts the HTTP server or background workers. It only reports aggregate integer counters, not row IDs or secret values.
+`backfill` is refused unless the shared configuration already sets `MNEMO_ENCRYPT_WRITE_FORMAT=enc_v1`; switch the servers first, so every instance reads `enc_v1` before rows are rewritten. Each row is decrypted, re-encrypted with its field's kid and checked before a compare-and-swap update, so a concurrent server write wins and re-runs only touch rows still in the legacy format. `verify` exits non-zero while legacy values or undecryptable `enc:` values remain. The migration needs the same database environment and the keyring mounted through `MNEMO_SPACE_CREDENTIAL_KEYRING_FILE`; it never starts the HTTP server or background workers. It only reports aggregate integer counters, not row IDs or secret values.
+
+To find out which key a runtime-usage outbox row belongs to, use the read-only `inspect-outbox` mode. Select one row by `--operation-id`, or the newest rows of a tenant by `--tenant-fingerprint` (the `sha256:` value the server logs as `tenant_id`; `--limit` defaults to 20, at most 200). It decrypts the subjects in memory and prints, per row, the operation id, status, step, timestamps and `sha256:` fingerprints of the tenant and both subjects, never a key or ciphertext. To match a known key, compare its fingerprint, computed locally with `printf %s "$KEY" | shasum -a 256 | cut -c1-24`, prefixed with `sha256:`. It does not need `secret_field_kids`.
+
+```bash
+mnemo-server migrate-secrets --mode=inspect-outbox --tenant-fingerprint=sha256:<24 hex> --limit=20
+mnemo-server migrate-secrets --mode=inspect-outbox --operation-id=<operation uuid>
+```
 
 For Kubernetes, run the existing server image as a Job with the server's `envFrom` reference and keyring mount. Replace every placeholder before use:
 
