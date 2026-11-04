@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/runtimeusage"
+	"github.com/qiffang/mnemos/server/internal/secrets"
 )
 
 type Config struct {
@@ -126,6 +127,9 @@ type Config struct {
 	//   - "md5": AES-GCM encryption with MD5-derived key
 	//   - "kms": AWS KMS encryption
 	EncryptType string
+	// EncryptWriteFormat controls the format used for newly written control-plane
+	// secrets. Readers always support both legacy and enc_v1 values.
+	EncryptWriteFormat string
 	// EncryptKey is the encryption key or KMS key ID.
 	// For "md5": the key string used to derive the AES key.
 	// For "kms": the KMS key ID, ARN, alias name, or alias ARN.
@@ -274,6 +278,7 @@ func Load() (*Config, error) {
 		RuntimeUsageNoticeCacheTTL:       envDuration("MNEMO_RUNTIME_USAGE_NOTICE_CACHE_TTL", 30*time.Second),
 		RuntimeUsageNoticeStaleTTL:       envDuration("MNEMO_RUNTIME_USAGE_NOTICE_STALE_TTL", 2*time.Minute),
 		EncryptType:                      envOr("MNEMO_ENCRYPT_TYPE", "plain"),
+		EncryptWriteFormat:               envOr("MNEMO_ENCRYPT_WRITE_FORMAT", secrets.WriteFormatLegacy),
 		EncryptKey:                       os.Getenv("MNEMO_ENCRYPT_KEY"),
 		DebugLLM:                         envBool("MNEMO_DEBUG_LLM", false),
 		ClusterBlacklist:                 parseClusterBlacklist(os.Getenv("MNEMO_CLUSTER_BLACKLIST")),
@@ -292,6 +297,13 @@ func Load() (*Config, error) {
 		// ok
 	default:
 		return nil, fmt.Errorf("unsupported MNEMO_INGEST_MODE %q; valid values are \"smart\" and \"raw\"", cfg.IngestMode)
+	}
+
+	switch cfg.EncryptWriteFormat {
+	case secrets.WriteFormatLegacy, secrets.WriteFormatEncV1:
+		// ok
+	default:
+		return nil, fmt.Errorf("unsupported MNEMO_ENCRYPT_WRITE_FORMAT %q; valid values are %q and %q", cfg.EncryptWriteFormat, secrets.WriteFormatLegacy, secrets.WriteFormatEncV1)
 	}
 
 	// Validate DB backend.
@@ -552,6 +564,7 @@ func (c *Config) LogValue() slog.Value {
 		slog.String("Port", c.Port),
 		slog.String("DBBackend", c.DBBackend),
 		slog.String("EncryptType", c.EncryptType),
+		slog.String("EncryptWriteFormat", c.EncryptWriteFormat),
 		slog.Bool("EncryptKeyConfigured", c.EncryptKey != ""),
 		slog.Bool("RuntimeUsageEnabled", c.RuntimeUsageEnabled),
 		slog.Bool("RuntimeUsageInternalSecretConfigured", c.RuntimeUsageInternalSecret != ""),

@@ -34,6 +34,9 @@ type Rule struct {
 	Rows []map[string]driver.Value
 	// Err is returned instead of running the statement.
 	Err error
+	// Result overrides the RowsAffected result for non-query statements. nil
+	// keeps the default one-row result.
+	Result driver.Result
 }
 
 // Recorder collects what happened on the database it backs.
@@ -129,8 +132,12 @@ func (c *conn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
 }
 
 func (c *conn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	if _, err := c.rec.answer(query, args, c.inTx); err != nil {
+	rule, err := c.rec.answer(query, args, c.inTx)
+	if err != nil {
 		return nil, err
+	}
+	if rule != nil && rule.Result != nil {
+		return rule.Result, nil
 	}
 	return driver.RowsAffected(1), nil
 }

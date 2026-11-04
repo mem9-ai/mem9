@@ -27,6 +27,14 @@ func New(db *sql.DB, backend, secretFile string) (*Store, error) {
 	return &Store{db: db, backend: backend, keys: keys}, nil
 }
 
+// Keyring returns the keyring loaded for credential storage.
+func (s *Store) Keyring() *Keyring {
+	if s == nil {
+		return nil
+	}
+	return s.keys
+}
+
 func (s *Store) query(q string) string {
 	if s.backend != "postgres" && s.backend != "db9" {
 		return q

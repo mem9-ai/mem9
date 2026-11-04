@@ -282,6 +282,26 @@ var (
 		},
 		[]string{"reason"},
 	)
+
+	// SecretLegacyReadsTotal counts reads of pre-envelope control-plane secrets.
+	SecretLegacyReadsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "secret_legacy_reads_total",
+			Help:      "Total reads of legacy control-plane secret formats.",
+		},
+		[]string{"field"},
+	)
+
+	// SecretDecryptErrorsTotal counts control-plane secret decryption failures.
+	SecretDecryptErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "mnemo",
+			Name:      "secret_decrypt_errors_total",
+			Help:      "Total control-plane secret decryption failures.",
+		},
+		[]string{"field"},
+	)
 )
 
 // Middleware records HTTP request count and duration for each request.

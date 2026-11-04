@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/qiffang/mnemos/server/internal/config"
+	"github.com/qiffang/mnemos/server/internal/secretmigrate"
 )
 
 func TestNewRuntimeUsageConfigMapsReservationRetryDelays(t *testing.T) {
@@ -40,5 +41,16 @@ func TestRedactMeteringURLForLog(t *testing.T) {
 				t.Fatalf("redactMeteringURLForLog(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMigrateSecretsSubcommandRejectsUnknownModeWithoutOpeningDB(t *testing.T) {
+	_, err := secretmigrate.Parse([]string{"--mode=not-a-mode"})
+	if err == nil {
+		t.Fatal("Parse error = nil, want error")
+	}
+	code := runMigrateSecrets([]string{"--mode=not-a-mode"})
+	if code != 2 {
+		t.Fatalf("runMigrateSecrets code = %d, want 2", code)
 	}
 }

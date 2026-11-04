@@ -4,14 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/qiffang/mnemos/server/internal/credentials"
+	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/metering"
+	"github.com/qiffang/mnemos/server/internal/secrets"
 )
 
 var (
@@ -189,20 +196,151 @@ func TestSQLStoreUpsertMeteringPendingUsesAtomicUpsertAndDetectsConflict(t *test
 	}
 }
 
-func TestSQLStoreDoneStatusClearsLastError(t *testing.T) {
-	rec := &recordingStore{}
-	store := NewSQLStore(newRecordingDB(t, rec), "tidb")
+func TestSQLStoreUpsertMeteringPendingEncryptsSubjectWithoutChangingHash(t *testing.T) {
+	protector, err := secrets.New(runtimeUsageTestKeyring(t), encrypt.NewPlainEncryptor(), secrets.WriteFormatEncV1)
+	if err != nil {
+		t.Fatalf("New protector: %v", err)
+	}
+	rec := &recordingStore{
+		statusRow: []driver.Value{outboxStatusPending, outboxPhaseMeteringPending, nil},
+	}
+	store := NewSQLStore(newRecordingDB(t, rec), "tidb", protector.For(secrets.FieldOutboxAPIKeySubject))
+	wantHash := strings.Repeat("a", 64)
+	err = store.UpsertMeteringPending(context.Background(), metering.Event{
+		OperationID:   "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		TenantID:      "tenant-a",
+		APIKeySubject: "api-key-subject",
+		EventType:     EventTypeMemoryRecall,
+		Meter:         MeterMemoryRecallRequests,
+		Units:         1,
+	}, []byte(`{"apiKeySubject":"api-key-subject"}`), wantHash)
+	if err != nil {
+		t.Fatalf("UpsertMeteringPending: %v", err)
+	}
+	if got := rec.execs[0].args[7].Value; got != wantHash {
+		t.Fatalf("payload hash = %v, want %s", got, wantHash)
+	}
+	var payload outboxPayload
+	if err := json.Unmarshal([]byte(rec.execs[0].args[6].Value.(string)), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Event == nil || !strings.HasPrefix(payload.Event.APIKeySubject, "enc:v1:") {
+		t.Fatalf("stored event subject is not encrypted")
+	}
+}
 
-	if err := store.MarkOperationDone(context.Background(), "op-1", "reservationReleased"); err != nil {
-		t.Fatalf("MarkOperationDone: %v", err)
+func TestSQLStoreDoneStatusClearsLastError(t *testing.T) {
+	tests := []struct {
+		backend   string
+		wantScrub string
+	}{
+		{backend: "tidb", wantScrub: "JSON_REMOVE(payload_json, '$.apiKeySubject', '$.event.apiKeySubject')"},
+		{backend: "postgres", wantScrub: "payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}'"},
+		{backend: "db9", wantScrub: "payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}'"},
 	}
-	if len(rec.execs) != 1 {
-		t.Fatalf("exec count = %d, want 1", len(rec.execs))
+	for _, tt := range tests {
+		t.Run(tt.backend, func(t *testing.T) {
+			rec := &recordingStore{}
+			store := NewSQLStore(newRecordingDB(t, rec), tt.backend)
+
+			if err := store.MarkOperationDone(context.Background(), "op-1", "reservationReleased"); err != nil {
+				t.Fatalf("MarkOperationDone: %v", err)
+			}
+			if len(rec.execs) != 1 {
+				t.Fatalf("exec count = %d, want 1", len(rec.execs))
+			}
+			if !strings.Contains(rec.execs[0].query, tt.wantScrub) {
+				t.Fatalf("query does not scrub subjects:\n%s", rec.execs[0].query)
+			}
+			if len(rec.execs[0].args) < 3 {
+				t.Fatalf("args = %+v, want last_error arg", rec.execs[0].args)
+			}
+			if rec.execs[0].args[2].Value != nil {
+				t.Fatalf("last_error arg = %#v, want NULL", rec.execs[0].args[2].Value)
+			}
+		})
 	}
-	if len(rec.execs[0].args) < 3 {
-		t.Fatalf("args = %+v, want last_error arg", rec.execs[0].args)
+}
+
+func TestSQLStoreEncryptedSubjectsKeepPlaintextPayloadHash(t *testing.T) {
+	keyring := runtimeUsageTestKeyring(t)
+	legacyProtector, err := secrets.New(keyring, encrypt.NewPlainEncryptor(), secrets.WriteFormatLegacy)
+	if err != nil {
+		t.Fatalf("New legacy protector: %v", err)
 	}
-	if rec.execs[0].args[2].Value != nil {
-		t.Fatalf("last_error arg = %#v, want NULL", rec.execs[0].args[2].Value)
+	encProtector, err := secrets.New(keyring, encrypt.NewPlainEncryptor(), secrets.WriteFormatEncV1)
+	if err != nil {
+		t.Fatalf("New enc protector: %v", err)
 	}
+
+	lease := &OperationLease{
+		OperationID: "018f7f3a-7b8c-7c2d-9a5b-6d7e8f901234",
+		Subject:     Subject{TenantID: "tenant-a", ClusterID: "cluster-a", APIKeySubject: "api-key-subject"},
+		Meter:       MeterMemoryRecallRequests,
+		Units:       1,
+		Reserved:    true,
+	}
+	event := MeteringEvent{EventType: EventTypeMemoryRecall, Meter: MeterMemoryRecallRequests, Units: 1}
+
+	records := make([]*recordingStore, 0, 2)
+	for _, fieldEncryptor := range []encrypt.Encryptor{
+		legacyProtector.For(secrets.FieldOutboxAPIKeySubject),
+		encProtector.For(secrets.FieldOutboxAPIKeySubject),
+	} {
+		rec := &recordingStore{}
+		store := NewSQLStore(newRecordingDB(t, rec), "tidb", fieldEncryptor)
+		store.now = func() time.Time { return time.Unix(100, 0).UTC() }
+		if err := store.StoreCommitPending(context.Background(), lease, event); err != nil {
+			t.Fatalf("StoreCommitPending: %v", err)
+		}
+		records = append(records, rec)
+	}
+
+	if got, want := records[1].execs[0].args[7].Value, records[0].execs[0].args[7].Value; got != want {
+		t.Fatalf("encrypted payload hash = %v, want legacy hash %v", got, want)
+	}
+	var stored outboxPayload
+	if err := json.Unmarshal([]byte(records[1].execs[0].args[6].Value.(string)), &stored); err != nil {
+		t.Fatalf("unmarshal encrypted payload: %v", err)
+	}
+	if !strings.HasPrefix(stored.APIKeySubject, "enc:v1:") {
+		t.Fatalf("top-level subject is not encrypted")
+	}
+	if stored.Event == nil || !strings.HasPrefix(stored.Event.APIKeySubject, "enc:v1:") {
+		t.Fatalf("event subject is not encrypted")
+	}
+}
+
+func runtimeUsageTestKeyring(t *testing.T) *credentials.Keyring {
+	t.Helper()
+	key := make([]byte, 32)
+	dbKey := make([]byte, 32)
+	whKey := make([]byte, 32)
+	obKey := make([]byte, 32)
+	cuKey := make([]byte, 32)
+	hmacKey := make([]byte, 32)
+	for i := range key {
+		key[i] = 0x22
+		dbKey[i] = 0x33
+		whKey[i] = 0x34
+		obKey[i] = 0x35
+		cuKey[i] = 0x36
+		hmacKey[i] = 0x11
+	}
+	contents := fmt.Sprintf(`{
+  "hash_version":"h1",
+  "hmac_keys":{"h1":%q},
+  "encryption_kid":"enc-current",
+  "encryption_keys":{"enc-current":%q,"db-k1":%q,"wh-k1":%q,"ob-k1":%q,"cu-k1":%q},
+  "secret_field_kids":{"%s":"db-k1","%s":"wh-k1","%s":"ob-k1","%s":"cu-k1"}
+}`, base64.StdEncoding.EncodeToString(hmacKey), base64.StdEncoding.EncodeToString(key), base64.StdEncoding.EncodeToString(dbKey), base64.StdEncoding.EncodeToString(whKey), base64.StdEncoding.EncodeToString(obKey), base64.StdEncoding.EncodeToString(cuKey), secrets.FieldTenantDBPassword, secrets.FieldWebhookSecret, secrets.FieldOutboxAPIKeySubject, secrets.FieldTenantClaimURL)
+	path := filepath.Join(t.TempDir(), "keyring.json")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	keyring, err := credentials.LoadKeyring(path)
+	if err != nil {
+		t.Fatalf("LoadKeyring: %v", err)
+	}
+	return keyring
 }

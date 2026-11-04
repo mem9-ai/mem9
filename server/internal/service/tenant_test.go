@@ -327,6 +327,119 @@ func TestProvision_WithEncryptor(t *testing.T) {
 	}
 }
 
+func TestProvision_WithClaimURLEncryptor(t *testing.T) {
+	t.Parallel()
+
+	const claimURL = "https://example.test/claim/tenant"
+
+	tests := []struct {
+		name       string
+		encryptor  encrypt.Encryptor
+		wantPrefix string
+		wantPlain  bool
+	}{
+		{
+			name:       "enc_v1",
+			encryptor:  &claimURLEncryptor{kid: "cu-k1"},
+			wantPrefix: "enc:v1:cu-k1:",
+			wantPlain:  true,
+		},
+		{
+			name:       "legacy",
+			encryptor:  &claimURLEncryptor{legacy: true},
+			wantPrefix: claimURL,
+		},
+		{
+			name:      "nil",
+			encryptor: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			mockRepo := &mockTenantRepo{}
+			svc := NewTenantService(
+				mockRepo,
+				&mockProvisioner{info: &tenant.ClusterInfo{
+					ID:       "tenant-claim-url",
+					Host:     "test-host",
+					Port:     4000,
+					Username: "root",
+					Password: "test-password",
+					DBName:   "test",
+					ClaimURL: claimURL,
+				}},
+				&mockPool{backend: "tidb"},
+				slog.New(slog.NewTextHandler(io.Discard, nil)),
+				"", 0, 0, false,
+				encrypt.NewPlainEncryptor(),
+			).WithClaimURLEncryptor(tt.encryptor)
+
+			if _, err := svc.Provision(context.Background(), ProvisionRequest{}); err != nil {
+				t.Fatalf("Provision: %v", err)
+			}
+			stored := mockRepo.createdTenant.ClaimURL
+			if tt.wantPrefix != "" && !strings.HasPrefix(stored, tt.wantPrefix) {
+				t.Fatalf("ClaimURL prefix = %q, want %q", stored, tt.wantPrefix)
+			}
+			if tt.wantPrefix == "" && stored != claimURL {
+				t.Fatalf("ClaimURL = %q, want original value", stored)
+			}
+			if tt.wantPlain {
+				plaintext, err := tt.encryptor.Decrypt(context.Background(), stored)
+				if err != nil {
+					t.Fatalf("Decrypt claim URL: %v", err)
+				}
+				if plaintext != claimURL {
+					t.Fatalf("decrypted ClaimURL = %q, want %q", plaintext, claimURL)
+				}
+			}
+		})
+	}
+}
+
+func TestProvision_ClaimURLEncryptorFailure(t *testing.T) {
+	t.Parallel()
+
+	const claimURL = "https://example.test/claim/tenant"
+	var buf bytes.Buffer
+	logger := slog.New(reqid.NewHandler(slog.NewJSONHandler(&buf, nil)))
+	svc := NewTenantService(
+		&mockTenantRepo{},
+		&mockProvisioner{info: &tenant.ClusterInfo{
+			ID:       "tenant-claim-url-error",
+			Host:     "test-host",
+			Port:     4000,
+			Username: "root",
+			Password: "test-password",
+			DBName:   "test",
+			ClaimURL: claimURL,
+		}},
+		&mockPool{backend: "tidb"},
+		logger,
+		"", 0, 0, false,
+		encrypt.NewPlainEncryptor(),
+	).WithClaimURLEncryptor(&claimURLEncryptor{err: errors.New("kms unavailable")})
+
+	ctx := reqid.NewContext(context.Background(), "req-claim-url-error")
+	_, err := svc.Provision(ctx, ProvisionRequest{})
+	if err == nil {
+		t.Fatal("expected Provision to fail")
+	}
+	if !strings.Contains(err.Error(), "encrypt tenant claim URL") {
+		t.Fatalf("error = %v, want claim URL encryption context", err)
+	}
+	if strings.Contains(err.Error(), claimURL) || strings.Contains(buf.String(), claimURL) {
+		t.Fatal("claim URL leaked into error or logs")
+	}
+	entries := decodeJSONLogs(t, &buf)
+	failure := findLogEntry(t, entries, "tenant provision failed")
+	if failure["tenant_id"] != "sha256:fa7189fae07aa388f64681fc" {
+		t.Fatalf("failure tenant_id = %v, want redacted tenant fingerprint", failure["tenant_id"])
+	}
+}
+
 // mockProvisioner is a test double for tenant.Provisioner
 type mockProvisioner struct {
 	info *tenant.ClusterInfo
@@ -353,6 +466,32 @@ type mockTenantRepo struct {
 	createdTenant *domain.Tenant
 	getTenant     *domain.Tenant
 	getErr        error
+}
+
+type claimURLEncryptor struct {
+	kid    string
+	legacy bool
+	err    error
+}
+
+func (e *claimURLEncryptor) Encrypt(ctx context.Context, plaintext string) (string, error) {
+	if e.err != nil {
+		return "", e.err
+	}
+	if e.legacy {
+		return plaintext, nil
+	}
+	return "enc:v1:" + e.kid + ":" + plaintext, nil
+}
+
+func (e *claimURLEncryptor) Decrypt(ctx context.Context, stored string) (string, error) {
+	if e.err != nil {
+		return "", e.err
+	}
+	if e.legacy {
+		return stored, nil
+	}
+	return strings.TrimPrefix(stored, "enc:v1:"+e.kid+":"), nil
 }
 
 func (m *mockTenantRepo) Create(ctx context.Context, t *domain.Tenant) error {

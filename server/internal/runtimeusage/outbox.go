@@ -6,9 +6,11 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/qiffang/mnemos/server/internal/encrypt"
 	"github.com/qiffang/mnemos/server/internal/metering"
 )
 
@@ -65,17 +67,22 @@ type outboxRow struct {
 }
 
 type SQLStore struct {
-	db      *sql.DB
-	backend string
-	now     func() time.Time
+	db                  *sql.DB
+	backend             string
+	apiKeySubjectCipher encrypt.Encryptor
+	now                 func() time.Time
 }
 
-func NewSQLStore(db *sql.DB, backend string) *SQLStore {
-	return &SQLStore{
+func NewSQLStore(db *sql.DB, backend string, apiKeySubjectCipher ...encrypt.Encryptor) *SQLStore {
+	store := &SQLStore{
 		db:      db,
 		backend: backend,
 		now:     time.Now,
 	}
+	if len(apiKeySubjectCipher) > 0 {
+		store.apiKeySubjectCipher = apiKeySubjectCipher[0]
+	}
+	return store
 }
 
 func (s *SQLStore) EnsureSchema(ctx context.Context) error {
@@ -233,7 +240,7 @@ func (s *SQLStore) UpsertMeteringPending(ctx context.Context, evt metering.Event
 	if s == nil || s.db == nil {
 		return nil
 	}
-	storedPayload, err := marshalMeteringPendingPayload(evt)
+	storedPayload, err := s.marshalStoredPayload(ctx, meteringPendingPayload(evt))
 	if err != nil {
 		return err
 	}
@@ -278,7 +285,11 @@ func (s *SQLStore) storeOperation(ctx context.Context, lease *OperationLease, st
 	if nextAttemptAt.IsZero() {
 		nextAttemptAt = s.now()
 	}
-	payloadJSON, payloadHash, err := marshalOutboxPayload(payload)
+	_, payloadHash, err := marshalOutboxPayload(payload)
+	if err != nil {
+		return err
+	}
+	payloadJSON, err := s.marshalStoredPayload(ctx, payload)
 	if err != nil {
 		return err
 	}
@@ -442,9 +453,21 @@ func (s *SQLStore) updateStatus(ctx context.Context, operationID, status, phase,
 	if status == outboxStatusDone {
 		lastError = sql.NullString{}
 	}
-	_, err := s.db.ExecContext(ctx, s.placeholder(`UPDATE runtime_usage_outbox
+	query := `UPDATE runtime_usage_outbox
 SET status = ?, phase = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
-WHERE operation_id = ?`), status, phase, lastError, operationID)
+WHERE operation_id = ?`
+	if status == outboxStatusDone {
+		if s.backend == "postgres" || s.backend == "db9" {
+			query = `UPDATE runtime_usage_outbox
+SET status = ?, phase = ?, last_error = ?, payload_json = payload_json #- '{apiKeySubject}' #- '{event,apiKeySubject}', updated_at = CURRENT_TIMESTAMP
+WHERE operation_id = ?`
+		} else {
+			query = `UPDATE runtime_usage_outbox
+SET status = ?, phase = ?, last_error = ?, payload_json = JSON_REMOVE(payload_json, '$.apiKeySubject', '$.event.apiKeySubject'), updated_at = CURRENT_TIMESTAMP
+WHERE operation_id = ?`
+		}
+	}
+	_, err := s.db.ExecContext(ctx, s.placeholder(query), status, phase, lastError, operationID)
 	if err != nil {
 		return fmt.Errorf("update runtime usage outbox status: %w", err)
 	}
@@ -505,8 +528,8 @@ func outboxEventFromMetering(event MeteringEvent, apiKeySubject string) *outboxM
 	}
 }
 
-func marshalMeteringPendingPayload(evt metering.Event) ([]byte, error) {
-	payload := outboxPayload{
+func meteringPendingPayload(evt metering.Event) outboxPayload {
+	return outboxPayload{
 		Event: &outboxMeteringPayload{
 			APIKeySubject: evt.APIKeySubject,
 			EventType:     evt.EventType,
@@ -518,11 +541,75 @@ func marshalMeteringPendingPayload(evt metering.Event) ([]byte, error) {
 			Metadata:      cloneAnyMap(evt.Metadata),
 		},
 	}
-	payloadJSON, err := json.Marshal(payload)
+}
+
+func (s *SQLStore) marshalStoredPayload(ctx context.Context, payload outboxPayload) ([]byte, error) {
+	storedPayload := cloneOutboxPayload(payload)
+	if err := s.encryptAPIKeySubjects(ctx, &storedPayload); err != nil {
+		return nil, err
+	}
+	payloadJSON, err := json.Marshal(storedPayload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal runtime usage metering outbox payload: %w", err)
+		return nil, fmt.Errorf("marshal runtime usage outbox payload: %w", err)
 	}
 	return payloadJSON, nil
+}
+
+func (s *SQLStore) encryptAPIKeySubjects(ctx context.Context, payload *outboxPayload) error {
+	if s == nil || s.apiKeySubjectCipher == nil || payload == nil {
+		return nil
+	}
+	topLevel, err := s.apiKeySubjectCipher.Encrypt(ctx, payload.APIKeySubject)
+	if err != nil {
+		return errors.New("encrypt outbox API key subject failed")
+	}
+	eventSubject := ""
+	if payload.Event != nil {
+		eventSubject, err = s.apiKeySubjectCipher.Encrypt(ctx, payload.Event.APIKeySubject)
+		if err != nil {
+			return errors.New("encrypt outbox API key subject failed")
+		}
+	}
+	payload.APIKeySubject = topLevel
+	if payload.Event != nil {
+		payload.Event.APIKeySubject = eventSubject
+	}
+	return nil
+}
+
+// DecryptAPIKeySubjects decrypts both subject copies before the worker uses
+// either value. A nil encryptor preserves the legacy behavior.
+func (s *SQLStore) DecryptAPIKeySubjects(ctx context.Context, payload *outboxPayload) error {
+	if s == nil || s.apiKeySubjectCipher == nil || payload == nil {
+		return nil
+	}
+	topLevel, err := s.apiKeySubjectCipher.Decrypt(ctx, payload.APIKeySubject)
+	if err != nil {
+		return errors.New("decrypt outbox API key subject failed")
+	}
+	eventSubject := ""
+	if payload.Event != nil {
+		eventSubject, err = s.apiKeySubjectCipher.Decrypt(ctx, payload.Event.APIKeySubject)
+		if err != nil {
+			return errors.New("decrypt outbox API key subject failed")
+		}
+	}
+	payload.APIKeySubject = topLevel
+	if payload.Event != nil {
+		payload.Event.APIKeySubject = eventSubject
+	}
+	return nil
+}
+
+func cloneOutboxPayload(payload outboxPayload) outboxPayload {
+	cloned := payload
+	if payload.Event != nil {
+		event := *payload.Event
+		event.MemoryIDs = append([]string(nil), payload.Event.MemoryIDs...)
+		event.Metadata = cloneAnyMap(payload.Event.Metadata)
+		cloned.Event = &event
+	}
+	return cloned
 }
 
 func cloneAnyMap(in map[string]any) map[string]any {
