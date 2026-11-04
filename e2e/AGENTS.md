@@ -223,26 +223,6 @@ pinned path as a control group.
 | 5   | Pinned content + metadata write         | `POST /memories` with `content`, `memory_type:pinned`, `metadata` → 201              |
 | 6   | Pinned GET metadata persisted           | `GET /memories/{id}` returns pinned memory with metadata matching sent values         |
 
-### Protected-secret rollout (`t6-secret-rollout-check.py`)
-
-Run before and after each step of the `MNEMO_ENCRYPT_WRITE_FORMAT` / `migrate-secrets`
-rollout, with a label per step. `MNEMO_BASE` has no default. Spaces it provisions are kept in
-a 0600 state file and checked again on later runs, so Spaces written before a step are read
-after it. It never prints API keys, claim URLs or signing secrets.
-
-```bash
-MNEMO_BASE=$DEV MNEMO_METRICS_URL=$DEV_METRICS python3 -I e2e/t6-secret-rollout-check.py baseline
-MNEMO_BASE=$DEV T6_EXISTING_KEY_FILE=~/old-space.key python3 -I e2e/t6-secret-rollout-check.py after-backfill
-```
-
-| #   | Case                    | What is verified                                                                                       |
-| --- | ----------------------- | ------------------------------------------------------------------------------------------------------ |
-| 1   | Healthcheck             | `GET /healthz` returns 200 with `status=ok`                                                            |
-| 2   | Provision (optional)    | `POST /v1alpha1/mem9s` returns 201; skipped with `T6_PROVISION=0`                                       |
-| 3   | Every recorded Space    | key status `active`; list reaches the Space DB; a written memory becomes readable                     |
-| 4   | Webhook secret          | create, test, rotate, test, delete; the target is a `.invalid` host, so a delivery error naming DNS resolution (not `decrypt`) proves the secret was decrypted and nothing left the server |
-| 5   | Metrics (optional)      | `mnemo_secret_decrypt_errors_total` is 0; prints `mnemo_secret_legacy_reads_total`                     |
-
 ## Commands
 
 ```bash
