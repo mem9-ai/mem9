@@ -1,0 +1,71 @@
+name: Local TiDB smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/local-tidb-smoke.yml"
+      - "e2e/local-smoke-checks.sh"
+      - "e2e/local-tidb-smoke.sh"
+      - "server/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/local-tidb-smoke.yml"
+      - "e2e/local-smoke-checks.sh"
+      - "e2e/local-tidb-smoke.sh"
+      - "server/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-tidb-smoke:
+    name: Local TiDB smoke
+    runs-on: ubuntu-latest
+
+    env:
+      MNEMO_BASE: http://127.0.0.1:18082
+      MNEMO_PORT: 18082
+      MNEMO_SMOKE_TENANT_ID: ci-local-tidb-smoke
+      NO_PROXY: "*"
+      SMOKE_LOG_DIR: /tmp/mem9-local-tidb-smoke
+      TIDB_VERSION: v8.5.1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Install MySQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y default-mysql-client
+
+      - name: Install TiUP
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh
+          echo "$HOME/.tiup/bin" >> "$GITHUB_PATH"
+
+      - name: Build server
+        run: make build
+
+      - name: Run local TiDB smoke
+        run: |
+          bash e2e/local-tidb-smoke.sh
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-tidb-smoke-logs
+          path: |
+            /tmp/mem9-local-tidb-smoke/*.log
+          if-no-files-found: warn
+          retention-days: 7
