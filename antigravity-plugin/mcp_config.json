@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mem9": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/scripts/mcp-server.mjs"]
+    }
+  }
+}

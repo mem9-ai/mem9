@@ -1,0 +1,26 @@
+{
+  "mem9-memory": {
+    "enabled": true,
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ./scripts/session-start.mjs",
+        "timeout": 15
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./scripts/pre-invocation.mjs",
+        "timeout": 15
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ./scripts/stop.mjs",
+        "timeout": 30
+      }
+    ]
+  }
+}

@@ -29,6 +29,7 @@ and a small Astro site.
 | `claude-plugin/`     | Claude Code plugin (hooks + skills)                          |
 | `codex-plugin/`      | Codex plugin (hooks + `$mem9:*` skills)                       |
 | `dsh-plugin/`   | DeepSeek Harness DSH/Cordis bundle                            |
+| `antigravity-plugin/` | Antigravity plugin (MCP server, lifecycle hooks, skills, rules, subagent) |
 | `docs/design/`       | Architecture/proposal notes and design drafts                |
 | `site/`              | Astro static site — deployed to Netlify from `main` branch   |
 | `e2e/`               | Live end-to-end scripts against a running server             |
@@ -56,6 +57,10 @@ pnpm --dir codex-plugin test
 pnpm --dir codex-plugin typecheck
 pnpm --dir dsh-plugin test
 pnpm --dir dsh-plugin typecheck
+
+# Antigravity plugin verification
+npm --prefix antigravity-plugin run check
+agy plugin validate --strict ./antigravity-plugin
 
 # Site dev/build
 cd site && npm run dev
@@ -160,6 +165,7 @@ MNEMO_DSN="user:pass@tcp(host:4000)/db?parseTime=true" make dev
 | Claude hooks         | `claude-plugin/hooks/`                      |
 | Codex hooks and skills | `codex-plugin/`                          |
 | DeepSeek Harness wiring | `dsh-plugin/src/index.ts`          |
+| Antigravity plugin wiring | `antigravity-plugin/plugin.json`        |
 | Architecture notes   | `docs/design/`                              |
 | OpenCode wiring      | `opencode-plugin/src/index.ts`              |
 | OpenClaw wiring      | `openclaw-plugin/index.ts`                  |
