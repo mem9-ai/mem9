@@ -646,6 +646,13 @@ export async function autoProvisionDefaultProfile({
     env,
     homeDir,
   });
+  if (initialState.issueCode === "ready") {
+    return initialState;
+  }
+  if (initialState.issueCode !== "missing_config") {
+    return null;
+  }
+
   const targetBaseUrl =
     normalizeBaseUrl(envOverride(env, "MEM9_API_URL"))
     || normalizeBaseUrl(initialState.runtime.baseUrl)
@@ -693,12 +700,17 @@ export async function autoProvisionDefaultProfile({
     };
   }
 
-  credentialsData.profiles.default = {
-    label: "Default",
-    baseUrl: finalBaseUrl,
-    apiKey,
-  };
-  writeJsonAtomic(credentialsPath, credentialsData, { mode: 0o600 });
+  const existingDefault = isRecord(credentialsData.profiles.default)
+    ? credentialsData.profiles.default
+    : null;
+  if (!normalizeString(existingDefault?.apiKey)) {
+    credentialsData.profiles.default = {
+      label: normalizeString(existingDefault?.label) || "Default",
+      baseUrl: finalBaseUrl,
+      apiKey,
+    };
+    writeJsonAtomic(credentialsPath, credentialsData, { mode: 0o600 });
+  }
 
   if (!existsSync(userConfigPath)) {
     writeJsonAtomic(

@@ -11,8 +11,7 @@
   },
   "include": [
     "scripts/**/*.mjs",
-    "skills/**/*.mjs",
-    "tests/**/*.mjs"
+    "skills/**/*.mjs"
   ],
   "exclude": [
     "node_modules",

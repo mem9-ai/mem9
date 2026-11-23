@@ -179,22 +179,23 @@ export async function runSessionStart(input = {}) {
   let autoProvisionFailed = false;
   let autoProvisionDisabled = false;
 
-  if (
-    state.issueCode === "missing_config"
-    || state.issueCode === "missing_profile"
-    || state.issueCode === "missing_api_key"
-  ) {
+  if (state.issueCode === "missing_config") {
     try {
       const provisioned = await autoProvisionFn({
         cwd,
         mem9Home: input.mem9Home,
         pluginDataDir,
         env,
+        ...(input.homeDir !== undefined ? { homeDir: input.homeDir } : {}),
         ...(input.provisionFn ? { provisionFn: input.provisionFn } : {}),
       });
       if (provisioned === null) {
-        autoProvisionDisabled = true;
-        debug("auto_provision_disabled");
+        if (/^(0|false|no|off)$/i.test(normalizeString(env?.MEM9_AUTO_PROVISION))) {
+          autoProvisionDisabled = true;
+          debug("auto_provision_disabled");
+        } else {
+          debug("auto_provision_skipped");
+        }
       } else {
         state = provisioned;
         debug("auto_provisioned", {

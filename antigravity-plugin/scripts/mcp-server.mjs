@@ -157,10 +157,6 @@ export const TOOL_DEFINITIONS = Object.freeze([
           maxLength: MAX_MEMORY_CONTENT_CHARS,
           description: "Memory content (required, max 50000 chars)",
         },
-        source: {
-          type: "string",
-          description: "Which agent wrote this memory",
-        },
         tags: {
           type: "array",
           items: { type: "string" },
@@ -243,10 +239,6 @@ export const TOOL_DEFINITIONS = Object.freeze([
           type: "string",
           maxLength: MAX_MEMORY_CONTENT_CHARS,
           description: "New content",
-        },
-        source: {
-          type: "string",
-          description: "New source",
         },
         tags: {
           type: "array",
@@ -457,6 +449,9 @@ export async function executeToolCall(name, args, ctx = {}) {
   try {
     switch (name) {
       case "memory_store": {
+        if (args.source !== undefined) {
+          throw new Error("source is not supported on memory_store; provenance is set from X-Mnemo-Agent-Id");
+        }
         const content = requireNonEmptyString(
           args.content,
           "content",
@@ -464,15 +459,11 @@ export async function executeToolCall(name, args, ctx = {}) {
         );
         const tags = validateTags(args.tags);
         const metadata = validateMetadata(args.metadata);
-        const source = typeof args.source === "string" && args.source.trim()
-          ? args.source.trim()
-          : undefined;
 
         const body = {
           content,
           memory_type: "pinned",
           agent_id: state.runtime.agentId,
-          ...(source !== undefined ? { source } : {}),
           ...(tags !== undefined ? { tags } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         };
@@ -580,17 +571,18 @@ export async function executeToolCall(name, args, ctx = {}) {
       }
 
       case "memory_update": {
+        if (args.source !== undefined) {
+          throw new Error("source is not supported on memory_update");
+        }
         const id = requireNonEmptyString(args.id, "id");
         const content = args.content !== undefined
           ? requireNonEmptyString(args.content, "content", MAX_MEMORY_CONTENT_CHARS)
           : undefined;
-        const source = typeof args.source === "string" ? args.source : undefined;
         const tags = validateTags(args.tags);
         const metadata = validateMetadata(args.metadata);
 
         const body = {
           ...(content !== undefined ? { content } : {}),
-          ...(source !== undefined ? { source } : {}),
           ...(tags !== undefined ? { tags } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         };

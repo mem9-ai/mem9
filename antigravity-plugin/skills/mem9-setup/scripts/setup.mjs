@@ -94,6 +94,7 @@ const SCRIPT_PATH = path.join(SCRIPT_DIR, "setup.mjs");
  *   pluginDataDir?: string,
  *   env?: EnvMap,
  *   homeDir?: string,
+ *   platform?: NodeJS.Platform,
  *   fetch?: typeof fetch,
  *   provisionFn?: (baseUrl: string) => Promise<string | { apiKey?: string }>,
  *   provisionTimeoutMs?: number,
@@ -430,8 +431,12 @@ export function buildSetupHelpText(command = "", subcommand = "") {
         "  --api-key-env <env-var>           Env var holding the API key (defaults to MEM9_API_KEY).",
         "  --cwd <path>                      Resolve project scope paths from this directory.",
         "",
-        "Example:",
+        "Examples:",
+        "  # POSIX (sh/zsh)",
         "  MEM9_API_KEY='<your-mem9-api-key>' node scripts/setup.mjs profile save-key --profile default --label Default --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY",
+        "",
+        "  # Windows PowerShell",
+        "  $env:MEM9_API_KEY = '<your-mem9-api-key>'; node scripts/setup.mjs profile save-key --profile default --label Default --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY; Remove-Item Env:MEM9_API_KEY -ErrorAction SilentlyContinue",
         "",
       ].join("\n");
     case "scope":
@@ -852,18 +857,30 @@ function backupFiles(filePaths) {
 }
 
 /**
- * Quote a shell token safely for POSIX or Windows shells.
+ * Quote a shell token safely for POSIX shells (`sh`/`bash`/`zsh`).
  * @param {string} value
- * @param {NodeJS.Platform} [platform]
  * @returns {string}
  */
-function shellQuote(value, platform = process.platform) {
-  const text = String(value);
-  if (platform === "win32") {
-    return `"${text.replaceAll("\"", "\"\"").replaceAll("%", "%%")}"`;
-  }
+function posixQuote(value) {
+  return `'${String(value).replaceAll("'", `'\"'\"'`)}'`;
+}
 
-  return `'${text.replaceAll("'", `'\"'\"'`)}'`;
+/**
+ * Quote a token safely as a PowerShell single-quoted string literal.
+ * @param {string} value
+ * @returns {string}
+ */
+function powershellQuote(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+/**
+ * Quote a token safely for Windows `cmd.exe`.
+ * @param {string} value
+ * @returns {string}
+ */
+function cmdQuote(value) {
+  return `"${String(value).replaceAll("\"", "\"\"").replaceAll("%", "%%")}"`;
 }
 
 /**
@@ -910,26 +927,63 @@ function sanitizeDisplayPath(filePath, pathContext) {
 }
 
 /**
- * Build a trusted-shell command template for saving an API key without pasting it into chat.
+ * Build POSIX, PowerShell, and cmd.exe trusted-shell command variants for saving an API key.
  * @param {string} profileId
  * @param {string} label
  * @param {string} baseUrl
  * @param {{ apiKeyEnv?: string }} [options]
- * @returns {string}
+ * @returns {{ posix: string, powershell: string, cmd: string }}
  */
-function buildManualSaveKeyShellCommand(profileId, label, baseUrl, options = {}) {
+export function buildManualSaveKeyShellVariants(profileId, label, baseUrl, options = {}) {
   const nextProfileId = normalizeString(profileId) || "<profile-id>";
   const nextLabel = normalizeString(label) || nextProfileId || "<profile-label>";
   const nextBaseUrl = safeBaseUrl(baseUrl) || DEFAULT_API_URL;
   const apiKeyEnv = normalizeString(options.apiKeyEnv) || "MEM9_API_KEY";
 
-  return [
-    `${apiKeyEnv}=${shellQuote("<your-mem9-api-key>")} node ${shellQuote(SCRIPT_PATH)} profile save-key`,
-    `--profile ${shellQuote(nextProfileId)}`,
-    `--label ${shellQuote(nextLabel)}`,
-    `--base-url ${shellQuote(nextBaseUrl)}`,
-    `--api-key-env ${apiKeyEnv}`,
-  ].join(" ");
+  return {
+    posix: [
+      `${apiKeyEnv}=${posixQuote("<your-mem9-api-key>")} node ${posixQuote(SCRIPT_PATH)} profile save-key`,
+      `--profile ${posixQuote(nextProfileId)}`,
+      `--label ${posixQuote(nextLabel)}`,
+      `--base-url ${posixQuote(nextBaseUrl)}`,
+      `--api-key-env ${apiKeyEnv}`,
+    ].join(" "),
+    powershell: [
+      `$env:${apiKeyEnv} = ${powershellQuote("<your-mem9-api-key>")};`,
+      `node ${powershellQuote(SCRIPT_PATH)} profile save-key`,
+      `--profile ${powershellQuote(nextProfileId)}`,
+      `--label ${powershellQuote(nextLabel)}`,
+      `--base-url ${powershellQuote(nextBaseUrl)}`,
+      `--api-key-env ${apiKeyEnv};`,
+      `Remove-Item Env:${apiKeyEnv} -ErrorAction SilentlyContinue`,
+    ].join(" "),
+    cmd: [
+      `set "${apiKeyEnv}=<your-mem9-api-key>" &&`,
+      `node ${cmdQuote(SCRIPT_PATH)} profile save-key`,
+      `--profile ${cmdQuote(nextProfileId)}`,
+      `--label ${cmdQuote(nextLabel)}`,
+      `--base-url ${cmdQuote(nextBaseUrl)}`,
+      `--api-key-env ${apiKeyEnv} &&`,
+      `set "${apiKeyEnv}="`,
+    ].join(" "),
+  };
+}
+
+/**
+ * Build a trusted-shell command template for saving an API key without pasting it into chat.
+ * @param {string} profileId
+ * @param {string} label
+ * @param {string} baseUrl
+ * @param {{ apiKeyEnv?: string, platform?: NodeJS.Platform }} [options]
+ * @returns {string}
+ */
+export function buildManualSaveKeyShellCommand(profileId, label, baseUrl, options = {}) {
+  const variants = buildManualSaveKeyShellVariants(profileId, label, baseUrl, {
+    apiKeyEnv: options.apiKeyEnv,
+  });
+  return (options.platform ?? process.platform) === "win32"
+    ? variants.powershell
+    : variants.posix;
 }
 
 /**
@@ -967,6 +1021,7 @@ function summarizeScopeConfig(config) {
  * Summarize a single profile safely using redacted key previews.
  * @param {string} profileId
  * @param {unknown} rawProfile
+ * @param {{ platform?: NodeJS.Platform }} [options]
  * @returns {{
  *   profileId: string,
  *   label: string,
@@ -976,15 +1031,20 @@ function summarizeScopeConfig(config) {
  *   displayName: string,
  *   displaySummary: string,
  *   manualSaveKeyCommand: string,
+ *   manualSaveKeyShells: { posix: string, powershell: string, cmd: string },
  * }}
  */
-function summarizeProfile(profileId, rawProfile) {
+function summarizeProfile(profileId, rawProfile, options = {}) {
   const record = isRecord(rawProfile) ? rawProfile : {};
   const label = normalizeString(record.label) || (profileId === "default" ? "Default" : profileId);
   const baseUrl = safeBaseUrl(record.baseUrl) || DEFAULT_API_URL;
   const apiKey = normalizeString(record.apiKey);
   const apiKeyPreview = redactApiKeyPreview(apiKey);
   const keyStatus = apiKeyPreview || "API key pending";
+  const manualSaveKeyShells = buildManualSaveKeyShellVariants(profileId, label, baseUrl);
+  const manualSaveKeyCommand = buildManualSaveKeyShellCommand(profileId, label, baseUrl, {
+    platform: options.platform,
+  });
 
   return {
     profileId,
@@ -994,8 +1054,20 @@ function summarizeProfile(profileId, rawProfile) {
     apiKeyPreview,
     displayName: label,
     displaySummary: `${label} (${keyStatus}) · ${baseUrl}`,
-    manualSaveKeyCommand: buildManualSaveKeyShellCommand(profileId, label, baseUrl),
+    manualSaveKeyCommand,
+    manualSaveKeyShells,
   };
+}
+
+/**
+ * Summarize all credential profiles sorted by profileId.
+ * @param {Record<string, unknown>} rawProfiles
+ * @param {{ platform?: NodeJS.Platform }} [options]
+ */
+function summarizeProfiles(rawProfiles, options = {}) {
+  return Object.entries(rawProfiles)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([profileId, profile]) => summarizeProfile(profileId, profile, options));
 }
 
 /**
@@ -1044,6 +1116,7 @@ function sanitizeRuntimeSummary(runtimeState) {
 function resolveSetupContext(args, options = {}) {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
+  const platform = options.platform ?? process.platform;
   const cwd = path.resolve(
     normalizeString(args.cwd) || normalizeString(options.cwd) || process.cwd(),
   );
@@ -1060,6 +1133,7 @@ function resolveSetupContext(args, options = {}) {
   return {
     env,
     homeDir,
+    platform,
     cwd,
     mem9Home: paths.mem9Home,
     pluginDataDir,
@@ -1146,9 +1220,7 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
   const rawProfiles = isRecord(credentialsRecord.profiles)
     ? credentialsRecord.profiles
     : {};
-  const items = Object.entries(rawProfiles)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([profileId, profile]) => summarizeProfile(profileId, profile));
+  const items = summarizeProfiles(rawProfiles, { platform: context.platform });
   const usableProfileIds = items
     .filter((item) => item.hasApiKey)
     .map((item) => item.profileId);
@@ -1189,6 +1261,12 @@ export function inspectSetup(argv = process.argv.slice(2), options = {}) {
       hasUsableProfiles: usableProfileIds.length > 0,
       usableProfileIds,
       manualSaveKeyTemplate: buildManualSaveKeyShellCommand(
+        "<profile-id>",
+        "<profile-label>",
+        DEFAULT_API_URL,
+        { platform: context.platform },
+      ),
+      manualSaveKeyTemplates: buildManualSaveKeyShellVariants(
         "<profile-id>",
         "<profile-label>",
         DEFAULT_API_URL,
@@ -1300,9 +1378,14 @@ async function runProfileSaveKey(args, options = {}) {
   const apiKey = normalizeString(context.env[apiKeyEnv]);
 
   if (!apiKey) {
-    const shellCmd = buildManualSaveKeyShellCommand(profileId, label, baseUrl, { apiKeyEnv });
+    const variants = buildManualSaveKeyShellVariants(profileId, label, baseUrl, { apiKeyEnv });
+    if (context.platform === "win32") {
+      throw new Error(
+        `Environment variable \`${apiKeyEnv}\` is empty or unset. Run from a trusted PowerShell (${variants.powershell}) or cmd.exe (${variants.cmd}) shell instead of pasting keys into chat.`,
+      );
+    }
     throw new Error(
-      `Environment variable \`${apiKeyEnv}\` is empty or unset. Run from a trusted shell instead of pasting keys into chat: ${shellCmd}`,
+      `Environment variable \`${apiKeyEnv}\` is empty or unset. Run from a trusted shell instead of pasting keys into chat: ${variants.posix}`,
     );
   }
 

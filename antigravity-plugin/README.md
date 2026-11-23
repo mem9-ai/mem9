@@ -58,7 +58,7 @@ Credential resolution priority:
 | Tool | Purpose |
 | --- | --- |
 | `memory_search` | Hybrid vector + keyword search (`q`, `tags`, `source`, `limit`, `offset`, `memory_type`) |
-| `memory_store` | Store a concise memory (`content`, optional `source`, `tags`, `metadata`) |
+| `memory_store` | Store a concise memory (`content`, optional `tags`, `metadata`) |
 | `memory_get` | Retrieve a single memory by `id` |
 | `memory_update` | Update fields of an existing memory by `id` |
 | `memory_delete` | Delete a memory by `id` |
@@ -92,7 +92,7 @@ node skills/mem9-setup/scripts/setup.mjs inspect --cwd .
 node skills/mem9-setup/scripts/setup.mjs profile create \
   --profile work --label Work --base-url https://api.mem9.ai --provision-api-key
 
-# Save an existing API key safely from a trusted shell
+# Save an existing API key safely from a trusted POSIX shell (sh/zsh)
 MEM9_API_KEY='<your-mem9-api-key>' node skills/mem9-setup/scripts/setup.mjs profile save-key \
   --profile work --label Work --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY
 
@@ -102,6 +102,12 @@ node skills/mem9-setup/scripts/setup.mjs scope apply --scope project --profile w
 
 # Remove project-local override
 node skills/mem9-setup/scripts/setup.mjs scope clear --scope project --cwd .
+```
+
+On Windows PowerShell, save an existing API key safely using `$env:MEM9_API_KEY`:
+
+```powershell
+$env:MEM9_API_KEY = '<your-mem9-api-key>'; node skills/mem9-setup/scripts/setup.mjs profile save-key --profile work --label Work --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY; Remove-Item Env:MEM9_API_KEY -ErrorAction SilentlyContinue
 ```
 
 Never paste raw API keys into chat. Use `profile save-key --api-key-env MEM9_API_KEY` from your terminal.
@@ -139,6 +145,5 @@ Common checks:
 
 ```bash
 npm --prefix antigravity-plugin run check
-npm --prefix antigravity-plugin test
 agy plugin validate --strict ./antigravity-plugin
 ```

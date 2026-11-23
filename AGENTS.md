@@ -59,7 +59,7 @@ pnpm --dir dsh-plugin test
 pnpm --dir dsh-plugin typecheck
 
 # Antigravity plugin verification
-node --test ./antigravity-plugin/tests/*.test.mjs
+npm --prefix antigravity-plugin run check
 agy plugin validate --strict ./antigravity-plugin
 
 # Site dev/build

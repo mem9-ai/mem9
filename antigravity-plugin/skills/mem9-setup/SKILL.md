@@ -53,7 +53,9 @@ Run commands from this skill directory (or resolve `scripts/setup.mjs` relative 
    ```
 
 4. **Attach an existing API key via trusted shell**:
-   Provide the user with the exact `manualSaveKeyCommand` from `inspect` (or `profiles.manualSaveKeyTemplate`) to run in their own terminal so the secret stays out of chat:
+   Provide the user with the exact `manualSaveKeyCommand` from `inspect` (or `profiles.manualSaveKeyTemplate`, or the matching shell variant from `manualSaveKeyShells` / `profiles.manualSaveKeyTemplates`) to run in their own terminal so the secret stays out of chat:
+
+   POSIX (`sh`/`zsh`):
 
    ```bash
    MEM9_API_KEY='<your-mem9-api-key>' node <skill-dir>/scripts/setup.mjs profile save-key \
@@ -61,6 +63,12 @@ Run commands from this skill directory (or resolve `scripts/setup.mjs` relative 
      --label <profile-label> \
      --base-url https://api.mem9.ai \
      --api-key-env MEM9_API_KEY
+   ```
+
+   Windows PowerShell:
+
+   ```powershell
+   $env:MEM9_API_KEY = '<your-mem9-api-key>'; node <skill-dir>/scripts/setup.mjs profile save-key --profile <profile-id> --label <profile-label> --base-url https://api.mem9.ai --api-key-env MEM9_API_KEY; Remove-Item Env:MEM9_API_KEY -ErrorAction SilentlyContinue
    ```
 
    Only run `profile save-key` from the agent if `MEM9_API_KEY` is already exported in the current process environment.
