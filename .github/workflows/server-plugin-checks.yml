@@ -11,6 +11,7 @@ on:
       - "opencode-plugin/**"
       - "claude-plugin/**"
       - "dsh-plugin/**"
+      - "antigravity-plugin/**"
   push:
     branches: [main]
     paths:
@@ -21,6 +22,7 @@ on:
       - "opencode-plugin/**"
       - "claude-plugin/**"
       - "dsh-plugin/**"
+      - "antigravity-plugin/**"
   workflow_dispatch:
 
 permissions:
@@ -97,6 +99,14 @@ jobs:
           node --check hooks/lib/hook-json.mjs
           node --check hooks/lib/memories-formatter.mjs
           node --check hooks/lib/transcript-parser.mjs
+
+      - name: Check Antigravity plugin
+        working-directory: antigravity-plugin
+        run: |
+          for file in scripts/*.mjs scripts/lib/*.mjs skills/mem9-setup/scripts/*.mjs; do
+            node --check "$file"
+          done
+          node --test tests/*.test.mjs
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4

@@ -1,0 +1,14 @@
+{
+  "name": "@mem9/antigravity-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "node -e \"import('node:fs').then(async({readdirSync})=>{const{execFileSync}=await import('node:child_process');const walk=(d)=>readdirSync(d,{withFileTypes:true}).flatMap((e)=>e.isDirectory()?walk(d+'/'+e.name):e.name.endsWith('.mjs')?[d+'/'+e.name]:[]);for(const f of ['scripts','skills','tests'].flatMap(walk))execFileSync(process.execPath,['--check',f],{stdio:'inherit'});})\"",
+    "test": "node --test ./tests/*.test.mjs"
+  }
+}

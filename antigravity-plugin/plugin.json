@@ -1,0 +1,27 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "mem9",
+  "displayName": "mem9",
+  "version": "0.1.0",
+  "description": "Cloud-persistent memory for Antigravity with automatic prompt recall, session capture, 6 MCP tools, and multi-profile setup.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Check my mem9 setup status and active credential profile",
+    "Search mem9 for prior decisions and preferences in this project",
+    "Curate and deduplicate my saved mem9 memories"
+  ],
+  "author": {
+    "name": "mem9-ai",
+    "url": "https://mem9.ai"
+  },
+  "homepage": "https://mem9.ai",
+  "repository": "https://github.com/mem9-ai/mem9",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mem9",
+    "memory",
+    "persistent-memory",
+    "context",
+    "tidb"
+  ]
+}

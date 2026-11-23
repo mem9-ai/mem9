@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="mem9 logo">
+  <defs>
+    <linearGradient id="panel" x1="34" y1="34" x2="146" y2="146" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#141416"/>
+      <stop offset="100%" stop-color="#070709"/>
+    </linearGradient>
+    <linearGradient id="stroke" x1="36" y1="36" x2="144" y2="144" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f4f4f5"/>
+      <stop offset="55%" stop-color="#a1a1aa"/>
+      <stop offset="100%" stop-color="#71717a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="46%" r="55%">
+      <stop offset="0%" stop-color="#a1a1aa" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#a1a1aa" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="90" cy="90" r="70" fill="url(#glow)"/>
+  <ellipse cx="90" cy="90" rx="64" ry="29" fill="none" stroke="#9ca3af" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="10 14"/>
+  <ellipse cx="90" cy="90" rx="29" ry="64" fill="none" stroke="#9ca3af" stroke-opacity="0.4" stroke-width="2" stroke-dasharray="10 14" transform="rotate(24 90 90)"/>
+  <rect x="36" y="36" width="108" height="108" rx="28" fill="url(#panel)" stroke="url(#stroke)" stroke-width="2.5"/>
+  <path d="M51 87H129" fill="none" stroke="#a1a1aa" stroke-opacity="0.65" stroke-width="2" stroke-linecap="round" stroke-dasharray="18 82"/>
+  <text x="90" y="106" text-anchor="middle" fill="#f8fafc" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="45" font-weight="700" letter-spacing="-3">m9</text>
+  <circle cx="136" cy="54" r="3.5" fill="#9ca3af"/>
+  <circle cx="44" cy="124" r="2.75" fill="#9ca3af" fill-opacity="0.9"/>
+</svg>
